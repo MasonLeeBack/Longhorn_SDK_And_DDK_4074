@@ -1,0 +1,242 @@
+<package>
+    <job id="checkahesp" prompt="no">
+	<runtime>
+	        <description>This script tests for AH+ESP offloaded on the card.  </description>
+	        <named
+			name="IP"
+		 	helpstring= "IP of the Machine to Test"
+			type = "string"
+			required="true"
+		/>
+		<named
+		        name="AH"
+		        helpstring= "AH algo to use"
+		        type = "string"
+		        required="true"
+		/>
+		<named
+		        name="ESP1"
+		        helpstring= "ESP Integrity algo"
+		        type = "string"
+		        required="true"
+		/>
+		<named
+		        name="ESP2"
+		        helpstring= "ESP Confidentiality algo"
+		        type = "string"
+		        required="true"
+		/>
+
+
+		
+		<example>Example: checkahesp.wsf /IP:200.1.1.1 /AH:MD5 /ESP1:SHA /ESP2:3DES</example>
+	</runtime>
+	
+
+	
+        <reference object="NDInfo.Info.1" version="1.0"/>
+        <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+        <reference object="NDTCore.base.1" version="1.0"/>
+        <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+        <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+        <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+        <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+        <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+        <script language="VBScript" src="..\inc\clog.vbs"/>
+        <script language="VBScript" src="..\inc\ccard.vbs"/>
+        <script language="VBScript" src="..\inc\copen.vbs"/>
+        <script language="VBScript" src="..\inc\general.vbs"/>
+        <script id="checkahesp" language="VBScript">
+'==========================================================================
+' Script Name:   checkahesp 
+'==========================================================================
+Option Explicit 
+
+
+
+'Call Initialize ()
+Call Main ()
+'Call Terminate ()
+
+Function Main
+
+'--------------------------------------------------------------------------
+Dim pAdapterList                 ' List obtained from oNDInfo
+Dim oClientCard, oSupportCard
+Dim Offloadable , Offload_Failed , Offloaded , Status 
+Dim IPAddr, MacAddr
+Dim AH_Integrity
+Dim ESP_Integrity, ESP_Conf
+Dim idx, pIP,pMac
+Dim Adapter
+Dim oLog
+
+
+'==========================================================================
+'++++++++++++++++++++++++++++ BEGIN TEST ++++++++++++++++++++++++++++++++++
+'==========================================================================
+Offloaded = False
+Offloadable = False
+Offload_Failed = False
+Status = False
+MacAddr =  Array(CByte(0),CByte(0),CByte(0),CByte(0),CByte(0),CByte(0))
+IPAddr = "0.0.0.0"
+
+
+
+Set oLog = new CLog
+
+oNDTCore.LogPtr = oLog.LogPtr
+
+'
+' Get Adapter collection from UI Object
+'
+Set pAdapterList = oNDInfo.AdapterList 
+
+'------------------------------------------------------
+' variation:  open up cards, prepare for tests...
+'------------------------------------------------------
+'
+' The first element in the pAdapterList would always be the test card.
+' CreateAdapter does not take a GUID, but takes an object that contains
+' the adapters GUID, along with a set of other information fields
+'
+
+
+
+For Each Adapter in pAdapterList
+	if(Adapter.AdapterType = ADAPTERTYPE_TEST OR Adapter.AdapterType = ADAPTERTYPE_SUPPORT) then
+		IPAddr = Adapter.IPAddress
+				
+		if ( IPAddr = WScript.Arguments.Named("IP"))  Then
+			set oSupportCard = oNDTCore.CreateAdapterSilent(Adapter)
+
+			If(oSupportCard is Nothing) Then
+   				call oLog.Failed ("Failed to create Support adapter object!" , 20968)
+		   		Set pAdapterList = Nothing
+   				Set oSupportCard = Nothing
+   				Exit Function
+			End If
+
+	
+			if (WScript.Arguments.Named("AH") = "NONE") then
+				pIP = "AH[NONE]+"
+				AH_Integrity = 0 
+			end if
+
+
+			if (WScript.Arguments.Named("AH") = "MD5") then
+				pIP = "AH[MD5]+"
+				AH_Integrity = 1
+			end if
+
+	
+			if (WScript.Arguments.Named("AH") = "SHA") then
+				AH_Integrity = 2
+				pIP = "AH[SHA]+"
+			end if
+	
+			if (WScript.Arguments.Named("ESP1") = "NONE") then
+				pIP = pIP + "ESP[NONE,"
+				ESP_Integrity =	0 
+			end if
+	
+	
+	
+			if (WScript.Arguments.Named("ESP1") = "MD5") then
+				pIP = pIP + "ESP[MD5,"
+				ESP_Integrity = 1
+			end if
+	
+	
+			if (WScript.Arguments.Named("ESP1") = "SHA") then
+				ESP_Integrity = 2
+				pIP = pIP + "ESP[SHA,"
+			end if
+	
+	
+			if (WScript.Arguments.Named("ESP2") = "NONE") then
+				pIP = pIP + "NONE] for IP "
+				ESP_Conf = 0
+			end if
+	
+	
+			if (WScript.Arguments.Named("ESP2") = "DES") then
+				pIP = pIP + "DES] for IP "
+				ESP_Conf = 1
+			end if
+			
+			
+			if (WScript.Arguments.Named("ESP2") = "DES40") then
+				ESP_Conf = 2
+				pIP = pIP + "DES40] for IP " 
+			end if
+	
+	
+	
+			if (WScript.Arguments.Named("ESP2") = "3DES") then
+				ESP_Conf = 3 
+				pIP = pIP + "3DES] for IP " 
+			end if
+	
+	
+	
+			
+			Status = oSupportCard.QueryIPSecDriverAHESP (AH_Integrity,ESP_Integrity,ESP_Conf,Offloaded,Offload_Failed,Offloadable)
+			pIP = pIP + IPAddr	
+			oLog.Write (pIP)
+	
+			if (Offloadable) then 
+				oLog.Write "- SA Offloadable"
+
+				if (Offloaded) then 
+					oLog.Write "- SA Offloaded"
+				else
+					oLog.Write "- SA not Offloaded"
+				end if
+	
+				if (Offload_Failed) then 
+					if ((AH_Integrity <> "NONE") AND (ESP_Integrity <> "NONE")) Then
+						oLog.Warned "Double Integrity Offload Failed."
+					else
+						oLog.Failed "- SA Offload Failed",88888
+					end if
+				end if
+				
+			else
+				oLog.Write "- SA not Offloadable"
+			end if
+	
+			Exit For
+
+		End If
+	End If
+
+Next
+
+
+
+	
+
+
+
+
+' cleanup
+'
+' The closing of all the open handles is taken care of by the dll.
+'
+Set pAdapterList = Nothing
+Set oSupportCard = Nothing
+
+'
+'
+'==========================================================================
+'++++++++++++++++++++++++++++  END TEST  ++++++++++++++++++++++++++++++++++
+'==========================================================================
+End Function	'Main ()
+
+        </script>
+    </job>
+</package>
+
+<!--- CRC = 0xfecefab1 --->

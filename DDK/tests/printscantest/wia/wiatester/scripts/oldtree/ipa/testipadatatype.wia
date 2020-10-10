@@ -1,0 +1,80 @@
+Test Assertion_A13446
+
+Var p:Property, root:Item
+Var dt
+{
+    PrintDescriptionFromXML('13.4.4.6')
+    StartWia()
+    GetRoot(root)
+    GetDeviceType(dt)
+
+    GetNextItem (root)
+
+    While ( root ) Do
+    {
+        If ( !CheckItemType(root, WiaItemTypeImage) )
+        Then Goto label
+
+        If ( !GetProperty(root, p, WIA_IPA_DATATYPE) )
+        Then 
+        {
+        Writeln '\tThis mandatory property does not exist'
+        Exit Failed
+        }
+
+        If (!CheckPropertyAccessFromXML(p) )
+        Then 
+        {
+            Writeln '\tIncorrect access'
+            Exit Failed
+        }
+
+        If (!CheckPropertyTypeFromXML(p) )
+        Then
+        {
+            Writeln '\tIncorrect vartype'
+            Exit Failed
+        }
+
+        If(!CheckValueLongFromXML(p))
+        Then
+        {
+            Writeln '\tInvalid property value'
+            Exit Failed
+        }
+
+        If ( dt == StiDeviceTypeScanner ) 
+        Then
+        {
+            #For scanner access type is Read/Write
+            If ( !CheckSuppValues(root, p) )
+            Then 
+            {
+                Writeln '\tChecking supported values failed'
+                Exit Failed
+            }
+
+            If ( SetPropertyInvalidValue(root, p) )
+            Then 
+            {
+                Writeln '\tSetting invalid property value succeeded'
+                Exit Failed
+            }
+        }
+        Else
+        {
+           #For camera Access type is Read-only
+           If (SetPropertyValidValue(root,p) Or SetPropertyInvalidValue(root,p) )
+           Then 
+           {
+                Writeln '\tSetting a read-only property value succeeded'
+                Exit Failed
+           }
+        }
+
+:label:
+      GetNextItem(root)
+    }
+
+    StopWia()
+}

@@ -1,0 +1,108 @@
+Test Assertion_A13484
+
+Assertion '13.4.8.4 drvGetWiaFormatInfo' 
+[
+This method shall return the format pairs supported by the device. 
+The following two pairs shall be supported at a minimum: (TYMED_CALLBACK, WiaImgFmt_MEMORYBMP) and (TYMED_FILE, WiaImgFmt_BMP).
+]
+
+Var root:Item, fmt:Format, guid:GUID
+Var fmtSize, lVal, tymed, bExist, dt
+{
+    StartWia()
+
+    GetRoot(root)
+
+    GetDeviceType(dt)
+
+    lVal = GetItemsCount()
+
+    If ( (lVal < 2) And (dt == StiDeviceTypeDigitalCamera) )
+    Then
+    {
+        If ( !DeviceCommand(WIA_CMD_TAKE_PICTURE) ) 
+        Then 
+        {
+            Writeln '\tNo pictures available and command WIA_CMD_TAKE_PICTURE failed: Take some pictures before testing.'
+            Exit Failed
+        }
+    }
+
+    #Check For New Item Tree 
+    If(!IsNewTree(root))
+    Then
+    {
+        Writeln '\tThe device does not support New Item Tree'
+        Exit Failed 
+    }
+
+    GetNextItem (root)
+
+    While ( root ) Do
+    {
+        If ( !CheckItemType(root, WiaItemTypeImage) )
+        Then Goto label
+
+        GetFormatInfo(root, fmt)
+        fmtSize = GetFormatSize (fmt)
+
+        bExist = 0
+
+        For lVal = 0 To fmtSize -1
+        {
+            GetFormatAt(fmt, lVal, guid)
+
+            If ( CompareGUID(guid, WiaImgFmt_MEMORYBMP) )
+            Then
+            {
+                tymed = GetTymedAt(fmt, lVal)
+
+                If ( tymed == TYMED_CALLBACK )
+                Then 
+                {
+                    bExist = 1
+                    Break
+                }
+            }
+        }
+
+        If ( !bExist )
+        Then 
+        {
+            Writeln '\tThe ( WiaImgFmt_MEMORYBMP, TYMED_CALLBACK) pair does not exist' 
+            Exit Failed
+        }
+
+        bExist = 0
+        
+        For lVal = 0 To fmtSize -1
+        {
+            GetFormatAt(fmt, lVal, guid)
+
+            If ( CompareGUID(guid, WiaImgFmt_BMP) )
+            Then
+            {
+                tymed = GetTymedAt(fmt, lVal)
+
+                If ( tymed == TYMED_FILE )
+                Then 
+                {
+                    bExist = 1
+                    Break
+                }
+            }
+        }
+
+        If ( !bExist )
+        Then 
+        {
+            Writeln '\tThe ( WiaImgFmt_BMP, TYMED_FILE) pair does not exist'
+            Exit Failed
+        }
+
+:label:
+        GetNextItem(root)
+    }
+
+    StopWia()
+}

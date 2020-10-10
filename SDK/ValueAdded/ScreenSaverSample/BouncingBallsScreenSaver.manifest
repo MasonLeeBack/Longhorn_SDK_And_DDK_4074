@@ -1,0 +1,31 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0" xmlns:asmv2="urn:schemas-microsoft-com:asm.v2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="urn:schemas-microsoft-com:asm.v1 assembly.adaptive.xsd">
+<file name="BouncingBallsScreenSaver.exe" />
+  <category subcategory="ScreenSaver" identity="Microsoft.Windows.Categories,version=6.0.0.0,publicKeyToken=6595b64144ccf1df,categoryName=screenSavers">
+    <ScreenSaverData name="My Screen Saver"/>
+  </category>  
+<assemblyIdentity name="BouncingBallsScreenSaver" version="1.0.0.0" processorArchitecture="x86" asmv2:culture="en-us" publicKeyToken="0000000000000000" />
+  <entryPoint name="main" xmlns="urn:schemas-microsoft-com:asm.v2" dependencyName="BouncingBallsScreenSaver">
+    <commandLine file="BouncingBallsScreenSaver.exe" parameters="" />
+  </entryPoint>
+  <TrustInfo xmlns="urn:schemas-microsoft-com:asm.v2" xmlns:temp="temporary">
+    <Security>
+      <ApplicationRequestMinimum>
+        <PermissionSet class="System.Security.PermissionSet" version="1" ID="SafeVisualizationDefinition">
+          <IPermission class="System.Security.Permissions.FileDialogPermission" version="1" Unrestricted="true" />
+          <IPermission class="System.Security.Permissions.IsolatedStorageFilePermission" version="1" Allowed="DomainIsolationByUser" UserQuota="5242880" />
+          <IPermission class="System.Security.Permissions.SecurityPermission" version="1" Flags="Execution" />
+          <IPermission class="System.Security.Permissions.UIPermission" version="1" Window="SafeTopLevelWindows" Clipboard="OwnClipboard" />
+          <IPermission class="MSAvalon.Windows.AVTempUIPermission, PresentationFramework, Version=6.0.4030.0, Culture=neutral, PublicKeyToken=a29c01bbd4e39ac5" version="1" NewWindow="LaunchNewWindows" FullScreen=" UnrestrictedFullScreen" />
+        </PermissionSet>
+        <AssemblyRequest name="BouncingBallsScreenSaver" PermissionSetReference="SafeVisualizationDefinition" />
+      </ApplicationRequestMinimum>
+    </Security>
+  </TrustInfo>
+  <dependency asmv2:name="BouncingBallsScreenSaver">
+    <dependentAssembly>
+      <assemblyIdentity name="BouncingBallsScreenSaver" version="0.0.0.0" processorArchitecture="x86" />
+    </dependentAssembly>
+    <asmv2:installFrom codebase="BouncingBallsScreenSaver.exe" hash="8c414041c4eb15db3deb4c11f76e9768f67e73dd" hashalg="SHA1" size="14848" />
+  </dependency>
+</assembly>

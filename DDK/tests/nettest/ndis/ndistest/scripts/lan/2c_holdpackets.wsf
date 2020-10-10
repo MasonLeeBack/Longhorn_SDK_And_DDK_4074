@@ -1,0 +1,422 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, 802_5, FDDI, Irda
+</MEDIA>
+<WHQL>
+802_3, 802_5, FDDI, Irda
+</WHQL>
+<CARDMACH>
+2C,1M
+</CARDMACH>
+<RUNORDER>
+1710
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[This scripts checks that the driver does not halt when it has outstanding receive 
+packets indicated. It should wait till all the packets that it has indicated to NDIS are returned
+to it.
+In this test, ndistest.sys does not immediately return all the packets that were indicated to it. It
+holds on to the packets, while a separate script attempts to unload the drivers. Once the unload operation
+is stuck because the miniport will not (correctly) halt, the sys returns the packets back to NDIS,
+so that the unload can now be completed successfully.
+
+This script has a long wait time (60-90 sec) during which it appears to be doing nothing
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="2c_HoldPackets" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oPNPPower" progid="NDTSupp.Setup.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      
+      <!-- Begin Wireless Specific Includes -->
+      <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	   <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	   <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	   <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	   <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+      <!-- End Wireless Specific Includes -->
+      
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/> 
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script id="2c_HoldPackets" language="VBScript">
+'==========================================================================
+' Script Name: 2c_HoldPackets
+'==========================================================================
+Option Explicit 
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0), GetSupportAdapterIndex (oNDInfo.AdapterList, 0)) 
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   
+   Private m_lTestAdapterIndex
+   Private m_lSuppAdapterIndex
+   Private oTestOpen, oSuppOpen
+   Private oTestCard, oSuppCard
+   Private m_lPktsToHold         ' the number of packets to hold
+   Private Sub Class_Initialize
+      m_lTestAdapterIndex = 1
+      m_lSuppAdapterIndex = 2
+      m_lPktsToHold = 10
+   End Sub
+   
+   Private Sub Class_Terminate
+      '
+      ' clean up
+      '      
+      Set oTestOpen = Nothing
+      Set oTestCard = Nothing
+      
+      Set oSuppOpen = Nothing
+      Set oSuppCard = Nothing
+   End Sub
+   
+   '============================================================================================='
+   '/**
+   ' Creates the opens on the test and support devices for the send/receives
+   '*/
+   Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+      
+      Set pAdapterList = oNDInfo.AdapterList
+      
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oTestOpen = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpen is Nothing) Then
+         Exit Function
+      End If
+      
+      oLog.Variation ("Setting up Support Adapter")
+      Set oSuppCard = New CLanCard
+      If (oSuppCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oSuppOpen = oSuppCard.vbSetupBasicTest(pAdapterList (m_lSuppAdapterIndex))
+      If (oSuppOpen is Nothing) Then
+         Exit Function
+      End If
+      
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+               
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")           
+         If(vbAssociateWep(oTestOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If	
+         
+         oLog.Variation ("Associating support device with " & NDTESTAP2 & " ...")       
+         If(vbAssociateWep(oSuppOpen, NDTESTAP2) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate support device with " & NDTESTAP2, 88888
+            Exit Function
+         End If	
+                           
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+      oLog.Variation("Setup IP Related Information for Test and support Card")
+      Dim bResult
+      bResult = SetupTestForIP(oTestOpen, m_lTestAdapterIndex, oSuppOpen, m_lSuppAdapterIndex)
+      If(Not bResult) Then
+         Exit Function
+      End If
+      
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+   
+   Public Function RunTest (ByVal lTestAdapterIndex, ByVal lSuppAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      m_lSuppAdapterIndex = lSuppAdapterIndex
+      
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+      
+      ExecuteTestCore REFRESHRANDOM Or EVERYSECOND, 10
+      
+      ' Reload the driver
+      wsfReloadDriver
+   End Function
+   
+   
+   '============================================================================================='
+   '/**
+   ' Main driving function that setup and executes the various test cases
+   '*/
+   Public Function ExecuteTestCore (ByVal lSchema, ByVal lPktsToHold)
+      Dim lHeldCount, bResult
+      
+      
+      m_lPktsToHold = lPktsToHold
+      
+      oLog.Write ("Holding schema: 0x" & Hex(lSchema) & ". Holding: " & m_lPktsToHold & " packets.")
+      
+      oLog.Variation("Setting up sys to hold back packets")
+      
+      '
+      ' Tell the sys to randomly hold m_lPktsToHold packets
+      bResult = oNDTCore.HoldPackets(m_lPktsToHold, lSchema)
+      
+      oLog.Variation ("Sending/Receiving")
+      Call wsfSendReceive(25)
+      
+      ' Perform the close so that the ProtocolUnbindFunction will not be
+      ' called
+      Call oTestOpen.vbNdisClose
+      
+      oLog.Variation("Spawning support script")
+      
+      ' Obtain full path of support script
+      Dim FullName, FullPath
+      Dim lTmpVar
+      Dim lDiff
+      
+      FullName = Wscript.ScriptFullName
+      lTmpVar = InStrRev(FullName,"\")
+      FullPath = Left(FullName, lTmpVar)
+      
+      ' Execute the support script      
+      Dim oWshShell, oWshScriptExec
+      Set oWshShell = Wscript.CreateObject("Wscript.Shell")
+      Set oWshScriptExec = oWshShell.Exec("wscript.exe """ & FullPath & "HoldPackets_Supp.wsf"" " & m_lTestAdapterIndex)
+      If (oWshScriptExec is Nothing) Then
+         Call oLog.Failed ("Internal Ndistest error: WshShell.Exec function did not return WshScriptExec object", 88888)
+         Exit Function
+      End If
+      
+      oLog.Variation("Main script waiting...")
+      ' wait for the second script to attempt to halt driver
+      Wscript.Sleep 60000
+      
+      oLog.Variation("Main script checking if sys held packets and returning them")
+      '
+      ' Get a count of number of packet held by the sys
+      lHeldCount = oNDTCore.HeldPacketCount
+      
+      ' Check what to do with the held packets
+      If (lHeldCount <> 0) Then
+         ' Okay, so we were holding packets, check if we were able
+         ' to halt the driver. Checked by checking if support script is
+         ' still running (0) or completed (1)
+         If (oWshScriptExec.Status = 0) Then
+            ' were not able to halt the driver, return all
+            ' held packets to halt the driver
+            oLog.Write ("Driver did not halt with outstanding packets. Good")
+            
+            ' let us not release all the held packets as yet. Release it in chunks.
+            ' this is a bit risky: if the driver decides to quit after just a few of
+            ' all held packets are returned, we would be accessing invalid memory
+            ' at kernel level. But then we do want to test that the driver works correctly
+            lDiff = 1
+            Do While (TRUE)
+               If (lHeldCount > lDiff) Then
+                  lHeldCount = lHeldCount - lDiff
+               Else
+                  Exit Do
+               End If
+               bResult = oNDTCore.CompleteHeldPackets(RETURNPACKETS, lDiff)
+               lDiff = 2 * lDiff
+            Loop
+            bResult = oNDTCore.CompleteHeldPackets(RETURNPACKETS, 0)
+         Else
+            ' were able to halt the driver, release (free) all
+            ' held packets to avoid bug checks
+            Call oLog.Failed ("Driver halted when there were outstanding receive packets indicated", 88888)
+            oLog.Write ("The driver should have waited till all the (received) packets that")
+            oLog.Write ("it indicated have been returned to it")
+            bResult = oNDTCore.CompleteHeldPackets(RELEASEPACKETS, 0)
+         End If
+         
+         If (Not bResult) Then
+            ' This means that the tags (start data byte or checksum) did not match
+            Call oLog.Failed ("Held packets were corrupted between hold and release times", 88888)
+         End If
+         
+      Else
+         If (m_lPktsToHold <> 0) Then
+            ' We did not hold any packets, so the results of the tests do not confirm/reject
+            ' the correct behavior in the driver  
+            Call oLog.Failed("NDISTest protocol unable to hold any packets. Please rerun", 88888)
+            oLog.Write ("This might be because the packets were indicated with NDIS_STATUS_RESOURCES")
+            oLog.Write ("or were indicated on the ProtocolReceive handler (because of the Miniport")
+            oLog.Write ("or NDIS)")
+            ' This might not be a Miniport problem, and can be verified by unbinding
+            ' all other protocols bound to this miniport
+         End If 
+      End If
+      
+      ' Loop till the support script completes execution
+      For lTmpVar = 0 To 10
+         ' support script completed
+         If (oWshScriptExec.Status = 1) Then
+            Exit For
+         End If
+         
+         WScript.Sleep 5000
+         If (lTmpVar = 10) Then
+            Call oLog.Failed ("Main: Unable to confirm termination of support script", 88888)
+            oLog.Write ("This may leave the driver of the test card in a bad state.")
+            ' Lets not try reloading the driver
+            Set oWshScriptExec = Nothing
+            Set oWshShell = Nothing
+            Exit Function
+         End If
+      Next
+      
+      
+      ' Done
+      Set oWshScriptExec = Nothing
+      Set oWshShell = Nothing
+   End Function
+   
+   
+   
+   '============================================================================================='
+   '/**
+   ' After we are done with the test, we need to reload the driver. This function starts the 
+   ' driver
+   '*/
+   Function wsfReloadDriver
+      Dim nResult
+      Dim TestCardGUID
+      
+      wsfReloadDriver = FALSE
+      TestCardGUID = oNDInfo.AdapterList(m_lTestAdapterIndex).GUID
+      
+      oLog.Variation("Main script restarting driver")
+      
+      nResult = oPNPPower.StartDriver(TestCardGUID)
+      If (nResult <> 0) Then
+         Call oLog.Failed ("Main: Unable to restart driver after stopping." , 88888)
+      End If
+      
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+                  
+         Dim oOpen : Set oOpen = oTestCard.vbOpenAdapter()
+                                      
+         If(vbAssociateWep(oOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+         End If	        
+         
+         Set oOpen = Nothing
+                                                      
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+               
+      If (oTestCard.vbWaitForLinkWithDelay(90, glWaitForLinkExtraDelay)) Then     ' wait for link to be established
+         wsfReloadDriver = TRUE
+      End If
+      
+   End Function
+   
+   
+   '============================================================================================='
+   '/**
+   ' Sends data from the support device to the test device. 
+   ' @params ! number the number of packets to send per burst. The actual
+   '                         number of packets = nTotalPackets * glBurstsToSend
+   '*/
+   Function wsfSendReceive(nTotalPackets)
+      Dim nTestId
+      Dim TestAddr, arrDestAddr(4)
+      Dim bResult
+      Dim nReceived, nResent
+      
+      wsfSendReceive = TRUE
+      '
+      ' Form the address array
+      '
+      TestAddr = oTestOpen.vbGetCardAddress
+      arrDestAddr(0) = TestAddr
+      arrDestAddr(1) = TestAddr
+      arrDestAddr(2) = TestAddr
+      arrDestAddr(3) = TestAddr
+      
+      '
+      ' Set the packet filters for the test card and support card
+      '
+      Call oTestOpen.vbSetPacketFilter(DIRECTED)
+      
+      '
+      ' Set up ndistest client and server so that they can talk to each other
+      '
+      nTestId = oNDTSupp.Random(1, 32765)   
+      oSuppOpen.vbSetChannelId(nTestId)
+      oTestOpen.vbSetChannelId(nTestId)
+      
+      ' Set the receiving option on the test card
+      oTestOpen.vbSetReceiveOption(RECEIVE_QUEUE_RETURNS)
+      
+      
+      '
+      ' start receives, send packets
+      '
+      oTestOpen.vbStartReceive()
+      
+      If (oSuppOpen.vbVerifiedSendPackets (arrDestAddr, 4, glMinimumPacketSize, nTotalPackets, glBurstsToSend, NULL) < m_lPktsToHold) Then
+         Call oLog.Failed("Sent fewer packets than we were expecting to hold back", 88888)
+         wsfSendReceive = FALSE
+         Exit Function
+      End If 
+      
+      '
+      ' the test card should receive at least m_lPktsToHold packets
+      '
+      bResult = oTestOpen.vbStopReceive()
+      If (bResult) Then
+         bResult = oTestOpen.vbGetReceiveResults(nReceived, nResent)
+         If (nReceived < m_lPktsToHold) Then
+            Call oLog.Failed ("Received fewer packets than we were expecting to hold back", 88888)
+            wsfSendReceive = FALSE
+            Exit Function
+         End If
+      End If
+      
+   End Function
+   
+End Class
+
+</script>
+</job>
+</package>
+
+
+
+
+
+<!--- CRC = 0x78eb6c7a --->

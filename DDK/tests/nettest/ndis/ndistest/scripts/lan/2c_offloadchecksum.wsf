@@ -1,0 +1,937 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, 802_5, FDDI 
+</MEDIA>
+<WHQL>
+802_3, 802_5, FDDI
+</WHQL>
+<CARDMACH>
+2C,1M
+</CARDMACH>
+<RUNORDER>
+1540
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[This script tests the ability of Offload capable NICS to offload and perform checksum correctly
+
+The script has two loops. The outer loop tests various supported kinds of offloading.
+These include checksum offload (with and without resets), checksum offload with TCP largesend (if supported)
+and testing checksum offload with unspecified encapsulation type but specified header size. The resets
+test is needed to make sure the offload informations persists after a NIC reset.
+
+The inner loop goes through setting 17 different checksum combinations for each of the above offload types.
+The first type is when no checksum is offloaded at all and the NIC is supposed to compute nothing.
+Next all combinations of TCP/UDP and IP, each with and without respective options, is tested.
+Note that NICS may support Transmit checksum computation but NOT Receive checksum computation and vice versa.
+The Test NIC sends out 50 packets for each combination, if Transmit side somputation is supported. Then the
+support adapter is asked to send 50 packets if receive side checksum computation is supported.
+
+The entire test is run again with Etnernet SNAP packet. Note that with SNAP packets, checksum offload
+with unspecified encapsulation type and specified header size is skipped.
+
+while wrapping up, the script also checks that the number of resets, connects and disconnects are as expected.
+if there were any resets, connects or disconnects at all, they must be equal in number. he driver is then 
+stopped and restarted to restore any offload setting done by TCP/IP and the script ends.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="2c_OffloadCheckSum" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      
+      <!-- Begin Wireless Specific Includes -->
+      <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	   <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	   <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	   <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	   <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+      <!-- End Wireless Specific Includes -->
+        
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/> 
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COffloadCard.vbs"/>        
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\COffloadOpen.vbs"/>        
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>        
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script language="VBScript" src="..\inc\Offload.vbs"/>        
+      <script id="2c_OffloadCheckSum" language="VBScript">
+'==========================================================================
+' Script Name:    2c_OffloadCheckSum
+'==========================================================================
+Option Explicit 
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0), GetSupportAdapterIndex (oNDInfo.AdapterList, 0)) 
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard, oSuppCard         ' These are instances of the COffloadCard objects
+   Private oTestOpen, oSuppOpen         ' These are instances of the COffloadOpen object
+   
+   Private m_lTestAdapterIndex, m_lSuppAdapterIndex
+   Private TestCardGUID
+   Private m_lMaxPacketSize
+   
+   Private Sub Class_Initialize
+      
+   End Sub
+   
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+      Set oTestOpen = Nothing
+      
+      Set oSuppCard = Nothing
+      Set oSuppOpen = Nothing
+   End Sub
+   
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+      
+      Set pAdapterList = oNDInfo.AdapterList
+      
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New COffloadCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oTestOpen = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpen is Nothing) Then
+         Exit Function
+      End If
+      
+      oLog.Variation ("Setting up Support Adapter")
+      Set oSuppCard = New COffloadCard
+      If (oSuppCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oSuppOpen = oSuppCard.vbSetupBasicTest(pAdapterList (m_lSuppAdapterIndex))
+      If (oSuppOpen is Nothing) Then
+         Exit Function
+      End If
+      
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+               
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")           
+         If(vbAssociateWep(oTestOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If	
+         
+         oLog.Variation ("Associating support device with " & NDTESTAP2 & " ...")       
+         If(vbAssociateWep(oSuppOpen, NDTESTAP2) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate support device with " & NDTESTAP2, 88888
+            Exit Function
+         End If	
+                           
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+      
+      TestCardGUID = pAdapterList(m_lTestAdapterIndex).GUID
+      
+      ' Verify that the maximum packet size is atleast 150 bytes
+      m_lMaxPacketSize = oTestOpen.vbGetMaxPacketSize()
+      If (m_lMaxPacketSize < 150) Then
+         call oLog.Failed ("MTU less than 150, Unable to run test !!!" , 21670)
+         Exit Function
+      End If
+      
+      ' Initialize Global Task Offload variables
+      oLog.Variation("Get Task Offload Support Info")
+      If (Not oTestOpen.vbGetTaskOffloadInfo()) Then
+         call oLog.Write("Cannot run test! Unable to Query NIC for Task Offload Information")
+         call oLog.Write("Task Offloading is not supported by this NIC")
+         Exit Function
+      End If
+      
+      ' Check for Task Offload Support
+      If (Not GlobTaskOffloadSupport) Then
+         call oLog.Write("Cannot run test, OID_TCP_TASK_OFFLOAD not supported by miniport")
+         Exit Function
+      End If
+      
+      ' Check for Checksum Task Offload Support
+      If (GlobCksumTasks = 0) Then
+         call oLog.Write("Cannot run test, Checksum task offload not supported")
+         Exit Function
+      End If
+      
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+   
+   Public Function RunTest (lTestAdapterIndex, lSuppAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      m_lSuppAdapterIndex = lSuppAdapterIndex
+      
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+      
+      ExecuteTestCore
+      
+      ' Close the Test Adapter
+      Dim bResult
+      oLog.Variation("NdisClose Test Adapter")
+      bResult = oTestOpen.vbNdisClose()
+      If(Not bResult) Then
+         call oLog.Failed ("Could not close Test Adapter open instance" , 21716)
+      End If
+      Set oTestOpen = Nothing
+      
+      ' Close the Support Adapter
+      oLog.Variation("NdisClose Support Adapter")
+      bResult = oSuppOpen.vbNdisClose()
+      If(Not bResult) Then
+         call oLog.Failed ("Could not close Support Adapter open instance" , 21717)
+      End If
+      Set oSuppOpen = Nothing
+      
+      ' Unload & load driver to restore Tcp/Ip settings
+      oLog.Variation("Unload & Reload driver to restore TCP/IP's task offload settings")
+      Call wsfRestoreTCPIPSettings() 
+      
+   End Function
+   
+   Private Function ExecuteTestCore
+      Dim TestAddr, SuppAddr
+      Dim bResult, TestId, nReceiveDelay
+      Dim nMedium
+      
+      ' Get MAC address of Test & support Card
+      TestAddr = oTestOpen.vbGetCardAddress()
+      SuppAddr = oSuppOpen.vbGetCardAddress()
+      nMedium = oTestCard.NdisMedium
+      
+      ' Set receive options
+      oTestOpen.vbSetReceiveOption(RECEIVE_DEFAULT)
+      oSuppOpen.vbSetReceiveOption(RECEIVE_DEFAULT)
+      
+      ' Set Packet filters
+      If(Not oTestOpen.vbSetPacketFilter(DIRECTED)) Then
+         call oLog.Failed ("Unable to set support card packet filter to DIRECTED" , 21676)
+         Exit Function
+      End If
+      
+      If(Not oSuppOpen.vbSetPacketFilter(DIRECTED)) Then
+         call oLog.Failed ("Unable to set support card packet filter to DIRECTED" , 21677)
+         Exit Function
+      End If
+      
+      nReceiveDelay = oTestOpen.vbGetReceiveDelay()
+      
+      Dim nTotalPackets, nPacketsSent, lPacketCount, lPacketsReceived, nBytesReceived, lCksumPassed, lCksumFailed
+      Dim lDataSize
+      Dim lBytesToReceive
+      Dim ProtoType
+      Dim ResetSleep
+      
+      ' Task Offload Variables
+      Dim OffloadInfo(100), OffloadHdrInfo(4), DefaultOffloadHdr(2)
+      Dim CksumTasks, LargeSendTasks
+      Dim CksumOffloadInfo, LargeSendOffloadInfo
+      Dim BytesWritten, BytesNeeded, NdisStatus
+      Dim EtherSnapTest, LargeSendSupport
+      
+      ' Copy over the global Cksum offload info in a temporary variable
+      Set CksumOffloadInfo = oNDTCore.CreateTcpIpChecksumObj(GlobCksumOffloadInfo(0))
+      If (CksumOffloadInfo is Nothing) Then
+         call oLog.Failed ("CreateTcpIpChecksumObj FAILED to create a copy" , 21678)
+         Exit Function
+      End If
+      
+      ' Set Data Size
+      lDataSize = m_lMaxPacketSize - 150
+      
+      If ((nMedium = NDISMEDIUM802_5) Or (nMedium = NDISMEDIUMFDDI)) Then
+         ResetSleep = 1000
+      Else
+         ResetSleep = 500
+      End If 
+      
+      lPacketCount = 50
+      lBytesToReceive = lPacketCount * lDataSize
+      EtherSnapTest = FALSE
+      
+      If (GlobLargeSendTasks <> 0) Then
+         LargeSendSupport = TRUE
+         Set LargeSendOffloadInfo = oNDTCore.CreateTcpIpLargeSendObj(GlobLargeSendOffloadInfo(0))
+         If (LargeSendOffloadInfo is Nothing) Then
+            call oLog.Failed ("CreateTcpIpLargeSendObj FAILED to create a copy for largensed Offload" , 21679)
+            LargeSendSupport = FALSE
+         End If
+      Else
+         LargeSendSupport = FALSE
+      End If
+      
+      OffloadHdrInfo(0) = ENCAPSULATION
+      OffloadHdrInfo(1) = CLng(0)  ' Unspecified Encapsulation Type
+      
+      Dim Outer, MaxTests
+      Outer = CLng(0)
+      MaxTests = CLng(4)
+      
+      Do While (Outer < (MaxTests + 1))
+         
+         If (Outer = 0) Then
+            DefaultOffloadHdr(0) = CLng(0)
+         End If
+         
+         ' Check for Ethernet SNAP support
+         If (Outer = MaxTests) Then
+            If (EtherSnapTest = TRUE) Then
+               Exit Do
+            End If
+            
+            If (GlobSnapCksumTasks <> 0) Then
+               Outer = 0
+               EtherSnapTest = TRUE
+               DefaultOffloadHdr(0) = ENCAPSULATION  ' Flag
+               DefaultOffloadHdr(1) = CLng(4)         ' LLC-SNAP ROUTED
+               ' Copy over the global Cksum offlad info in a temporary variable
+               Set CksumOffloadInfo = oNDTCore.CreateTcpIpChecksumObj(GlobSnapCksumOffloadInfo(0))
+               If (CksumOffloadInfo is Nothing) Then
+                  call oLog.Failed ("CreateTcpIpChecksumObj FAILED to create a copy for Snap xsum Offload" , 21680)
+                  Exit Do
+               End If
+               
+               If (GlobSnapLargeSendTasks <> 0) Then
+                  LargeSendSupport = TRUE
+                  Set LargeSendOffloadInfo = oNDTCore.CreateTcpIpLargeSendObj(GlobSnapLargeSendOffloadInfo(0))
+                  If (LargeSendOffloadInfo is Nothing) Then
+                     LargeSendSupport = FALSE
+                     call oLog.Failed ("CreateTcpIpLargeSendObj FAILED to create a copy for Snap largensed Offload" , 21681)
+                  End If
+               Else
+                  LargeSendSupport = FALSE	
+               End If
+               oLog.Write(vblf & "Testing with Ethernet LLC-SNAP frames !!!" & vbLf)
+            Else
+               oLog.Write("Media not Ethernet or Checksum offload NOT supported on Ethernet LLC-SNAP frames !!!" )
+               Exit Do
+            End If
+         End If
+         
+         ' 
+         ' From Server, do Self Cksum computation on this packet
+         '
+         oSuppOpen.vbSetIpDefaults(CByte(0))
+         
+         ' Set Default encapsulation types
+         If (Outer = 0) Then
+            oTestOpen.vbSetIpDefaults(DefaultOffloadHdr)
+            oSuppOpen.vbSetIpDefaults(DefaultOffloadHdr)		
+         End If
+         
+         ' Set to No task offload
+         oLog.Variation("Set to NO Task Offload")
+         bResult = oTestOpen.vbSetOffloadTask(0, Null, Null)
+         If(Not bResult) Then
+            call oLog.Failed ("Unable to set to NO task offload, This might affect the results of the variations that follow !!!" , 21682)
+         End If
+         
+         If ((Outer = 0) Or (Outer = 2)) Then
+            If (Outer = 0) Then
+               oLog.Variation("Testing Checksum Offload !!!")
+            Else
+               oLog.Variation("Testing Checksum Offload with Resets !!!")
+            End If
+            bResult = oTestOpen.vbSetOffloadTask(0, CksumOffloadInfo, Null)
+            If (Not bResult) Then
+               call oLog.Failed ("SetOffloadTask returned FAILURE" , 21683)
+            End If
+         ElseIf (Outer = 1) Then
+            oLog.Variation("Testing Checksum Offload with NO TCP LargeSend Offload !!!")        
+            ' Set Checksum & TCP LargeSend Task Offload        
+            If (LargeSendSupport = TRUE) Then        
+               bResult = oTestOpen.vbSetOffloadTask(0, CksumOffloadInfo, LargeSendOffloadInfo)
+            Else
+               oLog.Write("TCP LargeSend Offload NOT Supported !!!" )
+               bResult = oTestOpen.vbSetOffloadTask(0, CksumOffloadInfo, Null)
+            End If
+            If (Not bResult) Then
+               call oLog.Failed ("SetOffloadTask returned FAILURE" , 21684)
+            End If
+            
+            ' While sending IP packet from Server, put in bogus value
+            ' for checksum
+            oSuppOpen.vbSetIpDefaults(CByte(BOGUS_CKSUM))
+         ElseIf ((Outer = 3) And (Not EtherSnapTest)) Then ' Not running this variation for Ethernet SNAP    
+            oLog.Variation( "Testing Checksum Offload with Unspecified Encapsulation type & specified Encapsulation Header Size !!!" & vblf)
+            
+            Dim i, TempOffloadInfo(100)
+            Dim TempRetLen, TempBytesWritten
+            Dim TempBytesNeeded, TempNdisStatus
+            for i=0 to 3
+               TempOffloadInfo (i) = CLng(OffloadHdrInfo (i))
+            Next
+            TempRetLen = CLng (400)
+            TempBytesWritten = CLng(0)
+            TempBytesNeeded = CLng(0)
+            
+            bResult = oTestOpen.vbNdisRequest (OID_TCP_TASK_OFFLOAD, TempOffloadInfo, TempRetLen, _
+                  REQUEST_QUERY_INFO, TempBytesWritten, TempBytesNeeded, TempNdisStatus, FALSE)
+            If not bResult then
+               Call oLog.Failed ("Query info on OID_TCP_TASK_OFFLOAD failed" , 21685)
+               Exit Do
+            End if
+            
+            ' If NDIS_STATUS_NOT_ACCEPTED returned, then this feature is not supported
+            ' Skip variation for this feature
+            If (TempNdisStatus <> &HC00000BB) then
+               if (GlobUnspecEncapTaskOffloadSupport) Then
+                  ' Check if the information returned is same as in the regular case
+                  If (GlobUnspecEncapCksumTasks <> GlobCksumTasks) Then
+                     call oLog.Failed ("Inconsistent Checksum task-offload information returned by miniport" , 21686)
+                     Exit Do
+                  End If
+                  ' Compare if they are equal
+                  Dim NumOfTasks
+                  NumOfTasks = GlobUnspecEncapCksumTasks
+                  Do While (NumOfTasks > 0)
+                     NumOfTasks = NumOfTasks - 1
+                     bResult = GlobCksumOffloadInfo(NumOfTasks).CompareTcpIpCksumObjects(GlobUnspecEncapCksumOffloadInfo(NumOfTasks))
+                     If(Not bResult) Then
+                        call oLog.Failed ("Inconsistent Checksum task-offload information returned by miniport" , 21687)
+                        Exit Do
+                     End If
+                  Loop  
+                  
+                  ' Set to Checksum task offload
+                  bResult = oTestOpen.vbSetOffloadTask(OffloadHdrInfo, CksumOffloadInfo, Null)
+                  If (Not bResult) Then
+                     call oLog.Failed ("SetOffloadTask did not succeed." , 21688)
+                  End If
+               Else
+                  oLog.Write("Adapter does NOT support task offload with Unspecified Encapsulation" )
+                  bResult = FALSE
+               End If
+            Else
+               oLog.Warned ("Query to OID_TCP_TASK_OFFLOAD with Unspecified " &_
+                     "Encapsulation is not accepted (supported), Skipping Variation" & vblf)
+               bResult = False        ' make sure the inner loop is not entered
+            End If
+         Else
+            bResult = FALSE ' Bail out when Outer = 3 & EtherSnapTest is TRUE
+         End If
+         
+         If (bResult) Then
+            Dim Inner, Tx, Rx, Needed, Options, OffloadFlags
+            
+            Inner = 0
+            
+            Do While (Inner < 17)
+               Do ' Loop to break out & continue
+                  Tx = CLng(0)
+                  Rx = CLng(0)
+                  Needed = 0
+                  Options = 0
+                  OffloadFlags = 0
+                  ' Do Self Cksum computation on this packet
+                  oTestOpen.vbSetIpDefaults(CByte(0))
+                  
+                  If (Inner = 0) Then
+                     oLog.Variation("Testing NO Checksum Off-load !!!")
+                     If ((Outer = 1) And (Not LargeSendSupport)) Then            
+                        oLog.Write("TCP LargeSend Offload NOT supported, skipping variation !!!" & vbLf)
+                        Exit Do
+                     End If
+                     
+                     If (CksumOffloadInfo.V4TxTcpChecksum Or CksumOffloadInfo.V4TxIpChecksum) Then            
+                        ProtoType = TCP
+                        If (CksumOffloadInfo.V4TxIpChecksum) Then
+                           Tx = IP_CKSUM
+                        Else
+                           Tx = TCP_CKSUM
+                        End If
+                     ElseIf (CksumOffloadInfo.V4TxUdpChecksum) Then' Neither TCP nor IP Checksum Offload supported, Try UDP
+                        ProtoType = UDP
+                        Tx = UDP_CKSUM
+                     Else ' UDP Checksum off-load not supported too
+                        oLog.Write("None of TCP, UDP, IP Transmit side V4 Checksum off-load supported, Skipping variation !!!" & vbLf)
+                        Exit Do
+                     End If
+                     Needed = Tx
+                  End If
+                  
+                  Select Case Inner
+                     Case 1
+                        oLog.Variation("Testing IP Checksum Off-load without options !!!")
+                        ProtoType = TCP
+                        Needed = IP_CKSUM
+                     Case 2
+                        oLog.Variation("Testing UDP Checksum Off-load without options !!!")
+                        ProtoType = UDP
+                        Needed = UDP_CKSUM
+                     Case 3
+                        oLog.Variation("Testing TCP Checksum Off-load without options !!!")
+                        ProtoType = TCP
+                        Needed = TCP_CKSUM
+                     Case 4
+                        oLog.Variation("Testing UDP & IP Checksum Off-load without options !!!")
+                        ProtoType = UDP
+                        Needed = UDP_CKSUM Or IP_CKSUM
+                     Case 5
+                        oLog.Variation("Testing TCP & IP Checksum Off-load without options !!!")
+                        ProtoType = TCP
+                        Needed = TCP_CKSUM Or IP_CKSUM        
+                     Case 6
+                        oLog.Variation("Testing IP Checksum Off-load with IP options !!!")
+                        ProtoType = TCP
+                        Options = IP_OPTION
+                        Needed = IP_CKSUM
+                     Case 7
+                        oLog.Variation("Testing UDP Checksum Off-load with IP options !!!")
+                        ProtoType = UDP
+                        Options = IP_OPTION
+                        Needed = UDP_CKSUM
+                     Case 8
+                        oLog.Variation("Testing TCP Checksum Off-load with IP options !!!")
+                        ProtoType = TCP
+                        Options = IP_OPTION
+                        Needed = TCP_CKSUM
+                     Case 9
+                        oLog.Variation("Testing UDP & IP Checksum Off-load with IP options !!!")
+                        ProtoType = UDP
+                        Options = IP_OPTION
+                        Needed = UDP_CKSUM Or IP_CKSUM
+                     Case 10
+                        oLog.Variation("Testing TCP & IP Checksum Off-load with IP options !!!")
+                        ProtoType = TCP
+                        Options = IP_OPTION
+                        Needed = TCP_CKSUM Or IP_CKSUM
+                     Case 11
+                        oLog.Variation("Testing IP Checksum Off-load with TCP options !!!")
+                        ProtoType = TCP
+                        Options = TCP_OPTIONS
+                        Needed = IP_CKSUM
+                     Case 12
+                        oLog.Variation("Testing TCP Checksum Off-load with TCP options !!!")
+                        ProtoType = TCP
+                        Options = TCP_OPTIONS
+                        Needed = TCP_CKSUM        
+                     Case 13
+                        oLog.Variation("Testing TCP & IP Checksum Off-load with TCP options !!!")
+                        ProtoType = TCP
+                        Options = TCP_OPTIONS
+                        Needed = TCP_CKSUM Or IP_CKSUM
+                     Case 14
+                        oLog.Variation("Testing IP Checksum Off-load with TCP & IP options !!!")
+                        ProtoType = TCP
+                        Options = TCP_OPTIONS Or IP_OPTION
+                        Needed = IP_CKSUM
+                     Case 15
+                        oLog.Variation("Testing TCP Checksum Off-load with TCP & IP options !!!")
+                        ProtoType = TCP
+                        Options = TCP_OPTIONS Or IP_OPTION
+                        Needed = TCP_CKSUM
+                     Case 16
+                        oLog.Variation("Testing TCP & IP Checksum Off-load with TCP & IP options !!!")
+                        ProtoType = TCP
+                        Options = TCP_OPTIONS Or IP_OPTION
+                        Needed = TCP_CKSUM Or IP_CKSUM
+                     Case Else
+                        oLog.Write ("Shouldn't come here, Inner only goes till 16")
+                  End Select
+                  
+                  If (Inner <> 0) Then        
+                     If (Outer = 1) Then            
+                        oLog.Write("Receive Side Checkum Verification Failure Case")
+                     Else
+                        oLog.Write("Receive Side Checkum Verification Success Case")
+                     End If
+                  End If
+                  
+                  ' IP Checksum        
+                  If ((Inner = 1)  Or (Inner = 4)  Or (Inner = 5) _
+                           Or (Inner = 6)  Or (Inner = 9)  Or (Inner = 10)_ 
+                     Or (Inner = 11) Or (Inner = 13) Or (Inner = 14)_
+                           Or (Inner = 16)) Then
+                     If ((Outer <> 1) Or LargeSendSupport) Then            		
+                        If (CksumOffloadInfo.V4TxIpChecksum _
+                                 And (Not (((Inner = 6) Or (Inner = 9) Or (Inner = 10) _
+                                 Or (Inner = 14) Or (Inner = 16)) _
+                                 And (Not CksumOffloadInfo.V4TxIpOptions))) _
+                                 And (Not (((Inner = 11) Or (Inner = 14)) _
+                                 And (Not CksumOffloadInfo.V4TxTcpOptions)))) Then
+                           OffloadFlags = OffloadFlags Or CKSUM_OFFLOAD_TX
+                           Tx = Tx Or IP_CKSUM
+                        End If
+                     End If
+                     
+                     If (CksumOffloadInfo.V4RxIpChecksum _
+                              And (Not (((Inner = 6) Or (Inner = 9) Or (Inner = 10) Or _
+                              (Inner = 14) Or (Inner = 16)) _
+                              And _
+                              (Not CksumOffloadInfo.V4RxIpOptions)))_
+                              And (Not (((Inner = 11) Or (Inner = 14)) _
+                              And (Not CksumOffloadInfo.V4RxTcpOptions)))) Then    
+                        OffloadFlags = OffloadFlags Or CKSUM_OFFLOAD_RX
+                        Rx = Rx Or IP_CKSUM
+                     End If
+                  End If
+                  
+                  ' UDP Checksum
+                  If ((Inner = 2) Or (Inner = 4) Or (Inner = 7) Or (Inner = 9)) Then
+                     If ((Outer <> 1) Or LargeSendSupport) Then
+                        If (CksumOffloadInfo.V4TxUdpChecksum _
+                                 And (Not ((Inner = 7) And (Not CksumOffloadInfo.V4TxIpOptions)))) Then
+                           OffloadFlags = OffloadFlags Or CKSUM_OFFLOAD_TX
+                           Tx = Tx Or UDP_CKSUM
+                        End If
+                     End If
+                     
+                     If (CksumOffloadInfo.V4RxUdpChecksum _
+                              And (Not ((Inner = 7) And (Not CksumOffloadInfo.V4RxIpOptions)))) Then
+                        OffloadFlags = OffloadFlags Or CKSUM_OFFLOAD_RX
+                        Rx = Rx Or UDP_CKSUM
+                     End If
+                  End If
+                  
+                  ' TCP Checksum
+                  If ((Inner = 3) Or (Inner = 5) Or (Inner = 8) Or (Inner = 10) Or (Inner = 12) _
+                           Or (Inner = 13) Or (Inner = 15) Or (Inner = 16)) Then   
+                     If ((Outer <> 1) Or LargeSendSupport) Then           
+                        If (CksumOffloadInfo.V4TxTcpChecksum _
+                                 And (Not (((Inner = 12) Or (Inner = 13) Or (Inner = 15) Or (Inner = 16)) _
+                                 And (Not CksumOffloadInfo.V4TxTcpOptions))) _
+                                 And (Not (((Inner = 8) Or (Inner = 15)) _
+                                 And (Not CksumOffloadInfo.V4TxIpOptions)))) Then
+                           OffloadFlags = OffloadFlags Or CKSUM_OFFLOAD_TX
+                           Tx = Tx Or TCP_CKSUM
+                        End If	
+                     End If
+                     
+                     If (CksumOffloadInfo.V4RxTcpChecksum _
+                              And (Not (((Inner = 12) Or (Inner = 13) Or (Inner = 15) Or (Inner = 16)) _
+                              And (Not CksumOffloadInfo.V4RxTcpOptions))) _
+                              And (Not (((Inner = 8) Or (Inner = 15)) _
+                              And (Not CksumOffloadInfo.V4RxIpOptions)))) Then
+                        OffloadFlags = OffloadFlags Or CKSUM_OFFLOAD_RX
+                        Rx = Rx Or TCP_CKSUM
+                     End If
+                  End If
+                  
+                  If ((Tx <> Needed) And (Rx <> Needed)) Then
+                     oLog.Write("Both Tx & Rx Checksum off-load NOT supported, Skipping variation !!!" & vbLf)
+                     Exit Do
+                  End If
+                  
+                  ' Check if Tx Checksum Computation off-load is supported
+                  oLog.Write(vbLf & "------- Transmit side -------" & vbLf)
+                  If (Tx = Needed) Then
+                     If (Inner = 0) Then
+                        ' No task off-load on this packet
+                        Call oTestOpen.vbSetOffloadPktInfo(CLng(0), CLng(0))
+                        ' Calculate only Pseudo Cksum (if at all) on this packet
+                        Call oTestOpen.vbSetIpDefaults(CByte(PSEUDO_CKSUM))
+                     Else
+                        Call oTestOpen.vbSetOffloadPktInfo(OffloadFlags, V4_CKSUM Or Tx)
+                     End If
+                     
+                     ' Set Source & Destination IP address
+                     TestId = oNDTSupp.Random(1, 32765)
+                     oTestOpen.vbSetLocalId(TestId)
+                     oSuppOpen.vbSetRemoteId(TestId)
+                     TestId = oNDTSupp.Random(1, 32765)
+                     oSuppOpen.vbSetLocalId(TestId)
+                     oTestOpen.vbSetRemoteId(TestId)            	
+                     
+                     ' Start IP Capture at Server
+                     oLog.Write ("Starting IP Capture on Support Card")
+                     bResult = oSuppOpen.vbStartIpCapture()
+                     If(Not bResult) Then
+                        Exit Do
+                     End If
+                     
+                     nPacketsSent = CLng(0)
+                     ' Reset Card, the offload information must persist resets
+                     If (Outer = 2) Then
+                        ' the sleep before the reset is on purpose
+                        Wscript.Sleep ResetSleep
+                        oTestOpen.vbNdisReset()
+                     End If
+                     
+                     ' Send IP packet from Client to Support Card
+                     
+                     call oLog.Write ("Sending IP packets from Test to Support Card")
+                     bResult = oTestOpen.vbVerifiedSendIP(SuppAddr, V4, ProtoType, lPacketCount, lDataSize, Options)
+                     If(Not bResult) Then
+                        Exit Do
+                     End If
+                     
+                     Wscript.Sleep nReceiveDelay ' wait for all packets to be received
+                     
+                     ' Get IP Capture results at Server
+                     lPacketsReceived = CLng(0)
+                     nBytesReceived = CLng(0)   				
+                     lCksumPassed = CLng(0)
+                     lCksumFailed = CLng(0)
+                     
+                     bResult = oSuppOpen.vbGetIPCaptureResults(lPacketsReceived, nBytesReceived, lCksumPassed, lCksumFailed)
+                     If(bResult) Then
+                        If (lPacketsReceived <> lPacketCount) Then
+                           call oLog.Failed ("GetIPCaptureResults on Support Card : Should have received " & lPacketCount & " packets, Received " & lPacketsReceived , 21694)
+                        End If  
+                        If (nBytesReceived <> lBytesToReceive) Then
+                           call oLog.Failed ("GetIPCaptureResults on Support Card : Should have received " & lBytesToReceive & " Bytes, Received " & nBytesReceived , 21695)
+                        End If
+                        If (Inner = 0) Then
+                           If ((lCksumPassed <> 0) Or ((lCksumFailed And Tx) <> Tx)) Then           					
+                              call oLog.Failed ("FAILURE : Checksum Verification (by tester) passed, Checksum computed by Test NIC when it is not supposed to !!!" , 21696)
+                           End If       
+                        Else
+                           If (((lCksumPassed And Tx) <> Tx) Or (lCksumFailed <> 0)) Then
+                              call oLog.Failed ("FAILURE : Checksum Verification (by tester) failed, Incorrect or No checksum computation by Test Card !!!" , 21697)
+                           End If
+                        End If
+                     Else
+                        call oLog.Failed ("GetIPCaptureResults Failed on Supported Adapter" , 21698)
+                     End If
+                  Else ' Only Rx supported
+                     If (Outer = 1) Then            
+                        oLog.Write("TCP LargeSend Offload NOT supported, skipping variation !!!" & vbLf)
+                     Else
+                        oLog.Write("Transmit side Checksum offload NOT supported for this case, skipping variation !!!" & vbLf)
+                     End If
+                     Call oTestOpen.vbSetOffloadPktInfo(OffloadFlags,CLng(0))
+                  End If
+                  
+                  ' Check if Tx Checksum Verification off-load is supported
+                  oLog.Write(vbLf & "------- Receive side -------" & vbLf)
+                  If (Rx = Needed) Then
+                     
+                     ' Set Source & Destination IP address
+                     TestId = oNDTSupp.Random(1, 32765)
+                     oTestOpen.vbSetLocalId(TestId)
+                     oSuppOpen.vbSetRemoteId(TestId)
+                     TestId = oNDTSupp.Random(1, 32765)
+                     oSuppOpen.vbSetLocalId(TestId)
+                     oTestOpen.vbSetRemoteId(TestId)            	
+                     
+                     ' Start IP Capture at Test Adapter
+                     call oLog.Write ("Starting IP Capture on Test Card" )
+                     bResult = oTestOpen.vbStartIpCapture()
+                     If(Not bResult) Then
+                        Exit Do
+                     End If
+                     
+                     nPacketsSent = CLng(0)
+                     ' Reset Card, the offload information must persist resets
+                     If (Outer = 2) Then
+                        ' the sleep before the reset is on purpose
+                        Wscript.Sleep ResetSleep
+                        oTestOpen.vbNdisReset()
+                     End If
+                     
+                     ' Send IP packet from Support to Test Card
+                     
+                     call oLog.Write ("Sending IP packets from Support to Test Card")
+                     bResult = oSuppOpen.vbVerifiedSendIP(TestAddr, V4, ProtoType, lPacketCount, lDataSize, Options)
+                     If(Not bResult) Then
+                        Exit Do
+                     End If
+                     
+                     Wscript.Sleep nReceiveDelay ' wait for all packets to be received
+                     
+                     ' Get IP Capture results at Test Card
+                     lPacketsReceived = CLng(0)
+                     nBytesReceived = CLng(0)   				
+                     lCksumPassed = CLng(0)
+                     lCksumFailed = CLng(0)
+                     
+                     bResult = oTestOpen.vbGetIPCaptureResults(lPacketsReceived, nBytesReceived, lCksumPassed, lCksumFailed)
+                     If(bResult) Then
+                        If (lPacketsReceived <> lPacketCount) Then
+                           call oLog.Failed ("GetIPCaptureResults on Test Card : Should have received " & lPacketCount & " packets, Received " & lPacketsReceived , 21704)
+                        End If  
+                        If (nBytesReceived <> lBytesToReceive) Then
+                           call oLog.Failed ("GetIPCaptureResults on Test Card : Should have received " & lBytesToReceive & " Bytes, Received " & nBytesReceived , 21705)
+                        End If
+                        If (Outer = 1) Then
+                           If ((lCksumPassed <> 0) Or ((lCksumFailed And Tx) <> Tx)) Then           					
+                              call oLog.Failed ("FAILURE : Checksum Verification (by tester) passed when it must fail, Corrupted packet received !!!" , 21706)
+                           End If       
+                        Else
+                           If (((lCksumPassed And Tx) <> Tx) Or (lCksumFailed <> 0)) Then
+                              call oLog.Failed ("FAILURE : Checksum Verification (by tester) failed, Corrupted Packet Received !!!" , 21707)
+                           End If
+                        End If
+                     Else
+                        call oLog.Failed ("GetIPCaptureResults Failed on Test Adapter" , 21708)
+                     End If
+                     
+                     ' Get Checksum Offload Verification Info
+                     lCksumPassed = 0
+                     lCksumFailed = 0
+                     
+                     bResult = oTestOpen.vbGetOffloadPktInfo(CKSUM_OFFLOAD_RX, lCksumPassed, lCksumFailed)
+                     If(bResult) Then
+                        ' Expected result : Verification to fail
+                        If (Outer = 1) Then
+                           If ((lCksumPassed = 0) And (lCksumFailed = 0)) Then           					
+                              oLog.Warned("WARNING : Checksum verification not done by Test card !!!" & vbLf)
+                           ElseIf ((lCksumPassed <> 0) Or ((lCksumFailed And (IP_CKSUM Or UDP_CKSUM Or TCP_CKSUM)) = 0)) Then
+                              call oLog.Failed ("FAILURE : Checksum verification passed or only partly done by Test card when it must fail !!!" , 21709)
+                           End If       
+                        Else ' Expected result : Verification to succeed
+                           If (((lCksumPassed And Rx) <> Rx) Or (lCksumFailed <> 0)) Then
+                              call oLog.Failed ("FAILURE : Checksum verification not done or failed by Test card when it must succeed !!!" , 21710)
+                           End If
+                        End If
+                     Else
+                        call oLog.Failed ("GetOffloadPktInfo Failed on Test Adapter" , 21711)
+                     End If		
+                  Else            
+                     oLog.Write("Receive side Checksum offload NOT supported for this case !!!" & vbLf)
+                  End If            
+               Loop While(False)
+               Inner = Inner + 1
+            Loop	
+         End If	
+         Outer = Outer + 1           
+      Loop
+      
+      DefaultOffloadHdr(0) = CLng(0)
+      oTestOpen.vbSetIpDefaults(DefaultOffloadHdr)
+      oSuppOpen.vbSetIpDefaults(DefaultOffloadHdr)		
+      
+      Dim Resets, Disconnects, Connects
+      ' Get Reset, Media Connect, Media Disconnect events
+      oLog.Variation("GetEvents")
+      bResult = oTestOpen.vbGetEvents(Resets, Disconnects, Connects)
+      If(bResult) Then
+         If ((Disconnects <> 0) And (Disconnects <> Resets)) Then
+            call oLog.Failed ("Incorrect number of disconnect events " & Disconnects & ". Should have been 0 or " & Resets , 21712)
+         End If
+         
+         If ((Connects <> 0) And (Connects <> Resets)) Then
+            call oLog.Failed ("Incorrect number of connect events " & Connects & ". Should have been 0 or " & Resets , 21713)
+         End If
+         
+         If (Connects <> Disconnects) Then
+            call oLog.Failed ("Disconnect events " & Disconnects & " should equal connect events " & Connects , 21714)
+         End If
+      Else
+         call oLog.Failed ("Get events failed on test card open instance" , 21715)
+      End If
+      
+      
+   End Function
+
+   '----------------------------------------------------------------------------------------------
+   ' Procedure:      RestoreTCPIPSettings
+   '              Restores the TCP/IP settings on the test card by unloading and reloading the Driver
+   '
+   ' Arguments: oTestCard : Test card object
+   '                   TestCardGUID: GUID of the test card
+   '
+   ' Returns:
+   '----------------------------------------------------------------------------------------------
+   Function wsfRestoreTCPIPSettings()
+      Dim oProtoBinders, oTestBinder, nCurrentState, bResult
+
+      '
+      ' This is a quick fix for the protocol binding problem
+      ' Only first and last scripts of protocol binder have'
+      ' initialization done correctly. No issue was hit since
+      ' only first and last script accessed the binding object.
+      ' Now, This script has become someone in the middle using
+      ' the binder object
+      '
+
+      wsfRestoreTCPIPSettings = False
+      oProtoBinders = oNDTSession ("ProtocolBinders")
+
+      If (IsEmpty (oProtoBinders)) Then
+         call oLog.Warned ("Could not find Protocol binders in session")
+         Exit Function
+      End If
+
+      Set oTestBinder = oProtoBinders(0)
+
+      On Error Resume Next
+
+      ' Unbind TCP/IP if bound
+      bResult = oTestBinder.ChangeBinding ("Internet Protocol (TCP/IP)", UNBIND_PROTOCOL, nCurrentState)
+
+      If (err.Number = 462) Then
+         err.Clear
+         ' An exception was thrown because ProtocolBinder was not initialized
+         ' Initialize it now
+         Set oTestBinder.m_oLogRef = oLog
+         Set oTestBinder.m_oBindCtrl = oSuppCore.CreateBindCtrl (oTestBinder.m_nConnectionID)
+         If (oTestBinder.m_oBindCtrl Is Nothing) Then
+            oLog.SafeWarned ("Could not create Bind Control Object")
+            On Error Goto 0
+            Exit Function
+         End If
+
+         Call oTestBinder.GetSupportedProtocols
+
+         ' Try unbinding now
+         bResult = oTestBinder.ChangeBinding ("Internet Protocol (TCP/IP)", UNBIND_PROTOCOL, nCurrentState)
+         if (Not bResult) Then
+            call oLog.Write ("Could not unbind TCP/IP! Will continue with the test")
+            On Error Goto 0
+            Exit Function
+         End If
+      End If
+
+      On Error Goto 0
+
+      If (Not bResult) Then
+         call oLog.Write ("Could not unbind TCP/IP! Will continue with the test")
+         Exit Function
+      End If
+
+      ' Rebind TCP/IP! This will restore offload settings
+      If (Not oTestBinder.ChangeBinding ("Internet Protocol (TCP/IP)", BIND_PROTOCOL, nCurrentState)) Then
+         call oLog.Write ("Could not bind TCP/IP! Will continue with the test")
+      End If     
+
+      wsfRestoreTCPIPSettings = True
+   End Function   
+
+   
+End Class
+
+</script>
+</job>
+</package>
+
+
+
+<!--- CRC = 0x545b898d --->

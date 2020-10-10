@@ -1,0 +1,1777 @@
+<html xmlns:v="urn:schemas-microsoft-com:vml"
+xmlns:o="urn:schemas-microsoft-com:office:office"
+xmlns:w="urn:schemas-microsoft-com:office:word"
+xmlns="http://www.w3.org/TR/REC-html40">
+
+<head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1252">
+<meta name=ProgId content=Word.Document>
+<meta name=Generator content="Microsoft Word 11">
+<meta name=Originator content="Microsoft Word 11">
+<link rel=File-List
+href="NDISTest%20Single%20Adapter%20Test_Final_files/filelist.xml">
+<title>NDISTest Single Adapter Test</title>
+<!--[if gte mso 9]><xml>
+ <o:OfficeDocumentSettings>
+  <o:RemovePersonalInformation/>
+ </o:OfficeDocumentSettings>
+</xml><![endif]--><!--[if gte mso 9]><xml>
+ <w:WordDocument>
+  <w:View>Print</w:View>
+  <w:SpellingState>Clean</w:SpellingState>
+  <w:GrammarState>Clean</w:GrammarState>
+  <w:ValidateAgainstSchemas/>
+  <w:SaveIfXMLInvalid>false</w:SaveIfXMLInvalid>
+  <w:IgnoreMixedContent>false</w:IgnoreMixedContent>
+  <w:AlwaysShowPlaceholderText>false</w:AlwaysShowPlaceholderText>
+  <w:BrowserLevel>MicrosoftInternetExplorer4</w:BrowserLevel>
+ </w:WordDocument>
+</xml><![endif]--><!--[if gte mso 9]><xml>
+ <w:LatentStyles DefLockedState="false" LatentStyleCount="156">
+ </w:LatentStyles>
+</xml><![endif]-->
+<style>
+<!--
+ /* Font Definitions */
+ @font-face
+	{font-family:"MS Mincho";
+	panose-1:2 2 6 9 4 2 5 8 3 4;
+	mso-font-alt:"\FF2D\FF33 \660E\671D";
+	mso-font-charset:128;
+	mso-generic-font-family:roman;
+	mso-font-format:other;
+	mso-font-pitch:fixed;
+	mso-font-signature:1 134676480 16 0 131072 0;}
+@font-face
+	{font-family:Tahoma;
+	panose-1:2 11 6 4 3 5 4 4 2 4;
+	mso-font-charset:0;
+	mso-generic-font-family:swiss;
+	mso-font-pitch:variable;
+	mso-font-signature:1627421319 -2147483648 8 0 66047 0;}
+@font-face
+	{font-family:"\@MS Mincho";
+	panose-1:0 0 0 0 0 0 0 0 0 0;
+	mso-font-charset:128;
+	mso-generic-font-family:roman;
+	mso-font-format:other;
+	mso-font-pitch:fixed;
+	mso-font-signature:1 134676480 16 0 131072 0;}
+ /* Style Definitions */
+ p.MsoNormal, li.MsoNormal, div.MsoNormal
+	{mso-style-parent:"";
+	margin-top:0in;
+	margin-right:0in;
+	margin-bottom:6.0pt;
+	margin-left:0in;
+	mso-pagination:widow-orphan;
+	font-size:10.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"Times New Roman";
+	mso-bidi-font-family:"Times New Roman";}
+h1
+	{mso-style-name:"Heading 1\,h1";
+	mso-style-parent:"";
+	mso-style-next:"Body Text";
+	margin-top:12.0pt;
+	margin-right:0in;
+	margin-bottom:3.0pt;
+	margin-left:0in;
+	mso-pagination:widow-orphan;
+	mso-outline-level:1;
+	border:none;
+	mso-border-bottom-alt:solid windowtext .5pt;
+	padding:0in;
+	mso-padding-alt:0in 0in 1.0pt 0in;
+	font-size:14.0pt;
+	mso-bidi-font-size:16.0pt;
+	font-family:Arial;
+	mso-font-kerning:16.0pt;
+	font-weight:normal;}
+h2
+	{mso-style-name:"Heading 2\,h2";
+	mso-style-parent:"";
+	mso-style-next:"Body Text";
+	margin-top:12.0pt;
+	margin-right:0in;
+	margin-bottom:3.0pt;
+	margin-left:0in;
+	mso-pagination:widow-orphan;
+	mso-outline-level:2;
+	font-size:11.0pt;
+	mso-bidi-font-size:14.0pt;
+	font-family:Arial;
+	font-weight:normal;
+	mso-bidi-font-style:italic;}
+h3
+	{mso-style-name:"Heading 3\,h3";
+	mso-style-parent:"";
+	mso-style-next:"Body Text";
+	margin-top:12.0pt;
+	margin-right:0in;
+	margin-bottom:2.0pt;
+	margin-left:0in;
+	mso-pagination:widow-orphan;
+	mso-outline-level:3;
+	font-size:10.0pt;
+	mso-bidi-font-size:12.0pt;
+	font-family:Arial;
+	font-weight:normal;}
+h4
+	{mso-style-name:"Heading 4\,h4";
+	mso-style-parent:"";
+	mso-style-next:"Body Text";
+	margin-top:12.0pt;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:0in;
+	margin-bottom:.0001pt;
+	mso-pagination:widow-orphan;
+	mso-outline-level:4;
+	font-size:10.0pt;
+	font-family:Arial;
+	font-weight:normal;}
+h5
+	{mso-style-name:"Heading 5\,h5";
+	mso-style-parent:"Heading 4\,h4";
+	mso-style-next:"Body Text";
+	margin-top:12.0pt;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:0in;
+	margin-bottom:.0001pt;
+	mso-pagination:widow-orphan;
+	mso-outline-level:5;
+	font-size:10.0pt;
+	font-family:Arial;
+	color:#33759F;
+	font-weight:normal;}
+h6
+	{mso-style-name:"Heading 6\,h6";
+	mso-style-parent:"Heading 5\,h5";
+	mso-style-next:"Body Text";
+	margin-top:12.0pt;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:0in;
+	margin-bottom:.0001pt;
+	mso-pagination:widow-orphan;
+	mso-outline-level:6;
+	font-size:10.0pt;
+	font-family:Arial;
+	color:#33759F;
+	font-weight:normal;}
+p.MsoToc1, li.MsoToc1, div.MsoToc1
+	{mso-style-name:"TOC 1\,TOC level 1";
+	mso-style-update:auto;
+	mso-style-parent:"Body Text";
+	margin:0in;
+	margin-bottom:.0001pt;
+	mso-pagination:widow-orphan;
+	tab-stops:right dotted 369.0pt;
+	font-size:10.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"MS Mincho";
+	mso-bidi-font-family:"Times New Roman";
+	color:black;
+	mso-no-proof:yes;}
+p.MsoToc2, li.MsoToc2, div.MsoToc2
+	{mso-style-name:"TOC 2\,TOC level 2";
+	mso-style-parent:"TOC 3\,TOC level 3";
+	margin-top:0in;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:12.0pt;
+	margin-bottom:.0001pt;
+	mso-pagination:widow-orphan;
+	tab-stops:right dotted 369.0pt;
+	font-size:10.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"MS Mincho";
+	mso-bidi-font-family:"Times New Roman";
+	color:black;
+	mso-no-proof:yes;}
+p.MsoToc3, li.MsoToc3, div.MsoToc3
+	{mso-style-name:"TOC 3\,TOC level 3";
+	mso-style-parent:"TOC 1\,TOC level 1";
+	margin-top:0in;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:24.0pt;
+	margin-bottom:.0001pt;
+	mso-pagination:widow-orphan;
+	tab-stops:right dotted 5.0in 369.0pt;
+	font-size:10.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"MS Mincho";
+	mso-bidi-font-family:"Times New Roman";
+	color:black;
+	mso-no-proof:yes;}
+p.MsoCommentText, li.MsoCommentText, div.MsoCommentText
+	{mso-style-name:"Comment Text\,ed";
+	mso-style-noshow:yes;
+	mso-style-parent:"";
+	mso-style-next:Normal;
+	margin:0in;
+	margin-bottom:.0001pt;
+	mso-pagination:widow-orphan;
+	background:silver;
+	font-size:8.0pt;
+	mso-bidi-font-size:10.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"Times New Roman";
+	mso-bidi-font-family:"Times New Roman";
+	color:blue;
+	font-weight:bold;
+	mso-bidi-font-weight:normal;}
+p.MsoHeader, li.MsoHeader, div.MsoHeader
+	{mso-style-parent:"";
+	margin:0in;
+	margin-bottom:.0001pt;
+	text-align:right;
+	mso-pagination:widow-orphan;
+	tab-stops:center 3.0in right 6.0in;
+	border:none;
+	mso-border-bottom-alt:solid windowtext .5pt;
+	padding:0in;
+	mso-padding-alt:0in 0in 1.0pt 0in;
+	font-size:8.0pt;
+	mso-bidi-font-size:12.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"Times New Roman";
+	mso-bidi-font-family:"Times New Roman";
+	color:black;
+	font-weight:bold;
+	mso-bidi-font-weight:normal;}
+p.MsoFooter, li.MsoFooter, div.MsoFooter
+	{mso-style-parent:Header;
+	margin:0in;
+	margin-bottom:.0001pt;
+	mso-pagination:widow-orphan;
+	tab-stops:center 3.0in right 6.0in;
+	font-size:8.0pt;
+	mso-bidi-font-size:12.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"Times New Roman";
+	mso-bidi-font-family:"Times New Roman";
+	color:black;}
+span.MsoCommentReference
+	{mso-style-noshow:yes;
+	mso-ansi-font-size:8.0pt;
+	mso-bidi-font-size:8.0pt;}
+span.MsoPageNumber
+	{mso-ansi-font-size:9.0pt;
+	font-family:Arial;
+	mso-ascii-font-family:Arial;
+	mso-hansi-font-family:Arial;
+	mso-bidi-font-family:Arial;
+	font-weight:bold;
+	mso-bidi-font-weight:normal;}
+p.MsoList, li.MsoList, div.MsoList
+	{mso-style-parent:"Body Text";
+	margin-top:0in;
+	margin-right:0in;
+	margin-bottom:8.0pt;
+	margin-left:.25in;
+	text-indent:-.25in;
+	mso-pagination:widow-orphan;
+	font-size:10.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"MS Mincho";
+	mso-bidi-font-family:"Times New Roman";
+	color:black;}
+p.MsoTitle, li.MsoTitle, div.MsoTitle
+	{mso-style-update:auto;
+	mso-style-parent:"";
+	mso-style-next:"Body Text";
+	margin-top:10.0pt;
+	margin-right:0in;
+	margin-bottom:24.0pt;
+	margin-left:0in;
+	mso-pagination:widow-orphan;
+	font-size:24.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"Times New Roman";
+	color:black;
+	mso-font-kerning:14.0pt;
+	mso-bidi-font-weight:bold;}
+p.MsoBodyText, li.MsoBodyText, div.MsoBodyText
+	{mso-style-parent:"";
+	margin-top:0in;
+	margin-right:0in;
+	margin-bottom:8.0pt;
+	margin-left:0in;
+	mso-pagination:widow-orphan;
+	font-size:10.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"MS Mincho";
+	mso-bidi-font-family:"Times New Roman";
+	color:black;}
+p.MsoBodyTextIndent, li.MsoBodyTextIndent, div.MsoBodyTextIndent
+	{mso-style-name:"Body Text Indent\,Body Text Indent 1";
+	mso-style-parent:"Body Text";
+	margin-top:0in;
+	margin-right:0in;
+	margin-bottom:4.0pt;
+	margin-left:.25in;
+	mso-pagination:widow-orphan;
+	font-size:10.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"MS Mincho";
+	mso-bidi-font-family:"Times New Roman";
+	color:black;}
+p.MsoNoteHeading, li.MsoNoteHeading, div.MsoNoteHeading
+	{mso-style-update:auto;
+	mso-style-parent:"";
+	mso-style-next:"Body Text";
+	margin-top:0in;
+	margin-right:0in;
+	margin-bottom:2.0pt;
+	margin-left:0in;
+	mso-pagination:widow-orphan;
+	border:none;
+	mso-border-top-alt:solid windowtext .5pt;
+	padding:0in;
+	mso-padding-alt:1.0pt 0in 0in 0in;
+	font-size:9.0pt;
+	mso-bidi-font-size:10.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"MS Mincho";
+	mso-bidi-font-family:"Times New Roman";
+	color:black;
+	font-weight:bold;
+	mso-bidi-font-weight:normal;}
+p.MsoBodyTextIndent2, li.MsoBodyTextIndent2, div.MsoBodyTextIndent2
+	{mso-style-parent:"Body Text";
+	margin-top:0in;
+	margin-right:0in;
+	margin-bottom:4.0pt;
+	margin-left:.5in;
+	mso-pagination:widow-orphan;
+	font-size:10.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"MS Mincho";
+	mso-bidi-font-family:"Times New Roman";
+	color:black;}
+a:link, span.MsoHyperlink
+	{mso-style-parent:"";
+	font-family:Arial;
+	mso-ascii-font-family:Arial;
+	mso-hansi-font-family:Arial;
+	mso-bidi-font-family:Arial;
+	color:blue;
+	text-decoration:underline;
+	text-underline:single;}
+a:visited, span.MsoHyperlinkFollowed
+	{color:purple;
+	text-decoration:underline;
+	text-underline:single;}
+p.MsoPlainText, li.MsoPlainText, div.MsoPlainText
+	{mso-style-name:"Plain Text\,Code";
+	mso-style-parent:"";
+	margin:0in;
+	margin-bottom:.0001pt;
+	mso-pagination:widow-orphan;
+	font-size:10.0pt;
+	font-family:"Courier New";
+	mso-fareast-font-family:"MS Mincho";
+	color:black;
+	mso-no-proof:yes;}
+p.MsoCommentSubject, li.MsoCommentSubject, div.MsoCommentSubject
+	{mso-style-noshow:yes;
+	mso-style-parent:"Comment Text\,ed";
+	mso-style-next:"Comment Text\,ed";
+	margin:0in;
+	margin-bottom:.0001pt;
+	mso-pagination:widow-orphan;
+	font-size:10.0pt;
+	font-family:"Times New Roman";
+	mso-fareast-font-family:"Times New Roman";
+	color:#FF6600;
+	font-weight:bold;}
+p.msoacetate0, li.msoacetate0, div.msoacetate0
+	{mso-style-name:msoacetate;
+	mso-style-noshow:yes;
+	margin-top:0in;
+	margin-right:0in;
+	margin-bottom:6.0pt;
+	margin-left:0in;
+	mso-pagination:widow-orphan;
+	font-size:8.0pt;
+	font-family:Tahoma;
+	mso-fareast-font-family:"Times New Roman";}
+p.BulletList, li.BulletList, div.BulletList
+	{mso-style-name:"Bullet List";
+	mso-style-parent:"Body Text";
+	margin-top:0in;
+	margin-right:0in;
+	margin-bottom:4.0pt;
+	margin-left:9.0pt;
+	text-indent:-9.0pt;
+	mso-pagination:widow-orphan;
+	mso-list:l10 level1 lfo2;
+	tab-stops:list .5in;
+	font-size:10.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"MS Mincho";
+	mso-bidi-font-family:"Times New Roman";
+	color:black;}
+p.BulletList2, li.BulletList2, div.BulletList2
+	{mso-style-name:"Bullet List 2";
+	mso-style-parent:"Bullet List";
+	margin-top:0in;
+	margin-right:0in;
+	margin-bottom:4.0pt;
+	margin-left:.5in;
+	text-indent:-9.0pt;
+	mso-pagination:widow-orphan;
+	mso-list:l10 level1 lfo2;
+	tab-stops:list .5in;
+	font-size:10.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"MS Mincho";
+	mso-bidi-font-family:"Times New Roman";
+	color:black;}
+p.Subtitle2, li.Subtitle2, div.Subtitle2
+	{mso-style-name:Subtitle2;
+	mso-style-noshow:yes;
+	mso-style-next:Normal;
+	margin-top:4.0pt;
+	margin-right:0in;
+	margin-bottom:24.0pt;
+	margin-left:0in;
+	mso-pagination:widow-orphan;
+	font-size:8.0pt;
+	mso-bidi-font-size:9.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"Times New Roman";
+	mso-bidi-font-family:"Times New Roman";
+	font-weight:bold;
+	mso-bidi-font-weight:normal;
+	font-style:italic;
+	mso-bidi-font-style:normal;}
+p.Procedure, li.Procedure, div.Procedure
+	{mso-style-name:Procedure;
+	mso-style-next:List;
+	margin-top:12.0pt;
+	margin-right:0in;
+	margin-bottom:6.0pt;
+	margin-left:0in;
+	mso-pagination:widow-orphan lines-together;
+	border:none;
+	mso-border-bottom-alt:solid windowtext .5pt;
+	padding:0in;
+	mso-padding-alt:0in 0in 1.0pt 0in;
+	font-size:9.0pt;
+	mso-bidi-font-size:10.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"Times New Roman";
+	mso-bidi-font-family:"Times New Roman";
+	color:navy;
+	font-weight:bold;
+	mso-bidi-font-weight:normal;}
+p.TableBody, li.TableBody, div.TableBody
+	{mso-style-name:"Table Body\,tp";
+	mso-style-parent:"Body Text";
+	margin-top:1.0pt;
+	margin-right:0in;
+	margin-bottom:1.0pt;
+	margin-left:0in;
+	mso-pagination:widow-orphan;
+	font-size:9.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"MS Mincho";
+	mso-bidi-font-family:"Times New Roman";
+	color:black;}
+p.TableHead, li.TableHead, div.TableHead
+	{mso-style-name:"Table Head";
+	mso-style-parent:"Table Body\,tp";
+	mso-style-next:"Table Body\,tp";
+	margin-top:1.0pt;
+	margin-right:0in;
+	margin-bottom:1.0pt;
+	margin-left:0in;
+	mso-pagination:widow-orphan lines-together;
+	font-size:9.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"MS Mincho";
+	mso-bidi-font-family:"Times New Roman";
+	color:black;
+	font-weight:bold;
+	mso-bidi-font-weight:normal;}
+p.Disclaimertext, li.Disclaimertext, div.Disclaimertext
+	{mso-style-name:Disclaimertext;
+	mso-style-next:"Body Text";
+	margin-top:0in;
+	margin-right:0in;
+	margin-bottom:6.0pt;
+	margin-left:0in;
+	mso-pagination:widow-orphan;
+	font-size:8.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"Times New Roman";
+	mso-bidi-font-family:"Times New Roman";
+	color:black;}
+p.DisclaimerHeader, li.DisclaimerHeader, div.DisclaimerHeader
+	{mso-style-name:"Disclaimer Header";
+	mso-style-update:auto;
+	mso-style-parent:"";
+	mso-style-next:Disclaimertext;
+	margin:0in;
+	margin-bottom:.0001pt;
+	page-break-before:always;
+	mso-pagination:widow-orphan;
+	font-size:10.0pt;
+	mso-bidi-font-size:12.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"MS Mincho";
+	font-weight:bold;}
+p.FigCap, li.FigCap, div.FigCap
+	{mso-style-name:FigCap;
+	mso-style-update:auto;
+	mso-style-parent:"Body Text";
+	mso-style-next:"Body Text";
+	margin-top:8.0pt;
+	margin-right:0in;
+	margin-bottom:12.0pt;
+	margin-left:0in;
+	mso-pagination:widow-orphan;
+	font-size:9.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"MS Mincho";
+	mso-bidi-font-family:"Times New Roman";
+	color:black;
+	letter-spacing:.5pt;
+	font-weight:bold;
+	mso-bidi-font-weight:normal;}
+p.DL, li.DL, div.DL
+	{mso-style-name:"DL\,Def1";
+	mso-style-parent:"Body Text";
+	mso-style-next:"DT\,Term1";
+	margin-top:0in;
+	margin-right:0in;
+	margin-bottom:4.0pt;
+	margin-left:.25in;
+	mso-pagination:widow-orphan lines-together;
+	font-size:10.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"MS Mincho";
+	mso-bidi-font-family:"Times New Roman";
+	color:black;}
+p.DT, li.DT, div.DT
+	{mso-style-name:"DT\,Term1";
+	mso-style-parent:"Body Text";
+	mso-style-next:"DL\,Def1";
+	margin-top:0in;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:9.0pt;
+	margin-bottom:.0001pt;
+	mso-pagination:widow-orphan;
+	font-size:10.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"MS Mincho";
+	mso-bidi-font-family:"Times New Roman";
+	color:black;
+	font-weight:bold;
+	mso-bidi-font-weight:normal;}
+p.Version, li.Version, div.Version
+	{mso-style-name:Version;
+	mso-style-update:auto;
+	mso-style-parent:"Body Text";
+	mso-style-next:"Body Text";
+	margin-top:0in;
+	margin-right:0in;
+	margin-bottom:20.0pt;
+	margin-left:0in;
+	mso-pagination:widow-orphan lines-together;
+	border:none;
+	mso-border-top-alt:solid windowtext .5pt;
+	mso-border-bottom-alt:solid windowtext .5pt;
+	padding:0in;
+	mso-padding-alt:1.0pt 0in 1.0pt 0in;
+	font-size:9.0pt;
+	mso-bidi-font-size:10.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"MS Mincho";
+	mso-bidi-font-family:"Times New Roman";
+	mso-no-proof:yes;}
+p.BodyTextLink, li.BodyTextLink, div.BodyTextLink
+	{mso-style-name:"Body Text Link";
+	mso-style-parent:"Body Text";
+	mso-style-next:"Bullet List";
+	margin-top:0in;
+	margin-right:0in;
+	margin-bottom:4.0pt;
+	margin-left:0in;
+	mso-pagination:widow-orphan lines-together;
+	font-size:10.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"MS Mincho";
+	mso-bidi-font-family:"Times New Roman";
+	color:black;}
+p.ZMakeLine, li.ZMakeLine, div.ZMakeLine
+	{mso-style-name:"Z_Make Line";
+	mso-style-noshow:yes;
+	mso-style-parent:"";
+	margin:0in;
+	margin-bottom:.0001pt;
+	mso-pagination:widow-orphan;
+	border:none;
+	mso-border-bottom-alt:solid #003366 1.0pt;
+	padding:0in;
+	mso-padding-alt:0in 0in 1.0pt 0in;
+	font-size:10.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"Times New Roman";
+	mso-bidi-font-family:"Times New Roman";}
+p.listendLE, li.listendLE, div.listendLE
+	{mso-style-name:"listend \(LE\)";
+	mso-style-update:auto;
+	mso-style-parent:"";
+	mso-style-next:"Body Text";
+	margin-top:6.0pt;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:0in;
+	margin-bottom:.0001pt;
+	line-height:3.0pt;
+	mso-line-height-rule:exactly;
+	mso-pagination:widow-orphan;
+	font-size:12.0pt;
+	font-family:"Times New Roman";
+	mso-fareast-font-family:"Times New Roman";}
+p.InternalCommentsIC, li.InternalCommentsIC, div.InternalCommentsIC
+	{mso-style-name:"InternalComments \(IC\)";
+	mso-style-next:Normal;
+	margin-top:0in;
+	margin-right:0in;
+	margin-bottom:6.0pt;
+	margin-left:0in;
+	mso-pagination:widow-orphan;
+	font-size:10.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"Times New Roman";
+	mso-bidi-font-family:"Times New Roman";
+	display:none;
+	mso-hide:all;
+	font-weight:bold;
+	mso-bidi-font-weight:normal;}
+span.TitlepagetaglineChar
+	{mso-style-name:"Title page tagline Char";
+	mso-style-locked:yes;
+	mso-style-link:"Title page tagline";
+	mso-ansi-font-size:9.0pt;
+	mso-bidi-font-size:9.0pt;
+	font-family:Arial;
+	mso-ascii-font-family:Arial;
+	mso-hansi-font-family:Arial;
+	mso-bidi-font-family:Arial;
+	color:gray;
+	letter-spacing:.7pt;
+	mso-ansi-language:EN-US;
+	mso-fareast-language:EN-US;
+	mso-bidi-language:AR-SA;
+	font-style:italic;
+	mso-bidi-font-style:normal;}
+p.Titlepagetagline, li.Titlepagetagline, div.Titlepagetagline
+	{mso-style-name:"Title page tagline";
+	mso-style-update:auto;
+	mso-style-parent:"";
+	mso-style-link:"Title page tagline Char";
+	mso-style-next:Normal;
+	margin-top:6.0pt;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:0in;
+	margin-bottom:.0001pt;
+	mso-pagination:widow-orphan;
+	font-size:9.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"Times New Roman";
+	mso-bidi-font-family:"Times New Roman";
+	color:gray;
+	letter-spacing:.7pt;
+	font-style:italic;
+	mso-bidi-font-style:normal;}
+p.IntroductionHeader, li.IntroductionHeader, div.IntroductionHeader
+	{mso-style-name:"Introduction Header";
+	mso-style-update:auto;
+	mso-style-parent:"Heading 1\,h1";
+	margin-top:0in;
+	margin-right:0in;
+	margin-bottom:3.0pt;
+	margin-left:0in;
+	mso-pagination:widow-orphan;
+	mso-outline-level:1;
+	border:none;
+	mso-border-bottom-alt:solid windowtext .5pt;
+	padding:0in;
+	mso-padding-alt:0in 0in 1.0pt 0in;
+	font-size:14.0pt;
+	mso-bidi-font-size:16.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"MS Mincho";
+	mso-font-kerning:16.0pt;
+	font-weight:bold;}
+p.Noteend, li.Noteend, div.Noteend
+	{mso-style-name:"Note end";
+	mso-style-update:auto;
+	mso-style-parent:"listend \(LE\)";
+	mso-style-next:"Body Text";
+	margin-top:6.0pt;
+	margin-right:0in;
+	margin-bottom:0in;
+	margin-left:0in;
+	margin-bottom:.0001pt;
+	line-height:3.0pt;
+	mso-line-height-rule:exactly;
+	mso-pagination:widow-orphan;
+	font-size:12.0pt;
+	font-family:"Times New Roman";
+	mso-fareast-font-family:"Times New Roman";
+	mso-ansi-language:FR;}
+p.AlertBody, li.AlertBody, div.AlertBody
+	{mso-style-name:"Alert Body";
+	mso-style-update:auto;
+	mso-style-parent:"Body Text";
+	mso-style-next:"Note end";
+	margin-top:0in;
+	margin-right:0in;
+	margin-bottom:8.0pt;
+	margin-left:0in;
+	mso-pagination:widow-orphan;
+	border:none;
+	mso-border-bottom-alt:solid windowtext .5pt;
+	padding:0in;
+	mso-padding-alt:0in 0in 1.0pt 0in;
+	font-size:10.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"MS Mincho";
+	mso-bidi-font-family:"Times New Roman";
+	color:black;}
+p.AlertHeader, li.AlertHeader, div.AlertHeader
+	{mso-style-name:"Alert Header";
+	mso-style-update:auto;
+	mso-style-parent:"Note Heading";
+	mso-style-next:"Alert Body";
+	margin-top:0in;
+	margin-right:0in;
+	margin-bottom:2.0pt;
+	margin-left:0in;
+	mso-pagination:widow-orphan;
+	border:none;
+	mso-border-top-alt:solid windowtext .5pt;
+	padding:0in;
+	mso-padding-alt:1.0pt 0in 0in 0in;
+	font-size:9.0pt;
+	mso-bidi-font-size:10.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"MS Mincho";
+	mso-bidi-font-family:"Times New Roman";
+	color:maroon;
+	font-weight:bold;
+	mso-bidi-font-weight:normal;}
+p.AlertText, li.AlertText, div.AlertText
+	{mso-style-name:"Alert Text";
+	mso-style-update:auto;
+	mso-style-parent:"Body Text";
+	margin-top:0in;
+	margin-right:0in;
+	margin-bottom:8.0pt;
+	margin-left:0in;
+	mso-pagination:widow-orphan;
+	font-size:10.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"MS Mincho";
+	mso-bidi-font-family:"Times New Roman";
+	color:maroon;}
+p.Numlist, li.Numlist, div.Numlist
+	{mso-style-name:Numlist;
+	mso-style-parent:"";
+	margin:0in;
+	margin-bottom:.0001pt;
+	mso-pagination:widow-orphan;
+	tab-stops:.25in;
+	font-size:10.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"MS Mincho";
+	mso-bidi-font-family:"Times New Roman";
+	color:black;}
+p.List-NewParagraph, li.List-NewParagraph, div.List-NewParagraph
+	{mso-style-name:"List - New Paragraph";
+	mso-style-update:auto;
+	mso-style-parent:"Body Text";
+	mso-style-next:"Bullet List";
+	margin-top:0in;
+	margin-right:0in;
+	margin-bottom:4.0pt;
+	margin-left:9.35pt;
+	mso-pagination:widow-orphan;
+	font-size:10.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"MS Mincho";
+	mso-bidi-font-family:"Times New Roman";
+	color:black;}
+p.Style1, li.Style1, div.Style1
+	{mso-style-name:Style1;
+	mso-style-update:auto;
+	mso-style-parent:"Body Text";
+	mso-style-next:"Body Text";
+	margin-top:0in;
+	margin-right:0in;
+	margin-bottom:8.0pt;
+	margin-left:0in;
+	mso-pagination:widow-orphan;
+	font-size:9.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"MS Mincho";
+	mso-bidi-font-family:"Times New Roman";
+	color:maroon;}
+p.Notebody, li.Notebody, div.Notebody
+	{mso-style-name:"Note body";
+	mso-style-update:auto;
+	mso-style-parent:"";
+	mso-style-next:"Note end";
+	margin:0in;
+	margin-bottom:.0001pt;
+	mso-pagination:widow-orphan;
+	border:none;
+	mso-border-bottom-alt:solid windowtext .5pt;
+	padding:0in;
+	mso-padding-alt:0in 0in 1.0pt 0in;
+	font-size:10.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"MS Mincho";
+	mso-bidi-font-family:"Times New Roman";
+	color:black;
+	mso-ansi-language:FR;}
+p.list2NewParagraph, li.list2NewParagraph, div.list2NewParagraph
+	{mso-style-name:"list2 New Paragraph";
+	mso-style-update:auto;
+	mso-style-parent:"List - New Paragraph";
+	mso-style-next:"Body Text";
+	margin-top:0in;
+	margin-right:0in;
+	margin-bottom:4.0pt;
+	margin-left:36.7pt;
+	mso-pagination:widow-orphan;
+	font-size:10.0pt;
+	font-family:Arial;
+	mso-fareast-font-family:"MS Mincho";
+	mso-bidi-font-family:"Times New Roman";
+	color:black;}
+span.Superscript
+	{mso-style-name:Superscript;
+	mso-style-parent:"";
+	font-family:Arial;
+	mso-ascii-font-family:Arial;
+	mso-hansi-font-family:Arial;
+	mso-bidi-font-family:Arial;
+	vertical-align:super;}
+span.Subscript
+	{mso-style-name:Subscript;
+	mso-style-parent:"";
+	font-family:Arial;
+	mso-ascii-font-family:Arial;
+	mso-hansi-font-family:Arial;
+	mso-bidi-font-family:Arial;
+	vertical-align:sub;}
+span.PlainTextEmbedded
+	{mso-style-name:"Plain Text Embedded";
+	mso-ansi-font-size:10.0pt;
+	font-family:"Courier New";
+	mso-ascii-font-family:"Courier New";
+	mso-hansi-font-family:"Courier New";
+	mso-bidi-font-family:"Courier New";}
+span.Rev1
+	{mso-style-name:Rev1;
+	mso-style-noshow:yes;
+	mso-style-parent:"";
+	background:#CCFFFF;}
+span.Rev2
+	{mso-style-name:Rev2;
+	mso-style-noshow:yes;
+	mso-style-parent:"";
+	background:#FFFF99;}
+span.HHyperlink
+	{mso-style-name:H_Hyperlink;
+	mso-style-noshow:yes;
+	mso-style-parent:"";
+	color:blue;
+	text-decoration:underline;
+	text-underline:single;}
+span.HHyperlinktarget
+	{mso-style-name:"H_Hyperlink target";
+	mso-style-noshow:yes;
+	mso-style-parent:"";
+	color:red;
+	display:none;
+	mso-hide:all;
+	mso-no-proof:yes;}
+span.Bold
+	{mso-style-name:Bold;
+	font-weight:bold;
+	mso-bidi-font-weight:normal;}
+span.Italic
+	{mso-style-name:Italic;
+	font-style:italic;
+	mso-bidi-font-style:normal;}
+span.SpellE
+	{mso-style-name:"";
+	mso-spl-e:yes;}
+span.GramE
+	{mso-style-name:"";
+	mso-gram-e:yes;}
+@page Section1
+	{size:8.5in 11.0in;
+	margin:1.0in 120.25pt 1.0in 120.25pt;
+	mso-header-margin:.5in;
+	mso-footer-margin:.5in;
+	mso-title-page:yes;
+	mso-paper-source:0;}
+div.Section1
+	{page:Section1;}
+ /* List Definitions */
+ @list l0
+	{mso-list-id:-132;
+	mso-list-type:simple;
+	mso-list-template-ids:23374642;}
+@list l0:level1
+	{mso-level-tab-stop:1.25in;
+	mso-level-number-position:left;
+	margin-left:1.25in;
+	text-indent:-.25in;}
+@list l1
+	{mso-list-id:-131;
+	mso-list-type:simple;
+	mso-list-template-ids:2056054784;}
+@list l1:level1
+	{mso-level-tab-stop:1.0in;
+	mso-level-number-position:left;
+	margin-left:1.0in;
+	text-indent:-.25in;}
+@list l2
+	{mso-list-id:-130;
+	mso-list-type:simple;
+	mso-list-template-ids:1296881360;}
+@list l2:level1
+	{mso-level-tab-stop:.75in;
+	mso-level-number-position:left;
+	margin-left:.75in;
+	text-indent:-.25in;}
+@list l3
+	{mso-list-id:-129;
+	mso-list-type:simple;
+	mso-list-template-ids:-1929333084;}
+@list l4
+	{mso-list-id:-128;
+	mso-list-type:simple;
+	mso-list-template-ids:-226830618;}
+@list l4:level1
+	{mso-level-number-format:bullet;
+	mso-level-text:\F0B7;
+	mso-level-tab-stop:1.25in;
+	mso-level-number-position:left;
+	margin-left:1.25in;
+	text-indent:-.25in;
+	font-family:Symbol;}
+@list l5
+	{mso-list-id:-127;
+	mso-list-type:simple;
+	mso-list-template-ids:-1841295516;}
+@list l5:level1
+	{mso-level-number-format:bullet;
+	mso-level-text:\F0B7;
+	mso-level-tab-stop:1.0in;
+	mso-level-number-position:left;
+	margin-left:1.0in;
+	text-indent:-.25in;
+	font-family:Symbol;}
+@list l6
+	{mso-list-id:-126;
+	mso-list-type:simple;
+	mso-list-template-ids:842147498;}
+@list l6:level1
+	{mso-level-number-format:bullet;
+	mso-level-text:\F0B7;
+	mso-level-tab-stop:.75in;
+	mso-level-number-position:left;
+	margin-left:.75in;
+	text-indent:-.25in;
+	font-family:Symbol;}
+@list l7
+	{mso-list-id:-125;
+	mso-list-type:simple;
+	mso-list-template-ids:-1974810692;}
+@list l7:level1
+	{mso-level-number-format:bullet;
+	mso-level-text:\F0B7;
+	mso-level-tab-stop:.5in;
+	mso-level-number-position:left;
+	text-indent:-.25in;
+	font-family:Symbol;}
+@list l8
+	{mso-list-id:-120;
+	mso-list-type:simple;
+	mso-list-template-ids:-414388066;}
+@list l8:level1
+	{mso-level-tab-stop:.25in;
+	mso-level-number-position:left;
+	margin-left:.25in;
+	text-indent:-.25in;}
+@list l9
+	{mso-list-id:-119;
+	mso-list-type:simple;
+	mso-list-template-ids:-439347570;}
+@list l9:level1
+	{mso-level-number-format:bullet;
+	mso-level-text:\F0B7;
+	mso-level-tab-stop:.25in;
+	mso-level-number-position:left;
+	margin-left:.25in;
+	text-indent:-.25in;
+	font-family:Symbol;}
+@list l10
+	{mso-list-id:1739211523;
+	mso-list-template-ids:-115292628;}
+@list l10:level1
+	{mso-level-tab-stop:.5in;
+	mso-level-number-position:left;
+	text-indent:-.25in;}
+@list l10:level2
+	{mso-level-tab-stop:1.0in;
+	mso-level-number-position:left;
+	text-indent:-.25in;}
+@list l10:level3
+	{mso-level-tab-stop:1.5in;
+	mso-level-number-position:left;
+	text-indent:-.25in;}
+@list l10:level4
+	{mso-level-tab-stop:2.0in;
+	mso-level-number-position:left;
+	text-indent:-.25in;}
+@list l10:level5
+	{mso-level-tab-stop:2.5in;
+	mso-level-number-position:left;
+	text-indent:-.25in;}
+@list l10:level6
+	{mso-level-tab-stop:3.0in;
+	mso-level-number-position:left;
+	text-indent:-.25in;}
+@list l10:level7
+	{mso-level-tab-stop:3.5in;
+	mso-level-number-position:left;
+	text-indent:-.25in;}
+@list l10:level8
+	{mso-level-tab-stop:4.0in;
+	mso-level-number-position:left;
+	text-indent:-.25in;}
+@list l10:level9
+	{mso-level-tab-stop:4.5in;
+	mso-level-number-position:left;
+	text-indent:-.25in;}
+ol
+	{margin-bottom:0in;}
+ul
+	{margin-bottom:0in;}
+-->
+</style>
+<!--[if gte mso 10]>
+<style>
+ /* Style Definitions */
+ table.MsoNormalTable
+	{mso-style-name:"Table Normal";
+	mso-tstyle-rowband-size:0;
+	mso-tstyle-colband-size:0;
+	mso-style-noshow:yes;
+	mso-style-parent:"";
+	mso-padding-alt:0in 5.4pt 0in 5.4pt;
+	mso-para-margin:0in;
+	mso-para-margin-bottom:.0001pt;
+	mso-pagination:widow-orphan;
+	font-size:10.0pt;
+	font-family:"Times New Roman";
+	mso-ansi-language:#0400;
+	mso-fareast-language:#0400;
+	mso-bidi-language:#0400;}
+table.MsoTableProfessional
+	{mso-style-name:"Table Professional";
+	mso-tstyle-rowband-size:0;
+	mso-tstyle-colband-size:0;
+	border:solid black 1.0pt;
+	mso-border-alt:solid black .75pt;
+	mso-padding-alt:0in 5.4pt 0in 5.4pt;
+	mso-border-insideh:.75pt solid black;
+	mso-border-insidev:.75pt solid black;
+	mso-para-margin-top:0in;
+	mso-para-margin-right:0in;
+	mso-para-margin-bottom:6.0pt;
+	mso-para-margin-left:0in;
+	mso-pagination:widow-orphan;
+	font-size:10.0pt;
+	font-family:"Times New Roman";
+	mso-ansi-language:#0400;
+	mso-fareast-language:#0400;
+	mso-bidi-language:#0400;}
+table.MsoTableProfessionalFirstRow
+	{mso-style-name:"Table Professional";
+	mso-table-condition:first-row;
+	mso-tstyle-shading:white;
+	mso-tstyle-pattern:solid black;
+	mso-tstyle-diagonal-down:0in none windowtext;
+	mso-tstyle-diagonal-up:0in none windowtext;
+	color:windowtext;
+	mso-ansi-font-weight:bold;
+	mso-bidi-font-weight:bold;}
+table.MsoTableGrid
+	{mso-style-name:"Table Grid";
+	mso-tstyle-rowband-size:0;
+	mso-tstyle-colband-size:0;
+	border:solid windowtext 1.0pt;
+	mso-border-alt:solid windowtext .5pt;
+	mso-padding-alt:0in 5.4pt 0in 5.4pt;
+	mso-border-insideh:.5pt solid windowtext;
+	mso-border-insidev:.5pt solid windowtext;
+	mso-para-margin-top:0in;
+	mso-para-margin-right:0in;
+	mso-para-margin-bottom:6.0pt;
+	mso-para-margin-left:0in;
+	mso-pagination:widow-orphan;
+	font-size:10.0pt;
+	font-family:"Times New Roman";
+	mso-ansi-language:#0400;
+	mso-fareast-language:#0400;
+	mso-bidi-language:#0400;}
+table.Tablerowcell
+	{mso-style-name:"Table row cell";
+	mso-tstyle-rowband-size:0;
+	mso-tstyle-colband-size:0;
+	border:solid windowtext 1.0pt;
+	mso-border-alt:solid windowtext .25pt;
+	mso-padding-alt:0in 5.4pt 0in 5.4pt;
+	mso-border-insideh:.25pt solid windowtext;
+	mso-border-insidev:.25pt solid windowtext;
+	mso-tstyle-vert-align:middle;
+	mso-para-margin:0in;
+	mso-para-margin-bottom:.0001pt;
+	mso-pagination:widow-orphan;
+	font-size:10.0pt;
+	font-family:Arial;
+	mso-ansi-language:#0400;
+	mso-fareast-language:#0400;
+	mso-bidi-language:#0400;}
+table.TablerowcellFirstRow
+	{mso-style-name:"Table row cell";
+	mso-table-condition:first-row;
+	mso-tstyle-shading:#D9E3ED;
+	font-family:Arial;
+	mso-ascii-font-family:Arial;
+	mso-hansi-font-family:Arial;
+	mso-bidi-font-family:Arial;}
+table.Tableheadercell
+	{mso-style-name:"Table header cell";
+	mso-tstyle-rowband-size:0;
+	mso-tstyle-colband-size:0;
+	border:solid windowtext 1.0pt;
+	mso-border-alt:solid windowtext .25pt;
+	mso-padding-alt:0in 5.75pt 0in 5.75pt;
+	mso-border-insideh:.25pt solid windowtext;
+	mso-border-insidev:.25pt solid windowtext;
+	mso-tstyle-shading:#D9E3ED;
+	mso-tstyle-vert-align:middle;
+	mso-para-margin:0in;
+	mso-para-margin-bottom:.0001pt;
+	mso-pagination:widow-orphan;
+	font-size:10.0pt;
+	font-family:Arial;
+	mso-ansi-language:#0400;
+	mso-fareast-language:#0400;
+	mso-bidi-language:#0400;}
+table.TableheadercellFirstRow
+	{mso-style-name:"Table header cell";
+	mso-table-condition:first-row;
+	font-family:Arial;
+	mso-ascii-font-family:Arial;
+	mso-hansi-font-family:Arial;
+	mso-bidi-font-family:Arial;}
+</style>
+<![endif]--><!--[if gte mso 9]><xml>
+ <o:shapedefaults v:ext="edit" spidmax="2050">
+  <o:colormenu v:ext="edit" fillcolor="silver"/>
+ </o:shapedefaults></xml><![endif]--><!--[if gte mso 9]><xml>
+ <o:shapelayout v:ext="edit">
+  <o:idmap v:ext="edit" data="1"/>
+ </o:shapelayout></xml><![endif]-->
+</head>
+
+<body lang=EN-US link=blue vlink=purple style='tab-interval:.5in'>
+
+<div class=Section1>
+
+<p class=MsoTitle>NDISTest Single Adapter Test</p>
+
+<div style='mso-element:para-border-div;border:none;border-bottom:solid windowtext 1.0pt;
+mso-border-bottom-alt:solid windowtext .5pt;padding:0in 0in 1.0pt 0in'>
+
+<p class=IntroductionHeader><a name="_Toc64254175">Introduction</a></p>
+
+</div>
+
+<p class=MsoBodyText><span style='mso-bidi-font-family:Arial'>The <span
+class=SpellE>NDISTest</span> is a test suite that the Microsoft® Windows® team
+provides to verify network, modem, NDIS intermediate driver (IM), and Winsock
+Direct drivers and devices.&nbsp;The Windows team uses NDISTest to verify
+devices that are to be shipped with the operating system.&nbsp;Windows Hardware
+Quality Lab (WHQL) also uses NDISTest as part of its suite of tests for Logo
+and driver signing.</span></p>
+
+<h4><b>Contents<o:p></o:p></b></h4>
+
+<p class=MsoToc1><!--[if supportFields]><span style='mso-element:field-begin'></span><span
+style='mso-spacerun:yes'> </span>TOC \o &quot;1-3&quot; \h \z \u <span
+style='mso-element:field-separator'></span><![endif]--><span
+class=MsoHyperlink><a href="#_Toc64254175">Introduction<span style='mso-bidi-font-family:
+"Times New Roman";color:black;display:none;mso-hide:screen;text-decoration:
+none;text-underline:none'><span style='mso-tab-count:1 dotted'>. </span></span><!--[if supportFields]><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-element:field-begin'></span></span><span style='mso-bidi-font-family:
+"Times New Roman";color:black;display:none;mso-hide:screen;text-decoration:
+none;text-underline:none'> PAGEREF _Toc64254175 \h </span><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-element:field-separator'></span></span><![endif]--><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'>1</span><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><!--[if gte mso 9]><xml>
+ <w:data>08D0C9EA79F9BACE118C8200AA004BA90B02000000080000000D0000005F0054006F006300360034003200350034003100370035000000</w:data>
+</xml><![endif]--></span><!--[if supportFields]><span style='mso-bidi-font-family:
+"Times New Roman";color:black;display:none;mso-hide:screen;text-decoration:
+none;text-underline:none'><span style='mso-element:field-end'></span></span><![endif]--></a></span><span
+style='font-size:12.0pt;font-family:"Times New Roman";mso-fareast-font-family:
+"Times New Roman";color:windowtext'><o:p></o:p></span></p>
+
+<p class=MsoToc1><span class=MsoHyperlink><a href="#_Toc64254176">Scope<span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-tab-count:1 dotted'>. </span></span><!--[if supportFields]><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-element:field-begin'></span></span><span style='mso-bidi-font-family:
+"Times New Roman";color:black;display:none;mso-hide:screen;text-decoration:
+none;text-underline:none'> PAGEREF _Toc64254176 \h </span><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-element:field-separator'></span></span><![endif]--><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'>1</span><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><!--[if gte mso 9]><xml>
+ <w:data>08D0C9EA79F9BACE118C8200AA004BA90B02000000080000000D0000005F0054006F006300360034003200350034003100370036000000</w:data>
+</xml><![endif]--></span><!--[if supportFields]><span style='mso-bidi-font-family:
+"Times New Roman";color:black;display:none;mso-hide:screen;text-decoration:
+none;text-underline:none'><span style='mso-element:field-end'></span></span><![endif]--></a></span><span
+style='font-size:12.0pt;font-family:"Times New Roman";mso-fareast-font-family:
+"Times New Roman";color:windowtext'><o:p></o:p></span></p>
+
+<p class=MsoToc1><span class=MsoHyperlink><a href="#_Toc64254177">Global
+Information<span style='mso-bidi-font-family:"Times New Roman";color:black;
+display:none;mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-tab-count:1 dotted'>. </span></span><!--[if supportFields]><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-element:field-begin'></span></span><span style='mso-bidi-font-family:
+"Times New Roman";color:black;display:none;mso-hide:screen;text-decoration:
+none;text-underline:none'> PAGEREF _Toc64254177 \h </span><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-element:field-separator'></span></span><![endif]--><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'>1</span><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><!--[if gte mso 9]><xml>
+ <w:data>08D0C9EA79F9BACE118C8200AA004BA90B02000000080000000D0000005F0054006F006300360034003200350034003100370037000000</w:data>
+</xml><![endif]--></span><!--[if supportFields]><span style='mso-bidi-font-family:
+"Times New Roman";color:black;display:none;mso-hide:screen;text-decoration:
+none;text-underline:none'><span style='mso-element:field-end'></span></span><![endif]--></a></span><span
+style='font-size:12.0pt;font-family:"Times New Roman";mso-fareast-font-family:
+"Times New Roman";color:windowtext'><o:p></o:p></span></p>
+
+<p class=MsoToc2><span class=MsoHyperlink><a href="#_Toc64254178"><b>Background
+Information</b><span style='mso-bidi-font-family:"Times New Roman";color:black;
+display:none;mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-tab-count:1 dotted'>. </span></span><!--[if supportFields]><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-element:field-begin'></span></span><span style='mso-bidi-font-family:
+"Times New Roman";color:black;display:none;mso-hide:screen;text-decoration:
+none;text-underline:none'> PAGEREF _Toc64254178 \h </span><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-element:field-separator'></span></span><![endif]--><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'>1</span><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><!--[if gte mso 9]><xml>
+ <w:data>08D0C9EA79F9BACE118C8200AA004BA90B02000000080000000D0000005F0054006F006300360034003200350034003100370038000000</w:data>
+</xml><![endif]--></span><!--[if supportFields]><span style='mso-bidi-font-family:
+"Times New Roman";color:black;display:none;mso-hide:screen;text-decoration:
+none;text-underline:none'><span style='mso-element:field-end'></span></span><![endif]--></a></span><span
+style='font-size:12.0pt;font-family:"Times New Roman";mso-fareast-font-family:
+"Times New Roman";color:windowtext'><o:p></o:p></span></p>
+
+<p class=MsoToc2><span class=MsoHyperlink><a href="#_Toc64254179"><b>Installation</b><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-tab-count:1 dotted'>. </span></span><!--[if supportFields]><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-element:field-begin'></span></span><span style='mso-bidi-font-family:
+"Times New Roman";color:black;display:none;mso-hide:screen;text-decoration:
+none;text-underline:none'> PAGEREF _Toc64254179 \h </span><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-element:field-separator'></span></span><![endif]--><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'>2</span><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><!--[if gte mso 9]><xml>
+ <w:data>08D0C9EA79F9BACE118C8200AA004BA90B02000000080000000D0000005F0054006F006300360034003200350034003100370039000000</w:data>
+</xml><![endif]--></span><!--[if supportFields]><span style='mso-bidi-font-family:
+"Times New Roman";color:black;display:none;mso-hide:screen;text-decoration:
+none;text-underline:none'><span style='mso-element:field-end'></span></span><![endif]--></a></span><span
+style='font-size:12.0pt;font-family:"Times New Roman";mso-fareast-font-family:
+"Times New Roman";color:windowtext'><o:p></o:p></span></p>
+
+<p class=MsoToc2><span class=MsoHyperlink><a href="#_Toc64254180"><b>Environment
+Requirements</b><span style='mso-bidi-font-family:"Times New Roman";color:black;
+display:none;mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-tab-count:1 dotted'>. </span></span><!--[if supportFields]><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-element:field-begin'></span></span><span style='mso-bidi-font-family:
+"Times New Roman";color:black;display:none;mso-hide:screen;text-decoration:
+none;text-underline:none'> PAGEREF _Toc64254180 \h </span><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-element:field-separator'></span></span><![endif]--><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'>2</span><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><!--[if gte mso 9]><xml>
+ <w:data>08D0C9EA79F9BACE118C8200AA004BA90B02000000080000000D0000005F0054006F006300360034003200350034003100380030000000</w:data>
+</xml><![endif]--></span><!--[if supportFields]><span style='mso-bidi-font-family:
+"Times New Roman";color:black;display:none;mso-hide:screen;text-decoration:
+none;text-underline:none'><span style='mso-element:field-end'></span></span><![endif]--></a></span><span
+style='font-size:12.0pt;font-family:"Times New Roman";mso-fareast-font-family:
+"Times New Roman";color:windowtext'><o:p></o:p></span></p>
+
+<p class=MsoToc2><span class=MsoHyperlink><a href="#_Toc64254181"><b>Content
+Quality</b><span style='mso-bidi-font-family:"Times New Roman";color:black;
+display:none;mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-tab-count:1 dotted'>. </span></span><!--[if supportFields]><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-element:field-begin'></span></span><span style='mso-bidi-font-family:
+"Times New Roman";color:black;display:none;mso-hide:screen;text-decoration:
+none;text-underline:none'> PAGEREF _Toc64254181 \h </span><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-element:field-separator'></span></span><![endif]--><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'>2</span><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><!--[if gte mso 9]><xml>
+ <w:data>08D0C9EA79F9BACE118C8200AA004BA90B02000000080000000D0000005F0054006F006300360034003200350034003100380031000000</w:data>
+</xml><![endif]--></span><!--[if supportFields]><span style='mso-bidi-font-family:
+"Times New Roman";color:black;display:none;mso-hide:screen;text-decoration:
+none;text-underline:none'><span style='mso-element:field-end'></span></span><![endif]--></a></span><span
+style='font-size:12.0pt;font-family:"Times New Roman";mso-fareast-font-family:
+"Times New Roman";color:windowtext'><o:p></o:p></span></p>
+
+<p class=MsoToc2><span class=MsoHyperlink><a href="#_Toc64254182"><b>Diagnosability</b><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-tab-count:1 dotted'>. </span></span><!--[if supportFields]><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-element:field-begin'></span></span><span style='mso-bidi-font-family:
+"Times New Roman";color:black;display:none;mso-hide:screen;text-decoration:
+none;text-underline:none'> PAGEREF _Toc64254182 \h </span><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-element:field-separator'></span></span><![endif]--><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'>3</span><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><!--[if gte mso 9]><xml>
+ <w:data>08D0C9EA79F9BACE118C8200AA004BA90B02000000080000000D0000005F0054006F006300360034003200350034003100380032000000</w:data>
+</xml><![endif]--></span><!--[if supportFields]><span style='mso-bidi-font-family:
+"Times New Roman";color:black;display:none;mso-hide:screen;text-decoration:
+none;text-underline:none'><span style='mso-element:field-end'></span></span><![endif]--></a></span><span
+style='font-size:12.0pt;font-family:"Times New Roman";mso-fareast-font-family:
+"Times New Roman";color:windowtext'><o:p></o:p></span></p>
+
+<p class=MsoToc1><span class=MsoHyperlink><a href="#_Toc64254183">Test-Specific
+Information<span style='mso-bidi-font-family:"Times New Roman";color:black;
+display:none;mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-tab-count:1 dotted'>. </span></span><!--[if supportFields]><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-element:field-begin'></span></span><span style='mso-bidi-font-family:
+"Times New Roman";color:black;display:none;mso-hide:screen;text-decoration:
+none;text-underline:none'> PAGEREF _Toc64254183 \h </span><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-element:field-separator'></span></span><![endif]--><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'>3</span><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><!--[if gte mso 9]><xml>
+ <w:data>08D0C9EA79F9BACE118C8200AA004BA90B02000000080000000D0000005F0054006F006300360034003200350034003100380033000000</w:data>
+</xml><![endif]--></span><!--[if supportFields]><span style='mso-bidi-font-family:
+"Times New Roman";color:black;display:none;mso-hide:screen;text-decoration:
+none;text-underline:none'><span style='mso-element:field-end'></span></span><![endif]--></a></span><span
+style='font-size:12.0pt;font-family:"Times New Roman";mso-fareast-font-family:
+"Times New Roman";color:windowtext'><o:p></o:p></span></p>
+
+<p class=MsoToc2><span class=MsoHyperlink><a href="#_Toc64254184"><b>General
+Test Information</b><span style='mso-bidi-font-family:"Times New Roman";
+color:black;display:none;mso-hide:screen;text-decoration:none;text-underline:
+none'><span style='mso-tab-count:1 dotted'>. </span></span><!--[if supportFields]><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-element:field-begin'></span></span><span style='mso-bidi-font-family:
+"Times New Roman";color:black;display:none;mso-hide:screen;text-decoration:
+none;text-underline:none'> PAGEREF _Toc64254184 \h </span><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-element:field-separator'></span></span><![endif]--><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'>3</span><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><!--[if gte mso 9]><xml>
+ <w:data>08D0C9EA79F9BACE118C8200AA004BA90B02000000080000000D0000005F0054006F006300360034003200350034003100380034000000</w:data>
+</xml><![endif]--></span><!--[if supportFields]><span style='mso-bidi-font-family:
+"Times New Roman";color:black;display:none;mso-hide:screen;text-decoration:
+none;text-underline:none'><span style='mso-element:field-end'></span></span><![endif]--></a></span><span
+style='font-size:12.0pt;font-family:"Times New Roman";mso-fareast-font-family:
+"Times New Roman";color:windowtext'><o:p></o:p></span></p>
+
+<p class=MsoToc2><span class=MsoHyperlink><a href="#_Toc64254185"><b>Logo
+Test–Specific Information</b><span style='mso-bidi-font-family:"Times New Roman";
+color:black;display:none;mso-hide:screen;text-decoration:none;text-underline:
+none'><span style='mso-tab-count:1 dotted'>. </span></span><!--[if supportFields]><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-element:field-begin'></span></span><span style='mso-bidi-font-family:
+"Times New Roman";color:black;display:none;mso-hide:screen;text-decoration:
+none;text-underline:none'> PAGEREF _Toc64254185 \h </span><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><span
+style='mso-element:field-separator'></span></span><![endif]--><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'>3</span><span
+style='mso-bidi-font-family:"Times New Roman";color:black;display:none;
+mso-hide:screen;text-decoration:none;text-underline:none'><!--[if gte mso 9]><xml>
+ <w:data>08D0C9EA79F9BACE118C8200AA004BA90B02000000080000000D0000005F0054006F006300360034003200350034003100380035000000</w:data>
+</xml><![endif]--></span><!--[if supportFields]><span style='mso-bidi-font-family:
+"Times New Roman";color:black;display:none;mso-hide:screen;text-decoration:
+none;text-underline:none'><span style='mso-element:field-end'></span></span><![endif]--></a></span><span
+style='font-size:12.0pt;font-family:"Times New Roman";mso-fareast-font-family:
+"Times New Roman";color:windowtext'><o:p></o:p></span></p>
+
+<p class=MsoToc1><!--[if supportFields]><span style='mso-element:field-end'></span><![endif]--><o:p>&nbsp;</o:p></p>
+
+<div style='mso-element:para-border-div;border:none;border-bottom:solid windowtext 1.0pt;
+mso-border-bottom-alt:solid windowtext .5pt;padding:0in 0in 1.0pt 0in'>
+
+<h1><a name="_Toc64254176">Scope</a></h1>
+
+</div>
+
+<p class=MsoBodyText>This is a network device/driver test.</p>
+
+<p class=MsoBodyText><o:p>&nbsp;</o:p></p>
+
+<div style='mso-element:para-border-div;border:none;border-bottom:solid windowtext 1.0pt;
+mso-border-bottom-alt:solid windowtext .5pt;padding:0in 0in 1.0pt 0in'>
+
+<h1><a name="_Toc64254177">Global Information</a></h1>
+
+</div>
+
+<h2><a name="_Toc64254178"><b>Background Information</b></a><b><o:p></o:p></b></h2>
+
+<h5><b>Primary Operating System<o:p></o:p></b></h5>
+
+<p class=MsoBodyText>Microsoft Windows codename “Longhorn”<span
+style='color:navy'><o:p></o:p></span></p>
+
+<h5><b>Supported Operating Systems<o:p></o:p></b></h5>
+
+<p class=MsoBodyText>Microsoft Windows XP and Microsoft Windows Server™ 2003</p>
+
+<h5><b>Device\Driver Category<o:p></o:p></b></h5>
+
+<p class=MsoBodyText>Networking: local area network (LAN) and wireless local
+area network (WLAN)</p>
+
+<h5><b>Related DDK Topics<o:p></o:p></b></h5>
+
+<p class=MsoBodyText>Network Devices and Protocols</p>
+
+<h5><b>Friendly Name<o:p></o:p></b></h5>
+
+<p class=MsoBodyText>NDISTest<span style='color:navy'><o:p></o:p></span></p>
+
+<h5 style='page-break-after:avoid'><b>Description<o:p></o:p></b></h5>
+
+<p class=MsoBodyText><span style='mso-bidi-font-family:Arial'>NDISTest is a test
+suite that the Microsoft Windows team provides to verify network, modem, NDIS
+IM, and Winsock Direct drivers and devices.&nbsp;The Windows team uses NDISTest
+to verify devices that are to be shipped with the operating system.&nbsp;WHQL
+also uses NDISTest as part of its suite of tests for logo and driver signing.</span></p>
+
+<h5><b>Theory of Operation<o:p></o:p></b></h5>
+
+<p class=MsoBodyText>The 1c_KernelCalls default script determines the kernel
+calls that the driver is making and then checks to see if the calls are legal.
+For some illegal calls, the log file also contains information on which legal
+functions can be substituted for illegal function calls.</p>
+
+<h2><a name="_Toc64254179"><b>Installation</b></a><b><o:p></o:p></b></h2>
+
+<h5><b>Installation Steps<o:p></o:p></b></h5>
+
+<p class=MsoBodyText>The test installs as part of the Longhorn Driver Kit
+(LDK). You can launch the test by using the LDK Test Harness job titled “<span
+style='mso-bidi-font-weight:bold'>NDISTest Single Adapter Test.”</span></p>
+
+<h5><b>File Location<o:p></o:p></b></h5>
+
+<p class=MsoBodyText>On the test client, the test is copied to the
+%SYSTEMDRIVE%\NDISTest directory. When executed the first time, it creates the
+HKCU\Software\Microsoft\<span class=SpellE>NDTest</span> registry key.<span
+style='color:navy'><o:p></o:p></span></p>
+
+<h5><b>Removal Steps<o:p></o:p></b></h5>
+
+<p class=MsoBodyText>NDISTest removes itself upon completion. You can manually
+remove it by deleting the directory and deleting the registry key
+HKCU\Software\Microsoft\NDTest.<span style='color:navy'><o:p></o:p></span></p>
+
+<p class=MsoBodyText><o:p>&nbsp;</o:p></p>
+
+<h2><a name="_Toc64254180"><b>Environment Requirements</b></a><b><o:p></o:p></b></h2>
+
+<h5><b>Required Hardware<o:p></o:p></b></h5>
+
+<p class=MsoBodyText>At least one LAN/WLAN network card is required on the test
+client. This version of NDISTest runs only on x86 systems.<span
+style='color:navy'><o:p></o:p></span></p>
+
+<h5><b>Required Software<o:p></o:p></b></h5>
+
+<p class=MsoBodyText>This test requires no additional software.<span
+style='color:navy'><o:p></o:p></span></p>
+
+<h5><b>Unsupported Hardware<o:p></o:p></b></h5>
+
+<p class=MsoBodyText>This version of NDISTest does not work on AMD64 and IA64
+machines.</p>
+
+<h5><b>Tester Knowledge Requirements<o:p></o:p></b></h5>
+
+<p class=MsoBodyText>To interpret the results, you must have significant knowledge
+of network driver development. Very little to no networking knowledge is
+required just to run the test.<span style='color:navy'><o:p></o:p></span></p>
+
+<h2><a name="_Toc64254181"><b>Content Quality</b></a><b><o:p></o:p></b></h2>
+
+<h5><b>Unit Test<o:p></o:p></b></h5>
+
+<p class=MsoBodyText>NDISTest is verified by using internal verification
+scripts.</p>
+
+<h2 style='page-break-after:avoid'><a name="_Toc64254182"></a><span
+class=SpellE><span style='mso-bookmark:_Toc64254182'><b>Diagnosability</b></span></span><span
+style='mso-bookmark:_Toc64254182'></span><b><o:p></o:p></b></h2>
+
+<h5><b>Debugging Activation and Output<o:p></o:p></b></h5>
+
+<p class=MsoBodyText>NDISTest writes debug information into the results log
+file and also on the debugger. You can increase the level of debug information
+on the test machine. On the <b>Options </b>menu, point to <b>Debug Output</b>,
+and click <b>Loud</b>.<span style='color:navy'><o:p></o:p></span></p>
+
+<h5><b>Test Log Diagnosis<o:p></o:p></b></h5>
+
+<p class=MsoBodyText>At the beginning of each test log is a results summary
+that lists whether all tests passed. If any failures or warnings appear, use
+the hyperlinks to go to the actual failure. You can examine the log output
+above the failure line for the details of the actions that were performed during
+the test scenario and also possible causes of the failure.</p>
+
+<div style='mso-element:para-border-div;border:none;border-bottom:solid windowtext 1.0pt;
+mso-border-bottom-alt:solid windowtext .5pt;padding:0in 0in 1.0pt 0in'>
+
+<h1><a name="_Toc64254183">Test-Specific Information</a></h1>
+
+</div>
+
+<h2><a name="_Toc64254184"><b>General Test Information</b></a><b><o:p></o:p></b></h2>
+
+<h5><b>Manual vs. Automated<o:p></o:p></b></h5>
+
+<p class=MsoBodyText>This is an automated test.</p>
+
+<h5><b>Program Affiliation<o:p></o:p></b></h5>
+
+<p class=MsoBodyText>This test is used for logo testing and general LDK use.</p>
+
+<p class=MsoBodyText><o:p>&nbsp;</o:p></p>
+
+<h2><a name="_Toc64254185"><b>Logo Test–Specific Information</b></a><b><o:p></o:p></b></h2>
+
+<h5><b>Logo Program Requirements<o:p></o:p></b></h5>
+
+<p class=MsoBodyText>B7.1.3.1.8</p>
+
+<h5><b>Logo Testing Verification<o:p></o:p></b></h5>
+
+<p class=MsoBodyText>The log file contains information about the tests that
+failed or passed.</p>
+
+<h5><b>Test Duration<o:p></o:p></b></h5>
+
+<p class=MsoBodyText>This test runs for about 2 minutes.</p>
+
+<h5><b>Restart<o:p></o:p></b></h5>
+
+<p class=MsoBodyText>The test does not cause a computer restart.<span
+style='color:navy'><o:p></o:p></span></p>
+
+<h5><b>Default Configuration<o:p></o:p></b></h5>
+
+<p class=MsoBodyText>By default, the test chooses the first network adapter
+that was installed (or detected by the operating system).<span
+style='color:navy'><o:p></o:p></span></p>
+
+<h5 style='page-break-after:avoid'><b>Command-Line Arguments<o:p></o:p></b></h5>
+
+<p class=MsoBodyText style='page-break-after:avoid'>The following is the set of
+command line options for NDISTest.&nbsp;HCT Test Manager uses these options,
+but the options are not visible or accessible when NDISTest is running from the
+HCT Test Manager shell.&nbsp;To access these options, you must launch NDISTest
+from the command line or from a link with the supplied options.&nbsp;The
+following is an example:<b><o:p></o:p></b></p>
+
+<p class=MsoBodyText><span style='mso-tab-count:1'>            </span>C:\hct\testbin\i386\ndtest
+/u /<span class=SpellE><span class=GramE>tc</span></span><span class=GramE>:</span>{00-02-04-06-01-02}
+/<span class=SpellE>msg</span>:{139.33.45.33}<b><o:p></o:p></b></p>
+
+<p class=MsoBodyText>&nbsp;Here are the options and their meaning:<b><o:p></o:p></b></p>
+
+<p class=MsoBodyText style='tab-stops:.5in 1.5in'><span style='mso-tab-count:
+1'>            </span>/u<span style='mso-tab-count:1'>                     </span>Selects
+MANUAL TESTS option<br>
+<span style='mso-tab-count:1'>            </span>/hct<span style='mso-tab-count:
+1'>                   </span>Selects WHQL TESTS option<br>
+<span style='mso-tab-count:1'>            </span>/client<span style='mso-tab-count:
+1'>               </span>Selects CLIENT option<br>
+<span style='mso-tab-count:1'>            </span>/server<span style='mso-tab-count:
+1'>              </span>Selects SERVER option<br>
+<span style='mso-tab-count:1'>            </span>/tc:{GUID}<span
+style='mso-tab-count:1'>         </span>/tc:{xx-xx-xx-xx-xx-xx}<b><o:p></o:p></b></p>
+
+<p class=MsoBodyText>You can use either of these formats to select the TEST:
+device. A globally unique identifier (GUID) or medium access control (MAC)
+address can be supplied.&nbsp;Note that the leading 0 must be supplied;
+0-10-4b-ca-b3-29 will not work.&nbsp;The options are not case sensitive.<b> </b>Here
+is an example of each:<b><o:p></o:p></b></p>
+
+<p class=MsoBodyText><span style='mso-tab-count:1'>            </span>/tc:{C9F2D762-153C-43B3-8245-E288810B0AC8}<br>
+<span style='mso-tab-count:1'>            </span>/tc:00-10-4b-ca-b3-29&nbsp; </p>
+
+<p class=MsoBodyText>You can use either of these formats to select the MESSAGE:
+device.&nbsp;Replace the GUID with an Internet Protocol (IP) address.&nbsp;The
+MAC address is the MAC address of the device that this IP passes
+through.&nbsp;The format of the mac address is the same as the /<span
+class=GramE>tc</span>: option described earlier. Here is an example of each:<b><o:p></o:p></b></p>
+
+<p class=MsoBodyText><span style='mso-tab-count:1'>            </span>/<span
+class=GramE>msg:</span>{IP}<br>
+<span style='mso-tab-count:1'>            </span>/<span class=SpellE>msg</span>:{xx-xx-xx-xx-xx-xx}</p>
+
+<p class=MsoBodyText>You can select multiple support devices by providing
+either the GUID or MAC address. The format of the MAC address was described
+earlier in the /<span class=GramE>tc</span>: option. The <span class=SpellE>GUIDs</span>
+can be for either local or remote devices. When the backchannel discovers the
+remote device and adds it to the user interface (UI), the remote device is
+selected. You cannot use the MAC address to select remote devices. <b><o:p></o:p></b></p>
+
+<p class=MsoBodyText><span style='mso-tab-count:1'>            </span>/<span
+class=GramE>msg:</span>{157.59.140.190}<br>
+<span style='mso-tab-count:1'>            </span>/msg:00-10-4b-ca-b3-29<br>
+<span style='mso-tab-count:1'>            </span>/support:{GUID1}{GUID2}{xx-xx-xx-xx-xx-xx}{<span
+class=SpellE>yy-yy-yy-yy-yy-yy</span>}</p>
+
+<p class=MsoBodyText>You can select multiple scripts by providing their names.
+If any scripts are selected, then all of the other scripts are unselected. The
+scripts are guaranteed to have unique names.<b><o:p></o:p></b></p>
+
+<p class=MsoBodyText><span style='mso-tab-count:1'>            </span>/script:{scriptname.wsf}{scriptname2.wsf}<b><o:p></o:p></b></p>
+
+<p class=MsoBodyText>This option causes all <span class=SpellE>nonerror</span>
+pop-up messages to time out after 60 seconds. Errors are logged in the log
+file, but the tests do not stop. This option is intended for internal testing:<b><o:p></o:p></b></p>
+
+<p class=MsoBodyText><span style='mso-tab-count:1'>            </span>/<span
+class=SpellE>tp</span><b><o:p></o:p></b></p>
+
+<p class=MsoBodyText>These options control the driver verifier settings: </p>
+
+<p class=MsoBodyText><span style='mso-tab-count:1'>            </span>/<span
+class=SpellE><span class=GramE>dvi</span></span><span style='mso-tab-count:
+1'>       </span>driver verifier ignore<br>
+<span style='mso-tab-count:1'>            </span>/<span class=SpellE>dve</span><span
+style='mso-tab-count:1'>      </span>driver verifier enable<br>
+<span style='mso-tab-count:1'>            </span>/<span class=SpellE>dvd</span><span
+style='mso-tab-count:1'>     </span>driver verifier disable<b><o:p></o:p></b></p>
+
+<p class=MsoBodyText>This option causes the <b>Start </b>button to be depressed
+automatically. The tests run, and then the NDISTest exits. Note that in server
+mode the server script does not end until the user stops it.<b><o:p></o:p></b></p>
+
+<p class=MsoBodyText><span style='mso-tab-count:1'>            </span>/auto<b><o:p></o:p></b></p>
+
+<p class=MsoBodyText>This option causes the UI not to register the COM
+direct-link libraries (DLLs), not to check their versions numbers, and not to
+end ndinfo, ndtsession, and ndtcommws if they are running when it starts. You
+can use this to mix and match different versions of DLLs. It is usually used
+during development.<b><o:p></o:p></b></p>
+
+<p class=MsoBodyText><span style='mso-tab-count:1'>            </span>/noreg<b><o:p></o:p></b></p>
+
+<p class=MsoBodyText>This option notifies NDISTest that the test devices are
+ISDN or Cell modems. Currently, NDISTest cannot determine this
+programmatically.<b><o:p></o:p></b></p>
+
+<p class=MsoBodyText><span style='mso-tab-count:1'>            </span>/isdnmodem<br>
+<span style='mso-tab-count:1'>            </span>/<span class=SpellE>cellmodem</span><b><o:p></o:p></b></p>
+
+<p class=MsoBodyText>This option notifies NDISTest that this is a system test,
+not a device test.</p>
+
+<p class=MsoBodyText><span style='mso-tab-count:1'>            </span>/WHQLSystem<b><o:p></o:p></b></p>
+
+<p class=MsoBodyText><b><o:p>&nbsp;</o:p></b></p>
+
+</div>
+
+</body>
+
+</html>

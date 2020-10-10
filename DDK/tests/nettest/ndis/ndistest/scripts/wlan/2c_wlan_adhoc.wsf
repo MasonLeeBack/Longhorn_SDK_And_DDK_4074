@@ -1,0 +1,488 @@
+<package>
+<SCRIPTDEF>
+<RUNORDER>
+1902
+</RUNORDER>
+<MEDIA>
+802_3
+</MEDIA>
+<PHYMEDIA>
+WIRELESSLAN
+</PHYMEDIA>
+<WHQL>
+802_3
+</WHQL>
+<CARDMACH>
+2C,1M,2M
+</CARDMACH>
+<DESCRIPTION>
+<![CDATA[]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+	<job id="Job" prompt="no">
+		<?job error="true" debug="true"?>
+		<reference guid="{97B1B574-D0D4-4896-93B6-A2679336A8E1}" version="1.0"/>
+		<reference object="NDInfo.Info.1" version="1.0"/>
+		<reference object="NDTCore.base.1" version="1.0"/>
+		<object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+		<object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+		<object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+		<object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+		<object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+		<!-- Begin Wireless Specific Includes -->
+		<script language="VBScript" src="..\inc\CNDTStructMngr.vbs"/>
+		<script language="VBScript" src="..\inc\WlanConstants.vbs"/>
+		<script language="VBScript" src="..\inc\WlanLibrary.vbs"/>
+		<script language="VBScript" src="..\inc\CNDT1XSupp.vbs"/>
+		<script language="VBScript" src="..\inc\CWlanOpen.vbs"/>
+		<script language="VBScript" src="..\inc\CWlanCard.vbs"/>
+		<!-- End Wireless Specific Includes -->
+		<script language="VBScript" src="..\inc\Events.vbs"/>
+		<script language="VBScript" src="..\inc\clog.vbs"/>
+		<script language="VBScript" src="..\inc\Constants.vbs"/>
+		<script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+		<script language="VBScript" src="..\inc\utilities.vbs"/>
+		<script language="VBScript" src="..\inc\devchars.vbs"/>
+		<script language="VBScript" src="..\inc\general.vbs"/>
+		<script language="VBScript">
+Option Explicit 
+Dim oTest : Set oTest = Nothing
+
+Initialize()
+
+Do
+
+   Set oTest = New CTest
+   If(oTest.SetupTest(GetTestAdapterIndex(oNDInfo.AdapterList, 0), GetSupportAdapterIndex(oNDInfo.AdapterList, 0)) = False) Then
+      Exit Do
+   End If
+   
+   oTest.RunTest()
+   
+Loop While(False)
+
+oTest.CleanupTest()
+Set oTest = Nothing
+
+Terminate()
+
+Class CTest
+   
+   Private m_testCard
+   Private m_testOpen
+   Private m_testIndex
+   Private m_testGUID
+   
+   Private m_suppCard
+   Private m_suppOpen
+   Private m_suppIndex
+   Private m_suppGUID
+   
+   Private m_adapterList
+      
+   '================================================================================================='
+   Private Sub Class_Initialize
+      
+      Set m_adapterList = oNDInfo.AdapterList
+     
+   End Sub
+   
+   '================================================================================================='
+   Private Sub Class_Terminate
+   
+      Set m_testCard       = Nothing
+      Set m_testOpen       = Nothing
+      
+      Set m_suppCard       = Nothing
+      Set m_suppOpen       = Nothing
+      
+   End Sub
+   
+   '================================================================================================='
+   Public Function SetupTest(byval testIndex, byval suppIndex)
+   Dim result        : result       = -1
+   Dim ndisStatus    : ndisStatus   = -1
+   
+      SetupTest = False
+
+      m_testIndex = testIndex
+      m_suppIndex = suppIndex
+      
+      m_testGUID  = m_adapterList(m_testIndex).GUID
+      m_suppGUID  = m_adapterList(m_suppIndex).GUID
+
+      '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+      oLog.VariationEx "Setup test", Null
+      Do
+      
+         Set m_testCard = New CWlanCard
+         If (m_testCard is Nothing) Then
+            oLog.FailedEx "Failed to create CWlanCard class", Null, 88888
+            Exit Do
+         End If
+                  
+         Set m_testOpen = m_testCard.vbSetupBasicTest(m_adapterList(m_testIndex))
+         If (m_testOpen is Nothing) Then
+            Exit Do
+         End If
+         
+         Set m_suppCard = New CWlanCard
+         If (m_suppCard is Nothing) Then
+            oLog.FailedEx "Failed to create CWlanCard class", Null, 88888
+            Exit Do
+         End If
+                  
+         Set m_suppOpen = m_suppCard.vbSetupBasicTest(m_adapterList(m_suppIndex))
+         If (m_suppOpen is Nothing) Then
+            Exit Do
+         End If
+               
+      Loop While(False)
+                 
+      SetupTest = True
+      
+   End Function
+   
+   '================================================================================================='
+   Public Function CleanupTest()
+   Dim ndisStatus    : ndisStatus   = -1
+	   
+	   m_testOpen.vbWlanReset(True)
+	   m_suppOpen.vbWlanReset(True)
+	   
+	   oLog.Write ""
+	   oLog.Write "<b>TEST DEVICE TYPE:    " & vbDeviceTypeToString(m_testOpen.vbDeviceType) & "</b>"
+	   oLog.Write "<b>SUPPORT DEVICE TYPE: " & vbDeviceTypeToString(m_suppOpen.vbDeviceType) & "</b>"  
+	   oLog.Write ""
+	                     
+   End Function
+  
+   '================================================================================================='
+   Function RunTest()
+           
+      If(ExecuteTest(WLAN_IBSS) = False) Then
+      End If
+      
+   End Function
+   
+   '================================================================================================='
+   Function ExecuteTest(byval testSsid)
+   Dim retval              : retval	               = False
+   Dim packetsReceived     : packetsReceived       = 0
+   Dim index               : index                 = 0
+   Dim packetsSent         : packetsSent           = 0
+   Dim packetsToSend       : packetsToSend         = 50
+   Dim ndisStatus          : ndisStatus            = -1
+   Dim minDirectedPass     : minDirectedPass       = (WLAN_PERCENT_TO_PASS_DIRECTED * packetsToSend) / 100
+   Dim minBroadcastPass    : minBroadcastPass      = (WLAN_PERCENT_TO_PASS_BROADCAST * packetsToSend) / 100
+   Dim resets              : resets                = 0
+   Dim disconnects         : disconnects           = 0
+   Dim connects            : connects              = 0
+   Dim connectStatus       : connectStatus         = 0
+   Dim startTime           : startTime             = 0
+   Dim endTime             : endTime               = 0
+   Dim eventID             : eventID               = -1
+            
+      '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+      oLog.VariationEx  "Verify directed send\recv in IBSS mode", _
+                        "This test will create an IBSS cell on the support device, join the test device to it and " & _
+                        "verify directed packets can be sent\received"
+      Do
+                
+         ndisStatus = m_suppOpen.vbCreateIBSS(Ndis802_11AuthModeOpen,   _
+                                              Ndis802_11WEPEnabled,     _
+                                              &H80000000&,              _
+                                              WLAN_KEY_WEP,             _
+                                              Null,                     _
+                                              testSsid)     
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.FailedEx "Failed to create IBSS cell " & testSsid, Null, 88888
+            Exit Do
+         End If	 
+         
+         ndisStatus = m_testOpen.vbJoinIBSS(Ndis802_11AuthModeOpen,     _
+                                            Ndis802_11WEPEnabled,       _
+                                            &H80000000&,                _
+                                            WLAN_KEY_WEP,               _
+                                            Null,                       _
+                                            testSsid,                        _
+                                            WLAN_ASSOCIATE_TIMEOUT)     
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.FailedEx "Failed to join IBSS cell " & testSsid, Null, 88888
+            Exit Do
+         End If	 
+         
+         If(m_testOpen.vbDirectedSend(m_suppOpen, packetsToSend, packetsSent, packetsReceived) = False) Then   
+            oLog.FailedEx "vbDirectedSend() failed", Null, 88888
+            Exit Do
+         End If
+                  
+         If(packetsReceived < minDirectedPass) Then
+            oLog.Failed "Received less than the required amount of directed packets (Received: " & packetsReceived & ", Expected: " & minDirectedPass & ")", 88888
+         End If
+                                 
+      Loop While(False)
+      
+     '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+      oLog.VariationEx  "Verify broadcast send\recv in IBSS mode", _
+                        "This test will create an IBSS cell on the support device, join the test device to it and " & _
+                        "verify broadcast packets can be sent\received"
+      Do
+                  
+         ndisStatus = m_suppOpen.vbCreateIBSS(Ndis802_11AuthModeOpen,     _
+                                              Ndis802_11WEPEnabled,      _
+                                              &H80000000&,               _
+                                              WLAN_KEY_WEP,              _
+                                              Null,                      _
+                                              testSsid)     
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.FailedEx "Failed to create IBSS cell " & testSsid, Null, 88888
+            Exit Do
+         End If	 
+         
+         ndisStatus = m_testOpen.vbJoinIBSS(Ndis802_11AuthModeOpen,     _
+                                            Ndis802_11WEPEnabled,        _
+                                            &H80000000&,                 _
+                                            WLAN_KEY_WEP,                _
+                                            Null,                        _
+                                            testSsid,                        _
+                                            WLAN_ASSOCIATE_TIMEOUT)     
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.FailedEx "Failed to join IBSS cell " & testSsid, Null, 88888
+            Exit Do
+         End If	 
+                  
+         If(m_testOpen.vbBroadcastSend(m_suppOpen, packetsToSend, packetsSent, packetsReceived) = False) Then   
+            oLog.FailedEx "vbBroadcastSend() failed", Null, 88888
+            Exit Do
+         End If
+                 
+         If(packetsReceived < minBroadcastPass) Then
+            oLog.Failed "Received less than the required amount of broadcast packets (Received: " & packetsReceived & ", Expected: " & minBroadcastPass & ")", 88888
+         End If
+                         
+      Loop While(False)
+            	       
+      '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+      oLog.VariationEx  "Verify media connect events are not indicated when creating first cell", _
+                        "This test will create an IBSS cell and verify a media connect event is NOT indicated"
+      Do
+         
+         m_testOpen.vbClearEvents()
+         
+         ndisStatus = m_testOpen.vbCreateIBSS(Ndis802_11AuthModeOpen,     _
+                                              Ndis802_11WEPEnabled,      _
+                                              &H80000000&,               _
+                                              WLAN_KEY_WEP,              _
+                                              Null,                      _
+                                              testSsid)     
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.FailedEx "Failed to create IBSS cell " & testSsid, Null, 88888
+            Exit Do
+         End If	 
+                 
+   	   If(m_testOpen.vbGetEvents(resets, disconnects, connects) = False) Then
+            oLog.Failed "Failed to get events!", 88888
+            Exit Do
+         End If
+         
+         If(m_testOpen.vbMediaConnectStatus(connectStatus) = False) Then
+            oLog.Failed "Failed to get media connect status", 88888
+            Exit Do
+         End If
+         
+         If(Not connectStatus = WLAN_MEDIA_DISCONNECTED) Then
+            oLog.FailedEx  "Test device media connect status should have been disconnected", _
+                           "Driver must not change to media connect status connected when it is the first cell in an IBSS", 88888
+         End If   
+               
+         If(connects <> 0) Then
+             oLog.FailedEx "No media connect event should have been indicated (Received: " & connects & ")", _
+                           "Driver must not indicate a media connect event when creating the first cell in an IBSS", 88888
+         End If
+                       		
+      Loop While(False)
+      
+      '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+      oLog.VariationEx  "Verify a media connect event is indicated by both IBSS nodes after joining", _
+                        "This test will verify that both test and support device indicate a media connect " & _
+                        "when a node joins the cell"
+      Do
+         
+         m_testOpen.vbClearEvents()
+         
+         ndisStatus = m_suppOpen.vbCreateIBSS(Ndis802_11AuthModeOpen,     _
+                                              Ndis802_11WEPEnabled,      _
+                                              &H80000000&,               _
+                                              WLAN_KEY_WEP,              _
+                                              Null,                      _
+                                              testSsid)     
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.FailedEx "Failed to create IBSS cell " & testSsid, Null, 88888
+            Exit Do
+         End If	 
+         
+         ndisStatus = m_testOpen.vbJoinIBSS(Ndis802_11AuthModeOpen,     _
+                                            Ndis802_11WEPEnabled,        _
+                                            &H80000000&,                 _
+                                            WLAN_KEY_WEP,                _
+                                            Null,                        _
+                                            testSsid,                        _
+                                            WLAN_ASSOCIATE_TIMEOUT)     
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.FailedEx "Failed to join IBSS cell " & testSsid, Null, 88888
+            Exit Do
+         End If	 
+         
+      
+   	   If(m_testOpen.vbGetEvents(resets, disconnects, connects) = False) Then
+              oLog.Failed "Failed to get test device media events", 88888
+              Exit Do
+         End If
+                  
+         If(connects = 0) Then
+            oLog.FailedEx  "Test device failed to indicate a connect event", _
+                           "Driver must indicate a media connect event after joining an IBSS cell", 88888
+         ElseIf(connects <> 1) Then
+            oLog.FailedEx  "Test device indicated an invalid number of connect events (Received: " & connects & ", Expected: 1)", _
+                           "Driver must indicate a single connect event after joining an IBSS cell", 88888
+         End If
+         
+         If(m_suppOpen.vbGetEvents(resets, disconnects, connects) = False) Then
+              oLog.Failed "Failed to get support device media events", 88888
+              Exit Do
+         End If
+         
+         If(connects = 0) Then
+            oLog.FailedEx  "Support device failed to indicate a connect event", _
+                           "Driver must indicate a media connect event after joining an IBSS cell", 88888
+         ElseIf(connects <> 1) Then
+            oLog.FailedEx  "Support device indicated an invalid number of connect events(Received: " & connects & ", Expected: 1)", _
+                           "Driver must indicate a single connect event after joining an IBSS cell", 88888
+         End If
+                  		
+      Loop While(False)
+      
+      '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+      oLog.VariationEx  "Verify remaining cell indicates a disconnect after all nodes leave", _
+                        "This test will create an IBSS cell and join it, then disconnect and " & _
+                        "verify the final node in the cell indicates a disconnect"
+      Do
+                  
+         ndisStatus = m_testOpen.vbCreateIBSS(Ndis802_11AuthModeOpen,     _
+                                              Ndis802_11WEPEnabled,      _
+                                              &H80000000&,               _
+                                              WLAN_KEY_WEP,              _
+                                              Null,                      _
+                                              testSsid)     
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.FailedEx "Failed to create IBSS cell " & testSsid & vbStatusToString(ndisStatus), Null, 88888
+            Exit Do
+         End If	 
+         
+         ndisStatus = m_suppOpen.vbJoinIBSS(Ndis802_11AuthModeOpen,     _
+                                            Ndis802_11WEPEnabled,        _
+                                            &H80000000&,                 _
+                                            WLAN_KEY_WEP,                _
+                                            Null,                        _
+                                            testSsid,                    _
+                                            WLAN_ASSOCIATE_TIMEOUT)     
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.FailedEx "Failed to join IBSS cell " & testSsid & vbStatusToString(ndisStatus), Null, 88888
+            Exit Do
+         End If	 
+         
+         m_testOpen.vbClearEvents()
+         
+         'Now associate the test device with an AP so that it leaves the IBSS cell
+         ndisStatus = m_suppOpen.vbAssociate(Ndis802_11Infrastructure,  _
+                                             Ndis802_11AuthModeOpen,    _
+                                             Ndis802_11WEPEnabled,      _
+                                             &H80000000&,               _
+                                             WLAN_KEY_WEP,              _
+                                             Null,                      _
+                                             WLAN_WEP_AP1,                  _
+                                             WLAN_ASSOCIATE_TIMEOUT)      
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.FailedEx "Failed to associate with " & WLAN_WEP_AP1, Null, 88888
+            Exit Do
+         End If	 
+                    
+         ' Give a little more than a 10 second hystorisis
+         WScript.Sleep(12000)
+        
+   	   If(m_testOpen.vbGetEvents(resets, disconnects, connects) = False) Then
+            oLog.Failed "Failed to get test device media events", 88888
+            Exit Do
+         End If
+               
+         If(disconnects <> 1) Then
+            oLog.FailedEx "Test device should have indicated a disconnect event after test device disjoined its IBSS cell (Received: " & disconnects & ")", _
+                          "Driver must indicate a disconnect event after all STA have disconnected from it's IBSS cell", 88888
+         End If
+               
+         If(m_testOpen.vbMediaConnectStatus(connectStatus) = False) Then
+            oLog.Failed "Failed to get media connect status for test device", 88888
+            Exit Do
+         End If
+         
+         If(Not connectStatus = WLAN_MEDIA_DISCONNECTED) Then
+            oLog.FailedEx "Test device media connect status should have been disconnected", _
+                          "Driver must change it's media connect status to disconnected after all STA have disconnected from it's IBSS cell", 88888
+                          
+         End If   
+         		
+      Loop While(False)
+      
+      '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'     
+      oLog.VariationEx "Verify association with IBSS in 2 seconds or less", _
+                       "This test will verify the device can associate with an AP in 2 seconds of less"
+      Do
+               
+         ndisStatus = m_suppOpen.vbCreateIBSS(Ndis802_11AuthModeOpen,     _
+                                              Ndis802_11WEPEnabled,      _
+                                              &H80000000&,               _
+                                              WLAN_KEY_WEP,              _
+                                              Null,                      _
+                                              testSsid)     
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.FailedEx "Failed to create IBSS cell " & testSsid & vbStatusToString(ndisStatus), Null, 88888
+            Exit Do
+         End If	 
+         
+         If(m_testOpen.vbStartWaitForEvent(NDIS_STATUS_MEDIA_CONNECT) = False) Then
+            oLog.FailedEx "vbStartWaitForEvent() failed", Null, 88888
+            Exit Do
+         End If
+         
+         ndisStatus = m_testOpen.vbJoinIBSS(Ndis802_11AuthModeOpen,     _
+                                            Ndis802_11WEPEnabled,        _
+                                            &H80000000&,                 _
+                                            WLAN_KEY_WEP,                _
+                                            Null,                        _
+                                            testSsid,                        _
+                                            WLAN_ASSOCIATE_TIMEOUT)     
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.FailedEx "Failed to join IBSS cell " & testSsid & vbStatusToString(ndisStatus), Null, 88888
+            Exit Do
+         End If	 
+         
+         startTime = Timer
+         
+         If(m_testOpen.vbEndWaitForEvent(10) = False) Then
+            oLog.FailedEx  "Failed to indicate connect in 2 seconds of less", _
+                           "Driver must be able to associate with an IBSS in 2 seconds or less", 88888
+         Else
+            endTime = Timer
+            oLog.Write  "Association Time: " & endTime - startTime
+         End If
+            			    	    
+       Loop While(False)
+                             
+   End Function
+
+End Class
+	</script>
+</job>
+</package>
+<!--- CRC = 0xe14c42a7 --->

@@ -1,0 +1,1271 @@
+<!-- CRC = 0xf76ac12b -->
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3
+</MEDIA>
+<CARDMACH>
+1C,1M
+</CARDMACH>
+<RUNORDER>
+3020
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[
+This script test the various receive side scaling oids. The miniport should:
+
+1. Return a valid CAPABILITIES structure which includes support for
+   NdisHashFunctionToeplitz
+2. Accept all the PARAMETER sets if the hash information is valid & supported
+3. Reject the PARAMETER sets if the hash information is not supported or invalid
+   or if the hash table or the structure itself is not of the correct size.
+4. In case the miniport rejects a PARAMETER set, it should retain the previously
+   set PARAMETERs structure
+5. Miniport should handle 64 bit misaligned requests correctly.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="1c_Mini6RSSOids" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore6" progid="NDTCore6.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      <object id="oCoreFactory" progid="NDTCore6.Factory.1" events="true"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\inc\Constants6.vbs"/>
+      <script language="VBScript" src="..\inc\RSS.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard6.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen6.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanEndPoint6.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script id="1c_Mini6RSSOids.wsf" language="VBScript">
+'==========================================================================
+' Script Name:    1c_Mini6RSSOids
+'==========================================================================
+Option Explicit
+
+' Whether the parameters we are setting are valid or not
+Const RSS_PARAMETERS_VALID          = &H01&
+Const RSS_PARAMETERS_INVALID        = &H02&
+Const RSS_PARAMETERS_UNSUPPORTED    = &H04&
+
+' Tell what to do if miniports succeeds an invalid parameter or fails
+' a valid parameter
+Const RSS_IGNORE_SET_ERROR          = &H10&
+Const RSS_FAIL_ON_SET_ERROR         = &H20&
+Const RSS_WARN_ON_SET_ERROR         = &H40&
+
+' Should we verify if it was set correctly?
+Const RSS_DO_NOT_VERIFY_SET         = &H80&
+
+Dim oTestObj
+
+' We are going to be using ndis 6 protocol
+g_UseNdis6Protocol = TRUE
+
+' We would also be using the trick to point oNDTCore to oNDTCore6, so that anyone who
+' uses oNDTCore would automatically get oNDTCore6. Only problem is we might be masking
+' some errors, so this would not be done just yet
+
+Call Initialize ()
+
+Set oTestObj = New CRSSOidTest
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0))
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class CRSSOidTest
+   Dim oTestCard, oTestOpen
+   Dim m_lTestAdapterIndex
+   Dim oRSSHelper
+   Dim oCapabilities, oSetParameters, oQueryParameters
+   Dim SuccessHashInformation, SuccessInfoCount ' Supported by miniport
+   Dim FailureHashInformation, FailureInfoCount ' Not supported by miniport
+   Dim InvalidHashInformation, InvalidInfoCount ' Not allowed by the NDIS RSS spec
+
+   Dim HashTableArray, HashTableArrayCount      ' The various hash tables we would test with
+   Dim nNumProcessors
+
+   Private Sub Class_Initialize
+      ReDim SuccessHashInformation(64)
+      SuccessInfoCount = 0
+
+      ReDim FailureHashInformation(64)
+      FailureInfoCount = 0
+
+      ReDim InvalidHashInformation(64)
+      InvalidInfoCount = 0
+
+      ReDim HashTableArray(8)
+      HashTableArrayCount = 0
+
+      ' Get the number of processors, so that we do not try to distribute to too many
+      ' processors
+      nNumProcessors = oNDTSupp.NumProcessors
+   End Sub
+
+   Private Sub Class_Terminate
+      Set oSetParameters = Nothing
+      Set oQueryParameters = Nothing
+      Set oCapabilities = Nothing
+      Set oRSSHelper = Nothing
+      Set oTestOpen = Nothing
+      Set oTestCard = Nothing
+   End Sub
+
+   Private Sub StoreSuccessHashInfo(HashType, HashFunction)
+      If (SuccessInfoCount < 64) Then
+         SuccessHashInformation(SuccessInfoCount) = oRSSHelper.HashInfoFromHashTypeAndFunction( _
+            HashType,     _
+            HashFunction  _
+            )
+         SuccessInfoCount = SuccessInfoCount + 1
+      End If
+   End Sub
+
+   Private Sub StoreFailureHashInfo(HashType, HashFunction)
+      If (FailureInfoCount < 64) Then
+         FailureHashInformation(FailureInfoCount) = oRSSHelper.HashInfoFromHashTypeAndFunction( _
+            HashType,     _
+            HashFunction  _
+            )
+         FailureInfoCount = FailureInfoCount + 1
+      End If
+   End Sub
+
+   Private Sub StoreInvalidHashInfo(HashType, HashFunction)
+      If (InvalidInfoCount < 64) Then
+         InvalidHashInformation(InvalidInfoCount) = oRSSHelper.HashInfoFromHashTypeAndFunction( _
+            HashType,     _
+            HashFunction  _
+            )
+         InvalidInfoCount = InvalidInfoCount + 1
+      End If
+   End Sub
+
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      Dim ErrorStatus, arrData()
+      Dim nBytesWritten, nBytesNeeded, NdisStatus
+
+      SetupTest = FALSE
+
+      oNDTCore6.DebugLevel = NORMAL_LOGGING_LEVEL
+
+      Set pAdapterList = oNDInfo.AdapterList
+
+      ' Create the structures for the RSS work
+      Set oRSSHelper = New CRSSLib
+      If (oRSSHelper is Nothing) Then
+         Call oLog.Failed ("Unable to create RSS helper library", 88888)
+         Exit Function
+      End If
+
+      Set oCapabilities = oStructRep.CreateNdisObject(NDIS_OBJECT_TYPE_RSS_CAPABILITIES, 1)
+      If (oCapabilities is Nothing) Then
+         Call oLog.Failed ("Unable to create RSS capabilities structure", 88888)
+         Exit Function
+      End If
+
+      Set oSetParameters = oStructRep.CreateNdisObject(NDIS_OBJECT_TYPE_RSS_PARAMETERS, 1)
+      If (oSetParameters is Nothing) Then
+         Call oLog.Failed ("Unable to create RSS parameters set structure", 88888)
+         Exit Function
+      End If
+
+      Set oQueryParameters = oStructRep.CreateNdisObject(NDIS_OBJECT_TYPE_RSS_PARAMETERS, 1)
+      If (oQueryParameters is Nothing) Then
+         Call oLog.Failed ("Unable to create RSS parameters query structure", 88888)
+         Exit Function
+      End If
+
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard6
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+
+      Set oTestOpen = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpen is Nothing) Then
+         Exit Function
+      End If
+
+      oLog.Variation ("Querying Test adapters RSS capabilities")
+
+      ' Query the RSS capabilities and store
+      ReDim arrData(256)
+      ErrorStatus = oTestOpen.vbNdisRequest (OID_GEN_RECEIVE_SCALE_CAPABILITIES, _
+                     arrData, _
+                     256, _
+                     REQUEST_QUERY_INFO, _
+                     nBytesWritten, _
+                     nBytesNeeded, _
+                     NdisStatus, _
+                     TRUE _
+                     )
+      If (ErrorStatus <> 0) Then
+         Call oLog.Failed ("Unable to query RSS capabilities", 88888)
+         Exit Function
+      End If
+
+      If (NdisStatus <> NDIS_STATUS_SUCCESS) Then
+         oLog.Write ("Miniport does not support receive side scaling. Test will not run")
+         Exit Function
+      End If
+
+      ' The miniport claimed to support some RSS capabilities, lets store that information
+      ErrorStatus = oCapabilities.QueryInitialize(arrData, nBytesWritten)
+      If (ErrorStatus <> 0) Then
+         Call oLog.Failed ("Unable to format RSS capabilities response from miniport", 88888)
+         Exit Function
+      End If
+
+      ' Output the capabilities into the log file
+      oLog.Write ("Miniport's RSS Capabilities")
+      oCapabilities.Print
+
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+
+
+   Private Function ChangeTCPIPBinding(ChangeOperation, OldV4BindStatus, OldV6BindStatus)
+      Dim oProtoBinder
+
+      ChangeTCPIPBinding = False
+
+      oProtoBinder = oNDTSession ("ProtocolBinders")
+      If (IsEmpty (oProtoBinder)) Then
+         call oLog.Write ("Protocol Binding info not found in the session")
+         Exit Function
+      End If
+
+      ' Change TCP/IP binding status for test card
+      If (Not oProtoBinder(0).ChangeBinding ("Internet Protocol (TCP/IP)", ChangeOperation, OldV4BindStatus)) Then
+         Exit Function
+      End If
+
+      ' Change TCP/IP binding status for test card
+      If (Not oProtoBinder(0).ChangeBinding ("Microsoft TCP/IP version 6", ChangeOperation, OldV6BindStatus)) Then
+         Exit Function
+      End If
+
+      ChangeTCPIPBinding = True
+   End Function
+
+   Public Function RunTest (lTestAdapterIndex)
+      Dim PreTestV4State, PreTestV6State
+      m_lTestAdapterIndex = lTestAdapterIndex
+
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+
+      If ( Not CheckRSSCapabilities) Then
+         ' Something major RSS related is wrong and we will not proceed
+         Call oLog.Write ("Basic RSS capabilities verification failed. Quitting")
+         Exit Function
+      End If
+
+      Call oLog.Variation ("Unbinding TCP/IP")
+      If (Not ChangeTCPIPBinding(UNBIND_PROTOCOL, PreTestV4State, PreTestV6State)) Then
+         Call oLog.Warned ("Unable to unbind TCPIP from test adapter.")
+      End If
+
+      ExecuteDirectedTests
+
+      ExecutePseudoRandomTests
+
+      If (Not ClearRSSParameters) Then
+         Call oLog.Warned ("Unable to clear RSS parameters at end of script")
+      End If
+
+      If ((PreTestV4State = PROTOCOL_WAS_BOUND) Or (PreTestV6State = PROTOCOL_WAS_BOUND)) Then
+         ' TCPIP was originally bound, rebind it
+         Call oLog.Variation ("Rebinding TCP/IP")
+         If (Not ChangeTCPIPBinding(BIND_PROTOCOL, PreTestV4State, PreTestV6State)) Then
+            Call oLog.Warned ("Unable to rebind TCPIP to test adapter at end of test.")
+         End If
+      End If
+
+   End Function
+
+   ' Checks that miniport returns valid capabilities and the required
+   Private Function CheckRSSCapabilities
+      CheckRSSCapabilities = False
+
+      oLog.Variation ("Verifying OID_GEN_RECEIVE_SCALE_CAPABILITIES response")
+
+      ' Check that it atleast returns one of the three sources of
+      ' classification (MSI, ISR or DPC)
+      If (Not oRSSHelper.TestFlag(oCapabilities.CapabilitiesFlags, &HF&)) Then
+         Call oLog.Failed("Miniport did not specify source of classification in RSS capabilities response", 88888)
+      End If
+
+      ' Check that the miniport supports the required hash function 1
+      If (Not oRSSHelper.TestFlag(oCapabilities.CapabilitiesFlags, NDIS_RSS_HASH_FUNCTION_1)) Then
+         Call oLog.Failed("Miniport does not support required hash function 1", 88888)
+      End If
+
+      ' Does the miniport support NDIS_RSS_HASH_TYPE_TCP_IPV4      
+      If (Not oRSSHelper.TestFlag(oCapabilities.CapabilitiesFlags, NDIS_RSS_HASH_TYPE_TCP_IPV4)) Then
+         Call oLog.Failed("Miniport must support NDIS_RSS_HASH_TYPE_TCP_IPV4", 88888)
+      End If
+      
+      CheckRSSCapabilities = True
+   End Function
+
+   Private Function ExecuteDirectedTests
+      ' Check that the parameters persist even if we attempt an invalid set
+      CheckParametersPersistence
+
+      ' Clear the RSS parameters before the next test case
+      ClearRSSParameters
+
+      ' Check for unalignment parameters handling
+      'CheckUnalignedParameters        ' Not testing
+
+      ' Check that miniport supports all the expected hash table size
+      CheckIndirectionTableSizes
+
+      ' Clear the RSS parameters before the next test case
+      ClearRSSParameters
+   End Function
+
+   Private Function ExecutePseudoRandomTests
+      ' Figure out the hash information values we can test with
+      PrepareHashInformationMatrix
+
+      ' Prepare the hash tables we want can test with
+      PrepareTestHashTables
+
+      SetSupportedHashes
+
+      SetUnsupportedHashes
+
+      SetInvalidHashes
+   End Function
+
+
+   Private Function CheckParametersPersistence
+      Dim ErrorStatus
+      Dim OldHashInformation
+      Dim arrData()
+      Dim NdisStatus, nBytesRW, nBytesNeeded
+
+      oLog.Variation ("Verifying RSS_PARAMETERS persistence between requests")
+
+      ' Create a valid RSS parameters structure
+      ErrorStatus = oRSSHelper.GenerateValidParameters( _
+         oSetParameters, _
+         oCapabilities.CapabilitiesFlags, _
+         4, _
+         nNumProcessors _
+         )
+      If (ErrorStatus <> 0) Then
+         Call oLog.Write ("Unable to create structure for a directed test")
+         Exit Function
+      End If
+
+      oLog.Write ("Setting initial parameters")
+      ' Set the structure
+      ErrorStatus = SetAndVerifyRSSParameter(oSetParameters, _
+         oSetParameters.SizeOf, _
+         RSS_PARAMETERS_VALID Or RSS_IGNORE_SET_ERROR Or RSS_DO_NOT_VERIFY_SET _
+         )
+      If (ErrorStatus <> 0) Then
+         Call oLog.Warned ("Unable to set valid RSS parameters structure")
+         Exit Function
+      End If
+
+      ' Now, attempt to set an invalid hash information
+      OldHashInformation = oSetParameters.HashInformation
+
+      oSetParameters.HashInformation = oRSSHelper.HashInfoFromHashTypeAndFunction(_
+         INVALID_HASH_TYPE, NdisHashFunctionToeplitz)
+
+      ' Set this bad structure
+      oLog.Write ("Setting invalid parameters")
+      ErrorStatus = SetAndVerifyRSSParameter(oSetParameters, _
+         oSetParameters.SizeOf, _
+         RSS_PARAMETERS_INVALID Or RSS_IGNORE_SET_ERROR Or RSS_DO_NOT_VERIFY_SET _
+         )
+      If (ErrorStatus = 0) Then
+         Call oLog.Failed ("Successfully set an invalid hash type", 88888)
+         Exit Function
+      Else
+         ReDim arrData(oSetParameters.SizeOf)
+
+         oLog.Write ("Checking if initial parameters have stayed")
+         ' Now, we go ahead and query the structure once more
+         ErrorStatus = oTestOpen.vbNdisRequest (OID_GEN_RECEIVE_SCALE_PARAMETERS, _
+                        arrData, _
+                        oSetParameters.SizeOf, _
+                        REQUEST_QUERY_INFO, _
+                        nBytesRW, _
+                        nBytesNeeded, _
+                        NdisStatus, _
+                        TRUE _
+                        )
+         If (ErrorStatus <> 0 Or NdisStatus <> 0) then
+            Call oLog.Failed ("Unable to query RSS parameters", 88888)
+            Exit Function
+         End If
+
+         ErrorStatus = oQueryParameters.QueryInitialize(arrData, nBytesRW)
+         If (ErrorStatus <> 0) Then
+            Call oLog.Failed ("Unable to format RSS parameters response from miniport", 88888)
+            Exit Function
+         End If
+
+         ' Verify that the first set and now returned parameters match
+         If (oQueryParameters.HashInformation <> OldHashInformation) Then
+            Call oLog.Failed ("The hash information returned does not match the one we set", 88888)
+         End If
+      End If
+   End Function
+
+   Private Function CheckUnalignedParameters
+      Dim ErrorStatus
+      Dim oCOMOpen
+      Dim arrData()
+      Dim NdisStatus, nBytesRW, nBytesNeeded
+
+      oLog.Variation ("Verifying RSS_PARAMETERS setting with unaligned buffers")
+
+      ' Create a valid RSS parameters structure
+      ErrorStatus = oRSSHelper.GenerateValidParameters( _
+         oSetParameters, _
+         oCapabilities.CapabilitiesFlags, _
+         4, _
+         nNumProcessors _
+         )
+      If (ErrorStatus <> 0) Then
+         Call oLog.Write ("Unable to create structure for a directed test")
+         Exit Function
+      End If
+
+      oLog.Write ("Setting unaligned request structure")
+      ' Resize the array
+      ReDim arrData(oSetParameters.SizeOf)
+
+      ' Convert the COM structure to a byte stream
+      ErrorStatus = oSetParameters.ConvertToByteStream(arrData, oSetParameters.SizeOf)
+      If (ErrorStatus <> 0) Then
+         Call oLog.Failed ("Unable to stream RSS parameters structure", 88888)
+         Exit Function
+      End If
+
+      ' We need to use special flags, so use COM open directly
+      Set oCOMOpen = oTestOpen.COMOpen
+
+      ' Set the request (unaligning by one byte)
+      ErrorStatus = oCOMOpen.NdisRequest (OID_GEN_RECEIVE_SCALE_PARAMETERS, _
+                     arrData, _
+                     oSetParameters.SizeOf, _
+                     REQUEST_SET_INFO, _
+                     nBytesRW, _
+                     nBytesNeeded, _
+                     NdisStatus, _
+                     fREQUEST_UNALIGN_IN_BUFFER Or fREQUEST_FLAG_PARAMETER_1 _
+                     )
+      If (ErrorStatus <> 0 Or NdisStatus <> 0) then
+         Call oLog.Failed ("Unable to set unaligned RSS parameters", 88888)
+         Exit Function
+      End If
+   End Function
+
+   Private Function CheckIndirectionTableSizes
+      Dim ErrorStatus
+      Dim NdisStatus
+      Dim nIndirectionTableSize
+
+      nIndirectionTableSize = 2
+      Do While (nIndirectionTableSize <= 128)
+      
+         oLog.Variation ("Verifying RSS_PARAMETERS setting with " & nIndirectionTableSize & " byte IndirectionTable")
+         ' Create a valid RSS parameters structure
+         ErrorStatus = oRSSHelper.GenerateValidParameters( _
+            oSetParameters, _
+            oCapabilities.CapabilitiesFlags, _
+            nIndirectionTableSize, _
+            nNumProcessors _
+            )
+         If (ErrorStatus <> 0) Then
+            Call oLog.Write ("Unable to create structure for a directed test")
+            Exit Function
+         End If
+
+         oLog.Write ("Setting initial parameters")
+         ' Set the structure
+         ErrorStatus = SetAndVerifyRSSParameter(oSetParameters, _
+            oSetParameters.SizeOf, _
+            RSS_PARAMETERS_VALID Or RSS_FAIL_ON_SET_ERROR _
+            )
+         If (ErrorStatus <> 0) Then
+            Call oLog.Write ("Check if miniport can handle setting of a " &  nIndirectionTableSize & " byte IndirectionTable")
+         End If
+         ' Next iteration, double the size
+         nIndirectionTableSize = 2 * nIndirectionTableSize
+      Loop
+   End Function
+
+   Private Function PrepareHashInformationMatrix
+      Dim CurrentHashFunction
+      Dim SuppFunctionsCount, SuppHashFunctions()
+      Dim MissingFunctionsCount, MissingHashFunctions()
+
+      Dim CurrentHashType
+      Dim SuppTypesCount, SuppHashTypes()
+      Dim MissingTypesCount, MissingHashTypes()
+
+      Dim nCount, nFunctIndex, nTypeIndex
+
+      ReDim SuppHashFunctions(MAX_NUMBER_OF_HASH_FUNCTIONS)
+      ReDim MissingHashFunctions(MAX_NUMBER_OF_HASH_FUNCTIONS)
+      ReDim SuppHashTypes(MAX_NUMBER_OF_HASH_TYPES)
+      ReDim MissingHashTypes(MAX_NUMBER_OF_HASH_TYPES)
+
+      oLog.Variation("Computing hash information tables")
+
+      ' Classify all possible hash functions as either supported or missing
+      Call oRSSHelper.ClassifyHashFunctions( _
+         oCapabilities.CapabilitiesFlags, _
+         SuppHashFunctions, _
+         SuppFunctionsCount, _
+         MissingHashFunctions, _
+         MissingFunctionsCount _
+         )
+      If (False) Then
+         oLog.Write ("Supported Hash Functions " & SuppFunctionsCount)
+         For nCount = 0 To SuppFunctionsCount - 1
+            oLog.Write (SuppHashFunctions(nCount))
+         Next
+         oLog.Write ("Missing Hash Functions " & MissingFunctionsCount)
+         For nCount = 0 To MissingFunctionsCount - 1
+            oLog.Write (MissingHashFunctions(nCount))
+         Next
+      End If
+
+      ' Classify all possible hash types as either supported or missing
+      Call oRSSHelper.ClassifyHashTypes( _
+         oCapabilities.CapabilitiesFlags, _
+         SuppHashTypes, _
+         SuppTypesCount, _
+         MissingHashTypes, _
+         MissingTypesCount _
+         )
+
+      If (False) Then
+         oLog.Write ("Supported Hash Types " & SuppTypesCount)
+         For nCount = 0 To SuppTypesCount - 1
+            oLog.Write (SuppHashTypes(nCount))
+         Next
+         oLog.Write ("Missing Hash Types " & MissingTypesCount)
+         For nCount = 0 To MissingTypesCount - 1
+            oLog.Write (MissingHashTypes(nCount))
+         Next
+      End If
+
+      ' Now, combine these two sets of arrays to create our hash information tables
+      ' 1. Supported hash functions with {supported}+ hash types : Succeed
+      ' 2. Unsupported hash function with {supported | unsupported}+ hash types : Fail
+      ' 3. Supported hash functions with {supported | unsupported}+ hash types : Fail
+      ' 4. Invalid hash function with {supported | unsupported}+ hash types : Invalid
+      ' 5. Valid hash functions with {invalid | supported}+ hash types: Invalid
+      '
+      ' These combinations can be optimized, but we are going for simplicity and easier
+      ' understanding rather than speed in creating the hash information tables
+
+      SuccessInfoCount = 0
+      FailureInfoCount = 0
+      InvalidInfoCount = 0
+
+      ' Supported hash function
+      For nFunctIndex = 0 To SuppFunctionsCount - 1
+         CurrentHashFunction = SuppHashFunctions(nFunctIndex)
+
+         ' Supported hash type : Succeed
+         For nTypeIndex = 0 To SuppTypesCount - 1
+            Call StoreSuccessHashInfo(SuppHashTypes(nTypeIndex), CurrentHashFunction)
+         Next
+
+         ' {Supported | Supported}: Succeed
+         For nTypeIndex = 0 To SuppTypesCount - 1
+
+            ' Attach an supported hash type to each supported hash type
+            For nCount = nTypeIndex + 1 To SuppTypesCount - 1
+               ' Merge Supported | Supported
+               CurrentHashType = SuppHashTypes(nTypeIndex) Or SuppHashTypes(nCount)
+               Call StoreSuccessHashInfo(CurrentHashType, CurrentHashFunction)
+            Next
+         Next
+
+         ' Unsupported hash: Fail
+         For nTypeIndex = 0 To MissingTypesCount - 1
+            Call StoreFailureHashInfo(MissingHashTypes(nTypeIndex), CurrentHashFunction)
+         Next
+
+         ' {Supported | Unsupported}: Fail
+         For nTypeIndex = 0 To SuppTypesCount - 1
+
+            ' Attach an unsupported hash type to each supported hash type
+            For nCount = 0 To MissingTypesCount - 1
+               ' Merge Supported | Unsupported
+               CurrentHashType = SuppHashTypes(nTypeIndex) Or MissingHashTypes(nCount)
+               Call StoreFailureHashInfo(CurrentHashType, CurrentHashFunction)
+            Next
+         Next
+      Next
+
+      ' Unsupported hash function: Fail
+      For nFunctIndex = 0 To MissingFunctionsCount - 1
+         CurrentHashFunction = MissingHashFunctions(nFunctIndex)
+
+         ' Supported hash types
+         For nTypeIndex = 0 To SuppTypesCount - 1
+            Call StoreFailureHashInfo(SuppHashTypes(nTypeIndex), CurrentHashFunction)
+         Next
+
+         ' Unsupported hash types
+         For nTypeIndex = 0 To MissingTypesCount - 1
+            Call StoreFailureHashInfo(MissingHashTypes(nTypeIndex), CurrentHashFunction)
+         Next
+
+         ' {Supported | Unsupported}
+         For nTypeIndex = 0 To SuppTypesCount - 1
+
+            ' Now, add an unsupported hash type to each supported hash type
+            For nCount = 0 To MissingTypesCount - 1
+               ' Merge Supported | Unsupported
+               CurrentHashType = SuppHashTypes(nTypeIndex) Or MissingHashTypes(nCount)
+               Call StoreFailureHashInfo(CurrentHashType, CurrentHashFunction)
+            Next
+         Next
+      Next
+
+      ' Invalid hash function: Invalid
+      For nFunctIndex = 0 To 0         ' 0 to 0 is intentional
+         CurrentHashFunction = INVALID_HASH_FUNCTION
+         ' Supported hash types
+         For nTypeIndex = 0 To SuppTypesCount - 1
+            Call StoreInvalidHashInfo(SuppHashTypes(nTypeIndex), CurrentHashFunction)
+         Next
+
+         ' UnSupported hash types
+         For nTypeIndex = 0 To MissingTypesCount - 1
+            Call StoreInvalidHashInfo(MissingHashTypes(nTypeIndex), CurrentHashFunction)
+         Next
+      Next
+
+      ' Supported hash function
+      For nFunctIndex = 0 To SuppFunctionsCount - 1
+         CurrentHashFunction = SuppHashFunctions(nFunctIndex)
+
+         ' Invalid hash types: Invalid
+         For nTypeIndex = 1 To oRSSHelper.InvalidHashTypesCount
+            CurrentHashType = oRSSHelper.InvalidHashTypes(nTypeIndex)
+            Call StoreInvalidHashInfo(CurrentHashType, CurrentHashFunction)
+         Next
+      Next
+   End Function
+
+   Private Function PrepareTestHashTables
+      Dim nCount
+      Dim CurrHashTable
+      Dim CurrCpuIndex
+      Dim HashTableSize
+
+
+      '-------------------------------------------------------------------------------
+      ' First, a completely valid 2 entry hash table
+      HashTableSize = 2
+      Set CurrHashTable = New COIDTestRSSIndirectionTable
+      CurrHashTable.HashSecretKeySize = RSS_HASH_FUNCTION_0_KEY_SIZE
+      CurrHashTable.HashSecretKeyOffset = RSS_PARAMETERS_STRUCT_SIZE
+      CurrHashTable.IndirectionTableSize = HashTableSize
+      CurrHashTable.IndirectionTableOffset = CurrHashTable.HashSecretKeyOffset + CurrHashTable.HashSecretKeySize
+      CurrHashTable.ComputeParametersFields
+
+      ' Fill the hash table
+      CurrCpuIndex = 0
+      For nCount = 0 To HashTableSize - 1
+         CurrHashTable.IndirectionTableAt(nCount) = CByte(CurrCpuIndex)
+         CurrCpuIndex = CurrCpuIndex + 1
+         If CurrCpuIndex = nNumProcessors Then
+            CurrCpuIndex = 0
+         End If
+      Next
+
+      ' This is a valid table, we expect it to succeed
+      CurrHashTable.Flags = RSS_PARAMETERS_VALID Or RSS_FAIL_ON_SET_ERROR
+      CurrHashTable.TestCase = "Valid " & HashTableSize & " element hash table"
+
+      ' Store the hash table
+      Set HashTableArray(HashTableArrayCount) = CurrHashTable
+      HashTableArrayCount = HashTableArrayCount + 1
+
+      '-------------------------------------------------------------------------------
+      ' Next a valid 64 entry hash table (only if the miniport has a max processor limit,
+      ' would we have a problem with this)
+      HashTableSize = 64
+      Set CurrHashTable = New COIDTestRSSIndirectionTable
+      CurrHashTable.HashSecretKeySize = RSS_HASH_FUNCTION_0_KEY_SIZE
+      CurrHashTable.HashSecretKeyOffset = RSS_PARAMETERS_STRUCT_SIZE
+      CurrHashTable.IndirectionTableSize = HashTableSize
+      CurrHashTable.IndirectionTableOffset = CurrHashTable.HashSecretKeyOffset + CurrHashTable.HashSecretKeySize
+      CurrHashTable.ComputeParametersFields
+
+      ' Fill the hash table
+      CurrCpuIndex = 0
+      For nCount = 0 To HashTableSize - 1
+         CurrHashTable.IndirectionTableAt(nCount) = CByte(CurrCpuIndex)
+         CurrCpuIndex = CurrCpuIndex + 1
+         If CurrCpuIndex = nNumProcessors Then
+            CurrCpuIndex = 0
+         End If
+      Next
+
+      ' This is a valid table, we expect it to succeed
+      CurrHashTable.Flags = RSS_PARAMETERS_VALID Or RSS_FAIL_ON_SET_ERROR
+      CurrHashTable.TestCase = "Valid " & HashTableSize & " element hash table"
+
+      ' Store the hash table
+      Set HashTableArray(HashTableArrayCount) = CurrHashTable
+      HashTableArrayCount = HashTableArrayCount + 1
+
+      '-------------------------------------------------------------------------------
+      ' Next, give non zero hash table offset with a 16 entry hash table (this should
+      ' work correctly)
+      HashTableSize = 16
+      Set CurrHashTable = New COIDTestRSSIndirectionTable
+      CurrHashTable.IndirectionTableSize = HashTableSize
+      CurrHashTable.HashSecretKeyOffset = RSS_PARAMETERS_STRUCT_SIZE
+      CurrHashTable.HashSecretKeySize = RSS_HASH_FUNCTION_0_KEY_SIZE
+      CurrHashTable.IndirectionTableOffset = CurrHashTable.HashSecretKeyOffset + CurrHashTable.HashSecretKeySize
+      CurrHashTable.IndirectionTableOffset = CurrHashTable.IndirectionTableOffset + 4 ' Changed offset
+      CurrHashTable.ComputeParametersFields
+
+      ' Fill the hash table
+      CurrCpuIndex = 0
+      For nCount = 0 To HashTableSize - 1
+         CurrHashTable.IndirectionTableAt(nCount) = CByte(CurrCpuIndex)
+         CurrCpuIndex = CurrCpuIndex + 2        ' Jumping two processors at a time
+         If CurrCpuIndex >= nNumProcessors Then
+            CurrCpuIndex = 0
+         End If
+      Next
+
+      ' This is a valid table, we expect it to succeed
+      CurrHashTable.Flags = RSS_PARAMETERS_VALID Or RSS_FAIL_ON_SET_ERROR
+      CurrHashTable.TestCase = HashTableSize & " element hash table with offset " & CurrHashTable.IndirectionTableOffset
+
+      ' Store the hash table
+      Set HashTableArray(HashTableArrayCount) = CurrHashTable
+      HashTableArrayCount = HashTableArrayCount + 1
+      '-------------------------------------------------------------------------------
+      ' Give a table with total size of the structure is less than the size needed
+      ' based on offset and size (this should fail)
+      HashTableSize = 8
+      Set CurrHashTable = New COIDTestRSSIndirectionTable
+      CurrHashTable.IndirectionTableSize = HashTableSize
+      CurrHashTable.HashSecretKeyOffset = RSS_PARAMETERS_STRUCT_SIZE
+      CurrHashTable.HashSecretKeySize = RSS_HASH_FUNCTION_0_KEY_SIZE
+      CurrHashTable.IndirectionTableOffset = CurrHashTable.HashSecretKeyOffset + CurrHashTable.HashSecretKeySize
+      CurrHashTable.ComputeParametersFields
+      ' Mess up the length we would pass to NdisRequest
+      CurrHashTable.BufferLength = CurrHashTable.BufferLength - 1
+
+      ' Fill the hash table
+      CurrCpuIndex = 0
+      For nCount = 0 To HashTableSize - 1
+         CurrHashTable.IndirectionTableAt(nCount) = CByte(CurrCpuIndex)
+         CurrCpuIndex = CurrCpuIndex + 1
+         If CurrCpuIndex = nNumProcessors Then
+            CurrCpuIndex = 0
+         End If
+      Next
+
+      ' This is an invalid table, we expect it to fail
+      CurrHashTable.Flags = RSS_PARAMETERS_INVALID Or RSS_FAIL_ON_SET_ERROR
+      CurrHashTable.TestCase = HashTableSize & " element hash table with 0 offset, but length " & CurrHashTable.BufferLength
+
+      ' Store the hash table
+      Set HashTableArray(HashTableArrayCount) = CurrHashTable
+      HashTableArrayCount = HashTableArrayCount + 1
+      '-------------------------------------------------------------------------------
+      ' Next, we put the indirection table above the hash secret key
+      HashTableSize = 8
+      Set CurrHashTable = New COIDTestRSSIndirectionTable
+      CurrHashTable.IndirectionTableOffset = RSS_PARAMETERS_STRUCT_SIZE
+      CurrHashTable.IndirectionTableSize = HashTableSize
+      CurrHashTable.HashSecretKeyOffset = CurrHashTable.IndirectionTableOffset + CurrHashTable.IndirectionTableSize
+      CurrHashTable.HashSecretKeySize = RSS_HASH_FUNCTION_0_KEY_SIZE
+      CurrHashTable.ComputeParametersFields
+      ' Fill the hash table
+      CurrCpuIndex = 0
+      For nCount = 0 To HashTableSize - 1
+         CurrHashTable.IndirectionTableAt(nCount) = CByte(CurrCpuIndex)
+         CurrCpuIndex = CurrCpuIndex + 1
+         If CurrCpuIndex = nNumProcessors Then
+            CurrCpuIndex = 0
+         End If
+      Next
+
+      ' This is an valid table, we expect it to pass
+      CurrHashTable.Flags = RSS_PARAMETERS_VALID Or RSS_FAIL_ON_SET_ERROR
+      CurrHashTable.TestCase = HashTableSize & " element hash table with hash secret key following hash map table"
+
+      ' Store the hash table
+      Set HashTableArray(HashTableArrayCount) = CurrHashTable
+      HashTableArrayCount = HashTableArrayCount + 1     
+'      '-------------------------------------------------------------------------------
+'      ' Next, we try to increase the number of LSBs
+'      HashTableSize = 8
+'      Set CurrHashTable = New COIDTestRSSIndirectionTable
+'      CurrHashTable.IndirectionTableSize = HashTableSize
+'      CurrHashTable.HashSecretKeyOffset = RSS_PARAMETERS_STRUCT_SIZE
+'      CurrHashTable.HashSecretKeySize = RSS_HASH_FUNCTION_0_KEY_SIZE
+'      CurrHashTable.IndirectionTableOffset = CurrHashTable.HashSecretKeyOffset + CurrHashTable.HashSecretKeySize
+'      CurrHashTable.ComputeParametersFields
+'      ' Fill the hash table
+'      CurrCpuIndex = 0
+'      For nCount = 0 To HashTableSize - 1
+'         CurrHashTable.IndirectionTableAt(nCount) = CByte(CurrCpuIndex)
+'         CurrCpuIndex = CurrCpuIndex + 1
+'         If CurrCpuIndex = nNumProcessors Then
+'            CurrCpuIndex = 0
+'         End If
+'      Next
+'      ' The current hash table size is 8 bytes, meaning 3 LSBs. I want to change the
+'      ' number of LSBs to be greater than 3. However, this might cause undesirable
+'      ' side effects (miniport going beyond provided size). Instead, we just reduce
+'      ' the hash table size
+'      CurrHashTable.HashTableSize = 4    ' So, LSB should be 2, but is 3
+'
+'      ' This is an invalid table, we expect it to fail
+'      CurrHashTable.Flags = RSS_PARAMETERS_INVALID Or RSS_FAIL_ON_SET_ERROR
+'      CurrHashTable.TestCase = HashTableSize & " element hash table with " & CurrHashTable.NumberOfLsbs & " LSBs"
+'
+'      ' Store the hash table
+'      Set HashTableArray(HashTableArrayCount) = CurrHashTable
+'      HashTableArrayCount = HashTableArrayCount + 1
+   End Function
+
+   Private Function SetAndVerifyRSSParameter(oRSSSetParameter, ParameterSize, Flags)
+      Dim arrData()
+      Dim ErrorStatus
+      Dim NdisStatus, nBytesRW, nBytesNeeded
+      Dim PrintDetails, bProblem
+      PrintDetails = FALSE       ' Set to print what was set and returned
+
+      ' Resize the array
+      ReDim arrData(oRSSSetParameter.SizeOf)
+
+      ' Convert the COM structure to a byte stream
+      ErrorStatus = oRSSSetParameter.ConvertToByteStream(arrData, oRSSSetParameter.SizeOf)
+      If (ErrorStatus <> 0) Then
+         Call oLog.Failed ("Unable to stream RSS parameters structure", 88888)
+         SetAndVerifyRSSParameter = ErrorStatus
+         Exit Function
+      End If
+
+      ' Print the set parameters to the log
+      If (PrintDetails) Then
+         oRSSSetParameter.Print
+      End If
+
+      ' Do the request
+      ErrorStatus = oTestOpen.vbNdisRequest (OID_GEN_RECEIVE_SCALE_PARAMETERS, _
+                     arrData, _
+                     ParameterSize, _
+                     REQUEST_SET_INFO, _
+                     nBytesRW, _
+                     nBytesNeeded, _
+                     NdisStatus, _
+                     FALSE _
+                     )
+      If (ErrorStatus <> 0) then
+         Call oLog.Warned ("NDISTest unable to process RSS parameters request")
+         SetAndVerifyRSSParameter = ErrorStatus
+         Exit Function
+      End If
+
+      SetAndVerifyRSSParameter = NdisStatus     ' Will return the status of the set
+
+      If (NdisStatus = 0) Then
+         If (Not oRSSHelper.TestFlag(Flags, RSS_PARAMETERS_VALID)) Then
+            ' This was an invalid request, but the miniport succeeded it, check what to do now
+            oLog.Write("The following invalid RSS parameters structure was successfully set")
+            Call oSetParameters.Print
+
+            If (oRSSHelper.TestFlag(Flags, RSS_IGNORE_SET_ERROR)) Then
+               oLog.Write("This may be an acceptable failure")
+            ElseIf (oRSSHelper.TestFlag(Flags, RSS_WARN_ON_SET_ERROR)) Then
+               oLog.Warned("The miniport should not have accepted this set request")
+            Else
+               Call oLog.Failed("The miniport should not have accepted this set request", 88888)
+            End If
+         End If
+
+         If (nBytesRW = 0) Then
+            Call oLog.Failed ("Set request succeeded, but BytesRead was not updated", 88888)
+         ElseIf (nBytesRW > ParameterSize) Then
+            Call oLog.Failed ("BytesRead was greater than the buffer provided to the request", 88888)
+         End If
+
+         If (Not oRSSHelper.TestFlag(Flags, RSS_DO_NOT_VERIFY_SET)) Then
+            ' Now, we go ahead and query the structure once more
+            ErrorStatus = oTestOpen.vbNdisRequest (OID_GEN_RECEIVE_SCALE_PARAMETERS, _
+                           arrData, _
+                           ParameterSize, _
+                           REQUEST_QUERY_INFO, _
+                           nBytesRW, _
+                           nBytesNeeded, _
+                           NdisStatus, _
+                           TRUE _
+                           )
+            If (ErrorStatus <> 0 Or NdisStatus <> 0) then
+               Call oLog.Failed ("Unable to query RSS parameters", 88888)
+               Exit Function
+            End If
+
+            bProblem = FALSE
+            ErrorStatus = oQueryParameters.QueryInitialize(arrData, nBytesRW)
+            If (ErrorStatus <> 0) Then
+               Call oLog.Failed ("Unable to format RSS parameters response from miniport", 88888)
+               Exit Function
+            End If
+
+            ' Output the returned parameters into the log file
+            If (PrintDetails) Then
+               oQueryParameters.Print
+            End If
+
+            ' Verify that the set and returned parameters match
+            If (oRSSSetParameter.HashInformation <> oQueryParameters.HashInformation) Then
+               Call oLog.Failed ("The hash information returned does not match the one we set", 88888)
+            End If
+            
+            If (oRSSSetParameter.IndirectionTableSize <> oQueryParameters.IndirectionTableSize) Then
+               Call oLog.Failed ("The hash map table size returned does not match the one we set", 88888)
+            End If
+
+            If (oRSSSetParameter.HashSecretKeySize <> oQueryParameters.HashSecretKeySize) Then
+               Call oLog.Failed ("The hash secret key size returned does not match the one we set", 88888)
+            End If
+            
+            ' We do not check the hash table itself
+            If (bProblem) Then
+               oLog.Write("The OID_GEN_RECEIVE_SCALE_PARAMETERS SET were: ")
+               oRSSSetParameter.Print
+               oLog.Write("The OID_GEN_RECEIVE_SCALE_PARAMETERS returned on QUERY are: ")
+               oQueryParameters.Print               
+            End If
+         End If
+      Else
+         ' Miniport failed the set request
+         If (oRSSHelper.TestFlag(Flags, RSS_PARAMETERS_VALID)) Then
+            ' This was a valid request, but the miniport failed it, check what to do now
+            oLog.Write("The following valid RSS parameters structure could not be set")
+            Call oSetParameters.Print
+
+            If (oRSSHelper.TestFlag(Flags, RSS_IGNORE_SET_ERROR)) Then
+               oLog.Write("This may be an acceptable failure")
+            ElseIf (oRSSHelper.TestFlag(Flags, RSS_WARN_ON_SET_ERROR)) Then
+               oLog.Warned("The miniport should have accepted this set request")
+            Else
+               Call oLog.Failed("The miniport should have accepted this set request", 88888)
+            End If
+         End If
+      End If
+
+   End Function
+
+   ' Go through each supported capability and attempt to set to ensure that it
+   ' works
+   Private Function SetSupportedHashes
+      Dim nInfoIndex, nHashTableIndex
+      Dim ErrorStatus
+      Dim CurrentHashInformation
+      Dim CurrHashTable
+
+      SetSupportedHashes = False
+
+      oLog.Variation ("Supported hash information with various hash tables")
+      For nInfoIndex = 0 To SuccessInfoCount - 1
+         CurrentHashInformation = SuccessHashInformation(nInfoIndex)
+
+         For nHashTableIndex = 0 To HashTableArrayCount - 1
+            Set CurrHashTable = HashTableArray(nHashTableIndex)
+            oLog.Variation ("Hash " & oRSSHelper.GetHashInformationString(CurrentHashInformation) & " with " & CurrHashTable.TestCase)
+
+            ' Populate the set structure
+            ErrorStatus = oSetParameters.SetInitialize(CurrHashTable.TotalSize)
+            oSetParameters.HashInformation = CurrentHashInformation
+            oSetParameters.HashSecretKeyOffset = CurrHashTable.HashSecretKeyOffset
+            oSetParameters.HashSecretKeySize = CurrHashTable.HashSecretKeySize
+            oSetParameters.IndirectionTableSize = CurrHashTable.IndirectionTableSize
+            oSetParameters.IndirectionTableOffset = CurrHashTable.IndirectionTableOffset
+
+            ErrorStatus = oSetParameters.SetDefaultHashSecretKey(CurrHashTable.HashSecretKeySize)
+            If (ErrorStatus <> 0) Then
+               Call oLog.Failed ("Unable to populate RSS parameters structure with hash secret key", 88888)
+               Exit For
+            End If
+
+            ErrorStatus = oSetParameters.SetIndirectionTable(CurrHashTable.IndirectionTable, CurrHashTable.IndirectionTableSize)
+            If (ErrorStatus <> 0) Then
+               Call oLog.Failed ("Unable to populate RSS parameters structure with hash table", 88888)
+               Exit For
+            End If
+
+            ' Use the same flags as the hash table object
+            ErrorStatus = SetAndVerifyRSSParameter(oSetParameters, _
+               CurrHashTable.BufferLength, _
+               CurrHashTable.Flags _
+               )
+         Next
+      Next
+
+      SetSupportedHashes = True
+   End Function
+
+   Private Function SetUnsupportedHashes
+      Dim nInfoIndex, nHashTableIndex
+      Dim ErrorStatus
+      Dim CurrentHashInformation
+      Dim CurrHashTable
+
+      SetUnsupportedHashes = False
+
+      oLog.Variation ("Unsupported hash information with various hash tables")
+      For nInfoIndex = 0 To FailureInfoCount - 1
+         CurrentHashInformation = FailureHashInformation(nInfoIndex)
+
+         For nHashTableIndex = 0 To HashTableArrayCount - 1
+            Set CurrHashTable = HashTableArray(nHashTableIndex)
+
+            ' Do not try hash tables that are invalid
+            If (Not oRSSHelper.TestFlag(CurrHashTable.Flags, RSS_PARAMETERS_INVALID)) Then
+               oLog.Variation ("Hash " & oRSSHelper.GetHashInformationString(CurrentHashInformation) & " with " & CurrHashTable.TestCase)
+
+               ' Populate the set structure
+               ErrorStatus = oSetParameters.SetInitialize(CurrHashTable.TotalSize)
+               oSetParameters.HashInformation = CurrentHashInformation
+               oSetParameters.HashSecretKeyOffset = CurrHashTable.HashSecretKeyOffset
+               oSetParameters.HashSecretKeySize = CurrHashTable.HashSecretKeySize
+               oSetParameters.IndirectionTableSize = CurrHashTable.IndirectionTableSize
+               oSetParameters.IndirectionTableOffset = CurrHashTable.IndirectionTableOffset
+
+               ErrorStatus = oSetParameters.SetDefaultHashSecretKey(CurrHashTable.HashSecretKeySize)
+               If (ErrorStatus <> 0) Then
+                  Call oLog.Failed ("Unable to populate RSS parameters structure with hash secret key", 88888)
+                  Exit For
+               End If
+
+               ErrorStatus = oSetParameters.SetIndirectionTable(CurrHashTable.IndirectionTable, CurrHashTable.IndirectionTableSize)
+               If (ErrorStatus <> 0) Then
+                  Call oLog.Failed ("Unable to populate RSS parameters structure with hash table", 88888)
+                  Exit For
+               End If
+
+               ' These are unsupported parameters and should fail
+               ErrorStatus = SetAndVerifyRSSParameter(oSetParameters, _
+                  CurrHashTable.BufferLength, _
+                  RSS_PARAMETERS_UNSUPPORTED Or RSS_FAIL_ON_SET_ERROR _
+                  )
+            End If
+         Next
+      Next
+
+      SetUnsupportedHashes = True
+   End Function
+
+   Private Function SetInvalidHashes
+      Dim nInfoIndex, nHashTableIndex
+      Dim ErrorStatus
+      Dim CurrentHashInformation
+      Dim CurrHashTable
+
+      SetInvalidHashes = False
+
+      oLog.Variation ("Invalid hash information with various hash tables")
+      For nInfoIndex = 0 To InvalidInfoCount - 1
+         CurrentHashInformation = InvalidHashInformation(nInfoIndex)
+
+         For nHashTableIndex = 0 To HashTableArrayCount - 1
+            Set CurrHashTable = HashTableArray(nHashTableIndex)
+
+            ' Do not try hash tables that are invalid
+            If (Not oRSSHelper.TestFlag(CurrHashTable.Flags, RSS_PARAMETERS_INVALID)) Then
+               oLog.Variation ("Hash " & oRSSHelper.GetHashInformationString(CurrentHashInformation) & " with " & CurrHashTable.TestCase)
+
+               ' Populate the set structure
+               ErrorStatus = oSetParameters.SetInitialize(CurrHashTable.TotalSize)
+               oSetParameters.HashInformation = CurrentHashInformation
+               oSetParameters.HashSecretKeyOffset = CurrHashTable.HashSecretKeyOffset
+               oSetParameters.HashSecretKeySize = CurrHashTable.HashSecretKeySize
+               oSetParameters.IndirectionTableSize = CurrHashTable.IndirectionTableSize
+               oSetParameters.IndirectionTableOffset = CurrHashTable.IndirectionTableOffset
+
+               ErrorStatus = oSetParameters.SetDefaultHashSecretKey(CurrHashTable.HashSecretKeySize)
+               If (ErrorStatus <> 0) Then
+                  Call oLog.Failed ("Unable to populate RSS parameters structure with hash secret key", 88888)
+                  Exit For
+               End If
+
+               ErrorStatus = oSetParameters.SetIndirectionTable(CurrHashTable.IndirectionTable, CurrHashTable.IndirectionTableSize)
+               If (ErrorStatus <> 0) Then
+                  Call oLog.Failed ("Unable to populate RSS parameters structure with hash table", 88888)
+                  Exit For
+               End If
+
+               ' These are invalid parameters and should fail
+               ErrorStatus = SetAndVerifyRSSParameter(oSetParameters, _
+                  CurrHashTable.BufferLength, _
+                  RSS_PARAMETERS_INVALID Or RSS_FAIL_ON_SET_ERROR _
+                  )
+            End If
+         Next
+      Next
+
+      SetInvalidHashes = True
+   End Function
+
+   Private Function ClearRSSParameters
+      Dim ErrorStatus
+
+      oLog.Variation("Clearing all RSS parameters")
+      ClearRSSParameters = True
+      ErrorStatus = oSetParameters.SetInitialize(RSS_PARAMETERS_STRUCT_SIZE)
+      If (ErrorStatus <> 0) Then
+         Call oLog.Failed ("Unable to create RSS parameters structure", 88888)
+         Exit Function
+      End If
+
+      oSetParameters.HashInformation = 0
+      oSetParameters.IndirectionTableSize = 0
+
+      ErrorStatus = SetAndVerifyRSSParameter(oSetParameters, _
+         oSetParameters.SizeOf, _
+         RSS_PARAMETERS_VALID Or RSS_IGNORE_SET_ERROR Or RSS_DO_NOT_VERIFY_SET _
+         )
+      If (ErrorStatus <> 0) then
+         ClearRSSParameters = False
+      End If
+   End Function
+End Class
+
+Class COIDTestRSSIndirectionTable
+   Dim oParameters
+
+   Dim BufferLength           ' Length of buffer to pass to NdisRequest
+
+   Dim Flags                  ' Flags associated with this table (valid/invalid, etc)
+   Dim TestCase               ' String that tells what we are trying to do here
+
+   Sub Class_Initialize
+      Set oParameters = New CRSSParameters
+   End Sub
+
+   Sub Class_Terminate
+      Set oParameters = Nothing
+   End Sub
+
+	Property Let HashInformation(newVal)
+		oParameters.HashInformation = newVal
+	End Property
+
+	Property Get HashInformation()
+		HashInformation = oParameters.HashInformation
+	End Property
+
+	Property Let HashSecretKeyOffset(newVal)
+		oParameters.HashSecretKeyOffset = newVal
+	End Property
+
+	Property Get HashSecretKeyOffset()
+		HashSecretKeyOffset = oParameters.HashSecretKeyOffset
+	End Property
+
+	Property Let HashSecretKeySize(newVal)
+		oParameters.HashSecretKeySize = newVal
+	End Property
+
+	Property Get HashSecretKeySize()
+		HashSecretKeySize = oParameters.HashSecretKeySize
+	End Property
+
+	Property Let IndirectionTableOffset(newVal)
+		oParameters.IndirectionTableOffset = newVal
+	End Property
+
+	Property Get IndirectionTableOffset()
+		IndirectionTableOffset = oParameters.IndirectionTableOffset
+	End Property
+
+	Property Let IndirectionTableSize(newVal)
+		oParameters.IndirectionTableSize = newVal
+	End Property
+
+	Property Get IndirectionTableSize()
+		IndirectionTableSize = oParameters.IndirectionTableSize
+	End Property
+
+	Property Let TotalSize(newVal)
+		oParameters.TotalSize = newVal
+	End Property
+
+	Property Get TotalSize()
+		TotalSize = oParameters.TotalSize
+	End Property
+
+	Property Let IndirectionTableAt(Index, newVal)
+		oParameters.IndirectionTable(Index) = newVal
+	End Property
+
+	Property Get IndirectionTableAt(Index)
+		IndirectionTableAt = oParameters.IndirectionTable(Index)
+	End Property
+
+	Property Get IndirectionTable
+		IndirectionTable = oParameters.IndirectionTable
+	End Property
+
+   Sub ComputeParametersFields
+      oParameters.ComputeParametersFields
+      BufferLength = oParameters.TotalSize
+   End Sub
+End Class
+
+</script>
+</job>
+</package>
+
+
+
+
+
+<!--- CRC = 0x86666b4f --->

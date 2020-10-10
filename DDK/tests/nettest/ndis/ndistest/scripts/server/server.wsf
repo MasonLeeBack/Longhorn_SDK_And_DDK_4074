@@ -1,0 +1,252 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+All
+</MEDIA>
+<WHQL>
+All
+</WHQL>
+<SERVER>
+TRUE
+</SERVER>
+<CARDMACH>
+1C,MC,1M
+</CARDMACH>
+<DESCRIPTION>
+<![CDATA[
+"Script that is run for server mode"
+ ]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+    <job id="server" prompt="no">
+        <reference object="NDTCore.base.1" version="1.0"/>
+        <reference object="NDInfo.Info.1" version="1.0"/>
+        <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+        <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+        <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+        <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+        <object id="oNDTBackChannel" progid="NDTCommWS.BackChannel" events="true"/>
+        <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+        
+        <!-- Begin Wireless Specific Includes -->
+        <script language="VBScript" src="..\newinc\Dot11Library.vbs"/>
+        <script language="VBScript" src="..\inc\CNDT1xSupp.vbs"/>
+        <!-- End Wireless Specific Includes -->
+   
+        <script language="VBScript" src="..\inc\ccard.vbs"/>
+        <script language="VBScript" src="..\inc\clog.vbs"/>
+        <script language="VBScript" src="..\inc\general.vbs"/>
+        <script language="VBScript" src="..\inc\devchars.vbs"/>
+        <script language="VBScript" src="..\inc\utilities.vbs"/>
+        <script language="VBScript" src="..\inc\Constants.vbs"/>
+        <script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+        <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+        <script id="server" language="VBScript">
+'==========================================================================
+' Script Name:    server
+'
+' Author:         Brian King
+' Date:           18 Sep 2000
+'
+' Description:    This scripts is run on the server side
+'       
+' 
+' Revision History:
+' 
+'==========================================================================
+'--------------------------------------------------------------------------
+'[NDISDESC] 
+'SERVER        = TRUE
+'MEDIA         = ALL
+'WHQL          = ALL
+'CardMach      = 1C,MC,1M
+'DESCRIPTION   = "Script that is run for server mode"
+'[ENDNDISDESC]
+'--------------------------------------------------------------------------
+Option Explicit
+Dim server        : Set server   = New CServer
+Dim keepLooping   : keepLooping  = True
+
+
+Initialize ()
+
+If(server.StartServer() = False) Then
+   
+End If
+
+Terminate ()
+
+Set server = Nothing
+
+Class CServer
+   
+   '===============================================================================================
+   Public Sub Class_Initialize()
+   
+   End Sub
+   
+   '===============================================================================================
+   Public Sub Class_Terminate()
+   
+   End Sub
+   
+   '===============================================================================================
+   Public Function StartServer()
+   Dim adapterList      : Set adapterList = Nothing 
+   Dim adapter          : Set adapter     = Nothing      
+   Dim wanCore          : Set wanCore     = Nothing
+   Dim wshshell         : Set wshShell    = Nothing  
+   Dim ndtCore6         : Set ndtCore6    = Nothing
+   Dim supplicant       : Set supplicant = New CNDT1xSupp
+   Dim retval           : retval          = -1   
+   Dim autoMode         : autoMode        = False           
+   Dim messageIP        : messageIP       = oNDInfo.MessageIP  
+   Dim ndisVersion      : ndisVersion     = WinFileVersion("\system32\drivers\ndis.sys")
+   Dim startMCTServer   : startMCTServer  = 0
+   Dim mediaType        : mediaType       = 0  
+   Dim count            : count           = 0
+   
+   ' Write Script description to log file 
+   oLog.Write "Script to setup server mode"
+   oLog.Variation("Hit Stop Server button when tests finish")
+
+   ' NDTCore6 automatically load ndistest 6.0 protocol. This can only be
+   ' loaded on Ndis 6.0, so we check that
+   If((ndisVersion = "") Or (ndisVersion < "6.0")) Then
+      oLog.Write "Ndis version " & ndisVersion & " below 6.0. Not loading NdisTest 6.0 protocol"
+   Else
+      On Error Resume Next
+         Set ndtCore6 = CreateObject("NDTCore6.Base")
+         If (ndtCore6 is Nothing) Then
+            oLog.Write "Unable to load NdisTest 6.0 protocol"
+         Else
+            ndtCore6.DebugLevel = NORMAL_LOGGING_LEVEL
+         End If      
+         Err.Clear
+      On Error Goto 0   
+   End If
+   
+   ' Get Adapter collection from UI Object
+   Set adapterList = oNDInfo.AdapterList 
+   If(adapterList Is Nothing) Then
+	   MsgBox "Failed to retrieve Adapter list!", vbSystemModal
+	   WScript.Quit
+   End If 
+
+   For Each adapter In adapterList
+      If(adapter.AdapterType = ADAPTERTYPE_MESSAGE) Then
+         retval = oNDTBackChannel.UseInterface(adapter.IPAddress)
+      End if
+   Next
+
+   ' Check if server started with the /auto flag
+   autoMode = oNDTSession("Automated")
+   If(Not(IsEmpty(autoMode))) Then
+      If(autoMode = True) Then
+         oLog.Write  "The server is running in automated mode. It will exit when it has served atleast one client and " & _
+                     "is not serving any other client"
+      End If
+   Else
+      autoMode = False
+   End If
+  
+   For Each adapter In adapterList
+
+      If(adapter.AdapterType = ADAPTERTYPE_SUPPORT OR adapter.AdapterType = ADAPTERTYPE_WANVIRTUAL) Then
+	      
+	      mediaType = CLng(adapter.NdisMedium)
+	      If(mediaType = 5) Then
+            startMCTServer = 1
+         End If
+         
+         oNDTBackChannel.AddResource adapter.NdisMedium,        _
+                                     adapter.GUID,              _
+                                     adapter.Description,       _
+                                     adapter.PhoneNum,          _
+                                     adapter.AdapterType,       _
+                                     adapter.BoundTo,           _
+                                     adapter.GatewayMac,        _
+                                     adapter.IPAddress,         _
+                                     adapter.NdisPhysicalMedium
+      End If
+       
+      ' This code has been added to initialize the 1x supplicant object
+      If(adapter.AdapterType = ADAPTERTYPE_SUPPORT And adapter.NdisPhysicalMedium = NDISPHYSICALMEDIUMWIRELESSLAN) Then
+          
+         If(supplicant.vbOpenDevice(adapter.GUID) = False) Then
+            oLog.Failed "Supplicant failed to open device (Description: " & adapter.Description & ")", 88888
+            Exit Function
+         End If 
+                
+      End If
+      
+      '-------------------- Native 802.11 --------------------'
+      If(adapter.AdapterType = ADAPTERTYPE_SUPPORT And adapter.NdisPhysicalMedium = NdisPhysicalMediumNative802_11) Then 
+               
+         If(vbDot11StartAP() = False) Then
+            oLog.FailedEx "Failed to create AP on support device, cannot continue", Null, 88888
+            Exit Function
+         End If
+                           
+      End If
+      '-------------------------------------------------------'
+       
+      count = count + 1
+       
+   Next
+  
+   If(startMCTServer = 1) Then
+      Dim BinariesDir   
+      Set wshshell = WScript.CreateObject("WScript.Shell")
+      BinariesDir = oNdtSession("NDTDirectory")
+      If (IsEmpty (BinariesDir)) Then    ' If it is empty, rely on the Win64 variable      
+         If oNdtSession("Win64") = 1 Then
+            wshshell.Run("..\..\ia64\mctserver.exe")
+         Else
+            wshshell.Run("..\..\i386\mctserver.exe")
+         End If
+      Else
+         wshshell.Run(BinariesDir & "\mctserver.exe")
+      End If
+   End IF
+	
+   Set wanCore = CreateObject("NDTWAN.Core.1")
+   oNDTCore.LogPtr   = oLog.LogPtr
+   wanCore.LogPtr    = oLog.LogPtr
+   oSuppCore.LogPtr  = oLog.LogPtr
+
+   oNDTBackChannel.Initialize
+  
+   'loop forever until the user hit's "stop server" button
+   While(keepLooping = True)
+   
+      Wscript.Sleep 1000
+      
+      If(autoMode And (Not oNDTBackChannel.GotClients)) Then
+         oLog.Write ("Server not serving any clients. Quitting")
+         keepLooping = False
+      End If
+      
+   Wend
+
+   oNDTBackChannel.Uninitialize
+
+   Set wanCore 	   = Nothing
+   Set adapterList   = Nothing
+   Set wshshell      = Nothing
+
+   End Function
+   
+End Class
+
+'===============================================================================================
+' Description:	Called by NDInfo to tell the script to terminate. 
+Sub oNDInfo_Terminate(message)
+   keepLooping = False
+End Sub
+        </script>
+    </job>
+</package>
+
+
+<!--- CRC = 0xffb1d538 --->

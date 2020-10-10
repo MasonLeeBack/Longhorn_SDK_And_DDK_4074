@@ -1,0 +1,442 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3
+</MEDIA>
+<CARDMACH>
+2C,1M
+</CARDMACH>
+<RUNORDER>
+3080
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[
+This script verifies the ability to detect load and unload
+the miniport driver. It loads/unloads all local test and support adapters
+(simultaneously) and in the end ensures that the test adapter
+is able to talk to either a remote (or if no remote adapter selected, a local
+support adapter). It logs a failure if any of the adapters fails to load,
+or if the communication test at the end of the test run fails.
+
+It spawns additional script jobs to perform the simultaneous loading/unloading
+of adapters.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="2c_Mini6LoadUnload" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oNDTCore6" progid="NDTCore6.base.1" events="true"/>
+      <object id="oSSyncLocal" progid="NDTSSync.SSync.1" events="true"/>
+      <object id="oCoreFactory" progid="NDTCore6.Factory.1" events="true"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\inc\Constants6.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard6.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen6.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanEndPoint6.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script id="2c_Mini6LoadUnload" language="VBScript">
+'==========================================================================
+' Script Name:    2c_Mini6LoadUnload
+'==========================================================================
+Option Explicit
+Dim oTestObj
+
+' We are going to be using ndis 6 protocol
+g_UseNdis6Protocol = TRUE
+
+' We would also be using the trick to point oNDTCore to oNDTCore6, so that anyone who
+' uses oNDTCore would automatically get oNDTCore6. Only problem is we might be masking
+' some errors, so this would not be done just yet
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0), GetSupportAdapterIndex (oNDInfo.AdapterList, 0))
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Dim m_lTestAdapterIndex
+   Dim oTestCard, oTestOpen, oTestEndPoint
+   Dim m_lSuppAdapterIndex
+   Dim oSuppCard, oSuppOpen, oSuppEndPoint
+
+   Dim ArrCardGuids(16)
+   Dim nNumGuids
+   Private Sub Class_Initialize
+   End Sub
+
+   Private Sub Class_Terminate
+      ' Force stop the spawned scripts
+      oSSyncLocal.Stop
+
+      Set oTestEndPoint = Nothing
+      Set oTestOpen = Nothing
+      Set oTestCard = Nothing
+
+      Set oSuppEndPoint = Nothing
+      Set oSuppOpen = Nothing
+      Set oSuppCard = Nothing
+   End Sub
+
+   Sub SetDynamicConfiguration
+      Dim pAdapterList
+      Dim nCount
+      Set pAdapterList = oNDInfo.AdapterList
+
+      nNumGuids = 1
+      ' store the test adapter guid in the list
+      ArrCardGuids(nNumGuids) = pAdapterList(m_lTestAdapterIndex).GUID
+
+      For nCount = 1 To pAdapterList.Count
+         If (pAdapterList(nCount).AdapterType = 2) Then
+            If (pAdapterList(nCount).ConnectionId = 0) Then
+               ' This is a local support adapter, add it to our local adapters lists
+               nNumGuids = nNumGuids + 1
+               ' Note this means, we start indexing from 1
+               ArrCardGuids(nNumGuids) = pAdapterList(nCount).GUID
+            End If
+         End If
+      Next
+
+      Set pAdapterList = Nothing
+   End Sub
+
+
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      SetupTest = FALSE
+
+      oNDTCore6.DebugLevel = NORMAL_LOGGING_LEVEL
+
+      ' Get the cards to be used for testing
+      SetDynamicConfiguration
+
+      SetupTest = TRUE
+   End Function
+
+   Public Function CheckCommunication
+      Dim pAdapterList
+      CheckCommunication = FALSE
+
+      Set pAdapterList = oNDInfo.AdapterList
+
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard6
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+
+      Set oTestOpen = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpen is Nothing) Then
+         Exit Function
+      End If
+
+      ' Wait for link to be established
+      If (Not oTestCard.vbWaitForLink(WAIT_FOR_LINK_TIME)) Then
+         Call oLog.Failed("Unable to establish link on test adapter", 88888)
+         Exit Function
+      End If
+
+      Set oTestEndPoint = oTestOpen.vbCreateEndPoint(CLENDPOINT)
+      If (oTestEndPoint is Nothing) Then
+         Exit Function
+      End If
+
+      If (oTestEndPoint.vbOpenCommunicationChannel(SIMPLE_SEND_COMM_MGR, _
+            NDISTEST_CONSTRUCTOR, NDIS_MEDIUM_802_3_MEDIA_MODULE) <> 0) Then
+         Exit Function
+      End If
+
+      oLog.Variation ("Setting up Support Adapter")
+      Set oSuppCard = New CLanCard6
+      If (oSuppCard is Nothing) Then
+         Exit Function
+      End If
+
+      Set oSuppOpen = oSuppCard.vbSetupBasicTest(pAdapterList (m_lSuppAdapterIndex))
+      If (oSuppOpen is Nothing) Then
+         Exit Function
+      End If
+
+      ' Wait for link to be established
+      If (Not oSuppCard.vbWaitForLink(WAIT_FOR_LINK_TIME)) Then
+         Call oLog.Failed("Unable to establish link on support adapter", 88888)
+         Exit Function
+      End If
+
+      Set oSuppEndPoint = oSuppOpen.vbCreateEndPoint(CLENDPOINT)
+      If (oSuppEndPoint is Nothing) Then
+         Exit Function
+      End If
+
+      If (oSuppEndPoint.vbOpenCommunicationChannel(SIMPLE_SEND_COMM_MGR, _
+            NDISTEST_CONSTRUCTOR, NDIS_MEDIUM_802_3_MEDIA_MODULE) <> 0) Then
+         Exit Function
+      End If
+
+      Set pAdapterList = Nothing
+
+      Dim DestAddr, nReceiveDelay
+      Dim bResult, Status, nTestId
+      Dim oRecvCommMgrConfig, oRecvNBConfig, oRecvMediaConfig
+      Dim oSendCommMgrConfig, oSendNBConfig, oSendMediaConfig
+      Dim oRecvCommMgrStats, oRecvNBStats
+      Dim oSendCommMgrStats
+
+      Call oSuppOpen.vbSetPacketFilter(DIRECTED)
+
+      DestAddr = oSuppOpen.vbGetCardAddress
+      nReceiveDelay = oSuppOpen.vbGetReceiveDelay
+      nTestId = oNDTSupp.Random(1, 32765)
+
+      ' Create the various config obects to be used
+      Set oRecvCommMgrConfig = oCoreFactory.CommMgrRecvConfig(oSuppEndPoint.CommMgrType)
+      Set oRecvNBConfig = oCoreFactory.ConstructorRecvConfig(oSuppEndPoint.ConstructorType)
+      Set oRecvMediaConfig = oCoreFactory.MediaModuleRecvConfig(oSuppEndPoint.MediaModuleType)
+
+      Set oRecvCommMgrStats = oCoreFactory.CommMgrRecvStatistics(oSuppEndPoint.CommMgrType)
+      Set oRecvNBStats = oCoreFactory.ConstructorRecvStatistics(oSuppEndPoint.ConstructorType)
+
+      Set oSendCommMgrConfig = oCoreFactory.CommMgrSendConfig(oTestEndPoint.CommMgrType)
+      Set oSendNBConfig = oCoreFactory.ConstructorSendConfig(oTestEndPoint.ConstructorType)
+      Set oSendMediaConfig = oCoreFactory.MediaModuleSendConfig(oTestEndPoint.MediaModuleType)
+
+      Set oSendCommMgrStats = oCoreFactory.CommMgrSendStatistics(oTestEndPoint.CommMgrType)
+
+      oSendCommMgrConfig.NumSends = 100
+      oSendCommMgrConfig.NumNetBufferListsPerSend = 1
+      oSendCommMgrConfig.InitialBurstSize = 1
+
+      oSendNBConfig.MaxMdlSize = 400
+      oSendNBConfig.NumNBLToPreallocate = 100
+      oSendNBConfig.NumNetBuffersPerNetBufferList = 1
+      oSendNBConfig.NetBufferSize = 400
+      oSendNBConfig.TestId = nTestId
+
+      oSendMediaConfig.DestinationAddress = DestAddr
+
+      oRecvNBConfig.TestId = nTestId
+
+      '
+      ' start receives, send packets, check send results, then check
+      ' receive results
+      '
+      oLog.Variation ("Sending Packets")
+      Status = oSuppEndPoint.vbStartReceive(oRecvCommMgrConfig, oRecvNBConfig, oRecvMediaConfig)
+
+      Status = oTestEndPoint.vbSendNetBufferLists(oSendCommMgrConfig, oSendNBConfig, oSendMediaConfig)
+
+      Status = oTestEndPoint.vbWaitForSendsToComplete(0)
+
+      ' Obtain send results from the support card
+      Status = oTestEndPoint.vbGetSendResults(oSendCommMgrStats, Nothing)
+      If (Status <> 0) then
+         Call oLog.Failed ("Failed to get send results. Error " & Status, 88888)
+      End If
+
+      WScript.Sleep nReceiveDelay
+
+      ' Stop receiving
+      Status = oSuppEndPoint.vbStopReceive()
+      If (Status <> 0) Then
+         Call oLog.Failed ("Failed to stop receive. Error " & Status, 88888)
+      End If
+
+      ' Obtain receive results from the test card
+      Status = oSuppEndPoint.vbGetReceiveResults(oRecvCommMgrStats, oRecvNBStats)
+      If (Status <> 0) Then
+         Call oLog.Failed ("Failed to get receive results. Error " & Status, 88888)
+      End If
+
+      If (oRecvNBStats.TotalNetBufferListsReceived = 0) Then
+         Call oLog.Failed("Test <-> Support card communication failed after load/unload", 88888)
+      Else
+         If (oRecvNBStats.TotalNetBufferListsReceived < oSendCommMgrStats.TotalNetBufferListSendsSuccessful) Then
+            oLog.Warned ("Received fewer Net Buffers than sent")
+         End If
+
+         If (oRecvNBStats.TotalNetBuffersAccepted < oSendCommMgrStats.TotalNetBufferListSendsSuccessful) Then
+            oLog.Warned ("The sent Net Buffers were corrupted during communication")
+        End If
+      End If
+
+      If (oSendCommMgrStats.TotalNetBufferListsSendCompleted > oSendCommMgrStats.TotalNetBufferListSendsSuccessful) Then
+         oLog.Warned("Not all the Net Buffer Lists were sent successfully")
+      End If
+
+      oLog.Variation("Clear Events")
+
+      ' Clear the flags, so that ndis does not have a problem
+      Call oSuppOpen.vbSetPacketFilter(CLng(0))
+
+      Call oTestOpen.vbClearEvents()
+      Call oSuppOpen.vbClearEvents()
+
+      CheckCommunication = TRUE
+   End Function
+
+   Public Function RunTest (lTestAdapterIndex, lSuppAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      m_lSuppAdapterIndex = lSuppAdapterIndex
+
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+
+      ExecuteTestCore
+
+      CheckCommunication
+   End Function
+
+   Private Function ExecuteTestCore
+      Dim bRetval     : bRetval       = False
+      Dim nCount
+
+      ' Start all our child threads
+      For nCount = 1 To nNumGuids
+
+         ' Need to wrap script name in quotes
+         bRetval = oSSyncLocal.CreateJob(WScript.ScriptFullName, "LoadUnloadThread", ArrCardGuids(nCount))
+         If(bRetval = False) Then
+            Call oLog.Failed ("Unable to create load unload thread " & nCount, 88888)
+         End If
+      Next
+
+      ' Start execution of all threads
+      bRetval = oSSyncLocal.Run()
+
+      Do
+         ' Instead of an infinite wait, we wait in a loop so that StopTests works
+         bRetval = oSSyncLocal.WaitAllComplete(2000)
+      Loop While (bRetVal = FALSE)
+   End Function
+
+
+End Class
+
+   </script>
+</job>
+
+
+<job id="LoadUnloadThread">
+   <object id="oSSyncRemote" progid="NdtSSync.SSync.1" events="true"/>
+   <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+   <script language="VBScript" src="..\inc\clog.vbs"/>
+   <script language="VBScript" src="..\inc\Events.vbs"/>
+   <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+   <object id="oSetup" progid="NDTSupp.Setup.1" events="true"/>
+   <script language="VBScript">
+
+Option Explicit
+
+Dim Paused  : Paused    = True
+Dim InputGUID
+Dim oArgs
+
+' Count me as a running job
+oSSyncRemote.Ready()
+
+' The initialization required to get the log all set up
+Set oLog = new CLog
+'
+' Storing global log pointer for backward
+' compatability with older scripts
+Set oNDTLog = oLog.LogPtr
+
+oLog.Mask = LOG_FAILURE Or LOG_WARNING
+oSuppCore.LogPtr = oLog.LogPtr
+
+While(Paused = True)
+    WScript.Sleep(10)
+Wend
+
+Set oArgs = Wscript.Arguments
+InputGUID = CStr(oArgs(0))
+Set oArgs = Nothing
+
+' Now, run the stop/start loop
+Call StopStartDriver(InputGUID)
+
+' Do not set the loggingcomplete property
+Set oLog = Nothing
+
+' I am done
+oSSyncRemote.Complete()
+
+'--------------------------------------------------------------------------------------------------
+'
+Function StopStartDriver(AdapterGUID)
+   Dim nCount, ulErrorStatus
+
+   ' Run in a loop 30 times
+   For nCount = 1 To 30
+      ' Stop driver
+      oLog.Variation ("Stop " & AdapterGUID)
+      ulErrorStatus = oSetup.StopDriver(AdapterGUID)
+      If (ulErrorStatus <> 0) Then
+         oLog.Write ("Stop Driver Failed. Err = " & ulErrorStatus)
+      Else
+         oLog.Write ("Stop Driver Successful")
+      End If
+
+      ' Sleep hoping other thread runs
+      WScript.Sleep(1000)
+
+      ' Start driver
+      oLog.Variation ("Start " & AdapterGUID)
+      ulErrorStatus = oSetup.StartDriver(AdapterGUID)
+      If (ulErrorStatus <> 0) Then
+         oLog.Write ("Start Driver Failed. Err = " & ulErrorStatus)
+      Else
+         oLog.Write ("Start Driver Successful")
+      End If
+
+      ' Sleep hoping other thread runs
+      WScript.Sleep(1000)
+   Next
+End Function
+
+'--------------------------------------------------------------------------------------------------
+'
+Sub oSSyncRemote_OnRun()
+	' Start code running
+	Paused = False
+End Sub
+
+'--------------------------------------------------------------------------------------------------
+'
+Sub oSSyncRemote_OnStop()
+	'oSSyncRemote.Complete()
+	WScript.Quit
+End Sub
+
+</script>
+</job>
+
+</package>
+
+
+
+<!--- CRC = 0xb6e490f5 --->

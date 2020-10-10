@@ -1,0 +1,246 @@
+'
+' File          : TCPv6_Nagle.wsf
+' Author        : Sandeep Prabhu [5/8/01]
+'
+' A script to test nagle-ing
+'
+
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\common\IPv6Common.Lib"/>
+      <script language="VBScript" src="..\common\TCPv6Helper.Lib"/>
+      <script id="TCPv6_Nagle" language="VBScript">
+
+
+option explicit
+
+Dim Core, Sparta, Autosrv, MediaType, AutoNDObject, IFace, pControllerObj, ExceptionStatus
+
+
+'
+' Start the script
+'
+
+StartScript "TCPv6_Nagle", g_szLogDirectory, "Tests for Nagle behavior"
+
+
+' ==================================================================================================
+' Main routine
+' ==================================================================================================
+Sub Main
+   Core.SetAssertionTracking "70200"
+   '/**
+   ' @area name="Offload Compliance Test Assertions"
+   ' @group name="TCP Nagle Algorithm Assertions"
+   ' @group name="TCP Nagle Algorithm Assertions for TCP/IP v6" 
+   ' @define name="Offload" Offload Compliance Test Assertions
+   ' @define name="Nagle" TCP Nagle Algorithm Assertions
+   ' @define name="Naglev6" TCP Nagle Algorithm Assertions for TCP/IP v6
+   ' @hierarchy Offload Nagle Naglev6
+   ' @key Reference="WLP# - x.x.x.x; RFC-1122 Section 4.2.3.4"
+   ' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+   ' @key TestName="TCPv6 Nagle Algorithm Disable/Enabled Tests"
+   ' @key TestParam=""
+   ' @key TestLog="TCPv6_Nagle.log"
+   '*/
+
+   '/**
+   ' @test name="The stack must send small segments immediately when Nagle is disabled"
+   '    A connection is established. The Nagle algorithm is disabled on
+   '    the socket. 60 send requests each with one byte of data are given
+   '    to the stack. It should ignore the Nagle algorithm and send each
+   '    request as it is indicated.
+   '*/
+   Core.StartTest "Functionality test: Nagling disabled, data size = 1"
+   BasicNagleTest FALSE, 1, 60
+   Core.EndTest
+   Core.Sleep(2500)
+
+   '/**
+   ' @test name="The stack must send segments under MSS immediately when Nagle is disabled"
+   '    A connection is established. The Nagle algorithm is disabled on
+   '    the socket. 30 send requests each with 500 bytes of data are
+   '    given to the stack. It should ignore the Nagle algorithm and
+   '    send each request as it is indicated.
+   '*/
+   Core.StartTest "Functionality test: Nagling disabled, data size = 500"
+   BasicNagleTest FALSE, 500, 30
+   Core.EndTest
+   Core.Sleep(2500)
+
+   '/**
+   ' @test name="The stack must group segments under MSS together when Nagle is enabled"
+   '    A connection is established. The Nagle algorithm is enabled on
+   '    the socket. 30 send requests each with 500 bytes of data are given
+   '    to the stack. It should follow the Nagle algorithm and send a
+   '    segment only when the outstanding data exceeds MSS or all
+   '    outstanding data has been acknowledged.
+   '*/
+   Core.StartTest "Functionality test: Nagling enabled, data size = 500"
+   BasicNagleTest TRUE, 500, 30
+   Core.EndTest
+   Core.Sleep(2500)
+
+   '/**
+   ' @test name="The stack must group small segments together when Nagle is enabled"
+   '    A connection is established. The Nagle algorithm is enabled on
+   '    the socket. 400 send requests each with one byte of data are given
+   '    to the stack. It should follow the Nagle algorithm and send only
+   '    one segment of 399 bytes.
+   '*/
+   Core.StartTest "Functionality test: Nagling enabled, data size = 1"
+   BasicNagleTest TRUE, 1, 400
+   Core.EndTest
+   Core.Sleep(2500)
+
+End Sub
+
+'
+' Routine to test the basic Nagle functionality
+'
+Sub BasicNagleTest(fNagle, ulPerSendSize, ulNumSends)
+   Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort, pIFace
+   Dim AutoNDObject
+
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 15000
+   usDestPort = 15001
+
+   Set AutoNDObject = Sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, g_szLocalSpoofIp6Address, FALSE)
+   Set pIFace = CreateInterface(TRUE, g_szRemoteMacAddress, g_szRemoteIp6Address, g_szLocalSpoofIp6Address)
+   pIFace.StartListening
+
+   Core.StartVariation
+
+   '
+   ' do loop used to get around using goto
+   '
+   do
+      '
+      ' Establish a TCP connection
+      '
+      ulStatus= ActiveConnect(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "BasicNagleTest: Connect - " & ulStatus
+         exit sub
+      end if
+
+      '
+      ' Disable nagel if required
+      '
+      if Not (IsNull(fNagle)) then
+         ulStatus = pControllerObj.SetSocketOption(ulSessionId, IPPROTO_TCP, TCP_NODELAY, Not(fNagle))
+         if (ulStatus <> 0) then
+            Core.BlockVariation "BasicNagleTest: SetSocketOption - " & ulStatus
+            exit do
+         end if
+      end if
+
+      '
+      ' Ask Autosrv to do a lot of small sends
+      '
+      ulStatus = pControllerObj.Send(ulSessionId, ulNumSends, 20, ulPerSendSize, ulTID)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "BasicNagleTest: Send - " & ulStatus
+         exit do
+      end if
+
+      '
+      ' Verify the nagle behavior - enabled/disabled
+      '
+      ulStatus = VerifyNagle(fNagle, (ulNumSends*ulPerSendSize), usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber, pIFace)
+      if (ulStatus <> 0) then
+         Core.FailSev1Variation "BasicNagleTest: VerifyNagle - " & ulStatus
+         exit do
+      end if
+
+   loop while (FALSE)
+
+   '
+   ' Reset the connection
+   '
+   ulStatus = ResetConnectionEx(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.log "ERROR: BasicNagleTest: ResetConnectionEx - " & ulStatus
+   end if
+End Sub
+
+'
+' Function to verify the nagle behavior
+'
+Function VerifyNagle(fNagle, ulDataSize, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber, pIFace)
+   Dim ulStatus, pTCPPacket, pACKPacket, ulBytesRcvd, ulExpectedAckNumber, ulTID, fLoopPass
+   DIm ulPreviousSize, ulTotalBytesRcvd
+
+   '
+   ' Start receiving the packets and ACKing them
+   '
+   ulTotalBytesRcvd = 0
+   fLoopPass = fNagle
+   ulExpectedAckNumber = ulAckNumber
+   Set pACKPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, g_szLocalSpoofIp6Address)
+   do
+      '
+      ' Receive all the packets in the timeout period
+      '
+      ulPreviousSize = DEFAULT_MSS
+      do
+         Set pTCPPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 50, pIFace)
+         if Not(pTCPPacket is Nothing) then
+
+            ulTotalBytesRcvd = ulTotalBytesRcvd + ulBytesRcvd
+
+            '
+            ' Ensure this is the packet we are expecting
+            '
+            if (pTCPPacket.TcpHeader.SeqNumber <> ulExpectedAckNumber) then
+               Core.log "VerifyNagle: Incorrect packet " & Hex(pTCPPacket.TCPHeader.SeqNumber) & " <> " & Hex(ulExpectedAckNumber)
+               VerifyNagle = 1
+               exit function
+            end if
+            ulExpectedAckNumber = ulAckNumber
+
+            '
+            ' We shouldn't get two small packets in succession if nagleing is on
+            ' else we should
+            '
+            if ((ulPreviousSize < DEFAULT_MSS) AND (ulBytesRcvd < DEFAULT_MSS)) then
+               if (fNagle) then
+                  Core.log "VerifyNagle: Received 2 small segments " & ulPreviousSize & ", " & ulBytesRcvd & ". Should have been: " & DEFAULT_MSS
+                  VerifyNagle = 1
+                  exit function
+               else
+                  fLoopPass=TRUE
+               end if
+            end if
+            ulPreviousSize = ulBytesRcvd
+
+         end if
+      loop while not(pTCPPacket is Nothing)
+
+      '
+      ' Send the ACK
+      '
+      pACKPacket.TcpHeader.AckNumber = ulAckNumber
+      pIFace.Send(pACKPacket)
+
+   loop while (ulTotalBytesRcvd <> ulDataSize)
+
+   if (Not(fLoopPass)) then
+      Core.Log "VerifyNagle: Didn't receive multiple small segments"
+      VerifyNagle = 1
+      exit function
+   end if
+
+   VerifyNagle = 0
+End Function
+
+      </script>
+   </job>
+</package>

@@ -1,0 +1,84 @@
+Test Assertion_A13479
+
+Assertion '13.4.7.9 WIA_IPS_YEXTENT' 
+[
+If the device is a scanner, when the current value of this property is changed, 
+the current values of the following properties might be affected: 
+WIA_IPS_NUMBER_OF_LINES, WIA_IPA_ITEM_SIZE.
+]
+
+Var root:Item
+Var pDataType:Property
+Var dt, lVal
+Var minYEXTENT, maxYEXTENT
+{
+    StartWia()
+    GetRoot(root)
+    GetDeviceType(dt)
+    
+    If (dt != StiDeviceTypeScanner)
+    Then Exit Passed
+
+    GetNextItem(root)
+
+    While ( root ) Do 
+    {
+        If ( !CheckItemType(root, WiaItemTypeImage))
+        Then Goto label
+
+        If (!GetProperty(root, pDataType, WIA_IPS_YEXTENT))
+        Then 
+        {
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+
+        lVal = GetLongValue(pDataType)
+
+        minYEXTENT  = GetPropertyMinValue(pDataType)
+        maxYEXTENT  = GetPropertyMaxValue(pDataType)   
+
+        If ( !SetPropertyLong(root, WIA_IPS_YEXTENT, minYEXTENT))
+        Then Exit Failed
+
+        If (!GetProperty(root, pDataType, WIA_IPA_NUMBER_OF_LINES))
+        Then 
+        {   
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+
+        lVal = GetLongValue(pDataType)
+
+        If (lVal != minYEXTENT)
+        Then 
+        {
+            Writeln '\tIncorrect value of WIA_IPA_NUMBER_OF_LINES property'
+            Exit Failed
+        }
+
+        If ( !SetPropertyLong(root, WIA_IPS_YEXTENT, maxYEXTENT))
+        Then Exit Failed
+
+        If (!GetProperty(root, pDataType, WIA_IPA_NUMBER_OF_LINES))
+        Then 
+        {   
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+
+        lVal = GetLongValue(pDataType)
+
+        If (lVal != maxYEXTENT)
+        Then 
+        {
+            Writeln '\tIncorrect value of WIA_IPA_NUMBER_OF_LINES property'
+            Exit Failed
+        }
+
+:label:
+        GetNextItem(root)
+    }
+
+    StopWia()
+}

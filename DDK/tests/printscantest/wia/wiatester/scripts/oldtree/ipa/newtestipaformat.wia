@@ -1,0 +1,175 @@
+Test Assertion_A13449
+
+Var p:Property, pTymed:Property, root:Item
+Var dt
+{
+    PrintDescriptionFromXML('13.4.4.9')
+    StartWia()
+    GetRoot(root)
+    GetDeviceType(dt)
+
+    GetNextItem(root)
+
+    While ( root ) Do
+    {
+        If ( !CheckItemType(root, WiaItemTypeImage) And 
+             !CheckItemType(root, WiaItemTypeAudio) And
+             !CheckItemType(root, WiaItemTypeVideo) )
+        Then Goto nextlabel
+
+        If ( !GetProperty(root, p, WIA_IPA_FORMAT) )
+        Then 
+        {
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+
+        If (!CheckPropertyAccessFromXML(p) )
+        Then 
+        {
+            Writeln '\tIncorrect access'
+            Exit Failed
+        }
+
+        If (!CheckPropertyTypeFromXML(p) )
+        Then
+        {
+            Writeln '\tIncorrect vartype'
+            Exit Failed
+        }
+
+        If ( (!CheckValueGUID(p, WiaImgFmt_MEMORYBMP)) 
+            And (!CheckValueGUID(p, WiaImgFmt_BMP)) 
+            And (!CheckValueGUID(p, WiaImgFmt_EMF)) 
+            And (!CheckValueGUID(p, WiaImgFmt_WMF)) 
+            And (!CheckValueGUID(p, WiaImgFmt_JPEG))
+            And (!CheckValueGUID(p, WiaImgFmt_PNG))
+            And (!CheckValueGUID(p, WiaImgFmt_GIF))
+            And (!CheckValueGUID(p, WiaImgFmt_TIFF))
+            And (!CheckValueGUID(p, WiaImgFmt_EXIF))
+            And (!CheckValueGUID(p, WiaImgFmt_PHOTOCD))
+            And (!CheckValueGUID(p, WiaImgFmt_FLASHPIX))
+            And (!CheckValueGUID(p, WiaImgFmt_ICO))
+            And (!CheckValueGUID(p, WiaImgFmt_CIFF))
+            And (!CheckValueGUID(p, WiaImgFmt_PICT))
+            And (!CheckValueGUID(p, WiaImgFmt_JPEG2K))
+            And (!CheckValueGUID(p, WiaImgFmt_JPEG2KX))
+            And (!CheckValueGUID(p, WiaImgFmt_RTF)) 
+            And (!CheckValueGUID(p, WiaImgFmt_XML))
+            And (!CheckValueGUID(p, WiaImgFmt_HTML))
+            And (!CheckValueGUID(p, WiaImgFmt_TXT))
+            And (!CheckValueGUID(p, WiaImgFmt_MPG))
+            And (!CheckValueGUID(p, WiaImgFmt_AVI))
+            And (!CheckValueGUID(p, WiaImgFmt_ASF))
+            And (!CheckValueGUID(p, WiaImgFmt_SCRIPT))
+            And (!CheckValueGUID(p, WiaImgFmt_EXEC))
+            And (!CheckValueGUID(p, WiaImgFmt_UNICODE16))
+            And (!CheckValueGUID(p, WiaImgFmt_DPOF))
+            And (!CheckValueGUID(p, WiaAudFmt_WAV))  
+            And (!CheckValueGUID(p, WiaAudFmt_MP3))
+            And (!CheckValueGUID(p, WiaAudFmt_AIFF))
+            And (!CheckValueGUID(p, WiaAudFmt_WMA))
+         ) 
+        Then 
+        {
+            If ( !GetProperty(root, p, WIA_IPA_FILENAME_EXTENSION) )
+            Then
+            {
+                Writeln '\t Private format value used, WIA_IPA_FILENAME_EXTENSION must be implemented.'
+                Exit Failed
+            }
+        }
+
+        If ( CheckItemType(root, WiaItemTypeImage) ) 
+        Then
+        { 
+            If ( !CheckFormatTymedSuppPairs(root) )
+            Then 
+            {
+                Writeln '\tThe item doesn\'t support the required (TYMED_CALLBACK, WiaImgFmt_MEMORYBMP), \r\n\t(TYMED_FILE, WiaImgFmt_BMP) tymed-format pairs'
+                Exit Failed
+            }
+        }
+
+        If ( (CheckValueGUID(p, WiaImgFmt_MEMORYBMP)) 
+            Or (CheckValueGUID(p, WiaImgFmt_BMP)) 
+            Or (CheckValueGUID(p, WiaImgFmt_EMF)) 
+            Or (CheckValueGUID(p, WiaImgFmt_WMF)) 
+            Or (CheckValueGUID(p, WiaImgFmt_JPEG))
+            Or (CheckValueGUID(p, WiaImgFmt_PNG))
+            Or (CheckValueGUID(p, WiaImgFmt_GIF))
+            Or (CheckValueGUID(p, WiaImgFmt_TIFF))
+            Or (CheckValueGUID(p, WiaImgFmt_EXIF))
+            Or (CheckValueGUID(p, WiaImgFmt_PHOTOCD))
+            Or (CheckValueGUID(p, WiaImgFmt_FLASHPIX))
+            Or (CheckValueGUID(p, WiaImgFmt_ICO))
+            Or (CheckValueGUID(p, WiaImgFmt_CIFF))
+            Or (CheckValueGUID(p, WiaImgFmt_PICT))
+            Or (CheckValueGUID(p, WiaImgFmt_JPEG2K))
+            Or (CheckValueGUID(p, WiaImgFmt_JPEG2KX)) )
+        Then
+        { 
+            If ( !CheckItemType(root, WiaItemTypeImage) )
+            Then 
+            {
+                Writeln '\tThe item uses an image format, but the item type is not marked as WiaItemTypeImage. \r\n'
+                Exit Failed
+            }
+        }
+
+
+        If ( (CheckValueGUID(p, WiaAudFmt_WAV)) 
+            Or (CheckValueGUID(p, WiaAudFmt_MP3))
+            Or (CheckValueGUID(p, WiaAudFmt_AIFF))
+            Or (CheckValueGUID(p, WiaAudFmt_WMA)) )
+        Then
+        {
+            If ( !CheckItemType(root, WiaItemTypeAudio) )
+            Then 
+            {
+                Writeln '\tThe item uses an audio format, but the item type is not marked as WiaItemTypeAudio. \r\n'
+                Exit Failed
+            }
+        }
+
+        If ( (CheckValueGUID(p, WiaImgFmt_MPG)) 
+            Or (CheckValueGUID(p, WiaImgFmt_ASF))
+            Or (CheckValueGUID(p, WiaImgFmt_AVI)) )
+        Then
+        { 
+            If ( !CheckItemType(root, WiaItemTypeVideo) )
+            Then 
+            {
+                Writeln '\tThe item uses a video format, but the item type is not marked as WiaItemTypeVideo. \r\n'
+                Exit Failed
+            }
+        }
+
+
+        If ( (CheckValueGUID(p, WiaImgFmt_RTF)) 
+            Or (CheckValueGUID(p, WiaImgFmt_XML))
+            Or (CheckValueGUID(p, WiaImgFmt_HTML))
+            Or (CheckValueGUID(p, WiaImgFmt_TXT))
+            Or (CheckValueGUID(p, WiaImgFmt_SCRIPT))
+            Or (CheckValueGUID(p, WiaImgFmt_EXEC))
+            Or (CheckValueGUID(p, WiaImgFmt_UNICODE16))
+            Or (CheckValueGUID(p, WiaImgFmt_DPOF)) )
+        Then
+        { 
+            If ( (!CheckItemType(root, WiaItemTypeFile))
+               Or (CheckItemType(root, WiaItemTypeImage))
+               Or (CheckItemType(root, WiaItemTypeVideo))
+               Or (CheckItemType(root, WiaItemTypeAudio)) )
+            Then 
+            {
+                Writeln '\tThe item uses a document format (not an image, video, or audio file).The item type should be marked as WiaItemTypeFile only. \r\n'
+                Exit Failed
+            }
+        }
+
+:nextlabel:
+        GetNextItem(root)
+    }
+
+    StopWia()
+}

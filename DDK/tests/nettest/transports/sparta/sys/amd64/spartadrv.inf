@@ -1,0 +1,114 @@
+;
+; SPARTA Driver INF file
+;
+; Copyright (c) 1993-2000, Microsoft Corporation
+;
+; ----------------------------------------------------------------------
+;                      CONFIGURATION SECTION
+; ----------------------------------------------------------------------
+
+[version]
+signature               = "$Windows NT$"
+Class                   = NetTrans
+ClassGUID               = {4d36e975-e325-11ce-bfc1-08002be10318}
+Provider                = %Msft%
+LayoutFile              = layout.inf
+CatalogFile             = spartadrv.cat
+DriverVer               = 05/30/2001, 2.1.01.001
+
+
+[Manufacturer]
+%Msft%                  = MSFT
+
+[MSFT]
+%SPARTADRV_Desc%        = SPARTADRV.ndi,       MS_SPARTADRV
+
+[SPARTADRV.ndi]
+Characteristics         = 0x0 
+AddReg                  = SPARTADRV.ndi.AddReg
+CopyFiles               = SPARTADRV.CopyFiles.Sys
+
+[SPARTADRV.ndi.AddReg]
+HKR,Ndi,HelpText,,%SPARTADRV_HELP%
+HKR,Ndi,Service,,"SPARTADRV"
+HKR,Ndi,CoService,%REG_MULTI_SZ%,"SPARTADRV"
+
+
+; Interfaces
+HKR,Ndi\Interfaces,UpperRange,,"noupper"
+HKR,Ndi\Interfaces,LowerRange,,"ndis4,ndis5,ndis5_ip"
+
+[SPARTADRV.ndi.Services]
+AddService=SPARTADRV,0,SPARTADRV.AddService
+DelService=SPARTADRV
+
+[SPARTADRV.AddService]
+    DisplayName     = %SPARTADRV_Desc%
+    ServiceType     = %SERVICE_KERNEL_DRIVER%
+    StartType       = %SERVICE_DEMAND_START%
+    ErrorControl    = %SERVICE_ERROR_NORMAL%
+    ServiceBinary   = %12%\spartadrv.sys
+    LoadOrderGroup  = NDIS
+
+; ----------------------------------------------------------------------
+;                   FILE COPY STUFF
+; ----------------------------------------------------------------------
+
+[SPARTADRV.CopyFiles.Sys]
+spartadrv.sys,,,2
+
+[DestinationDirs]
+SPARTADRV.CopyFiles.Sys   = 12   ; %windir%\System32\drivers
+
+; ----------------------------------------------------------------------
+;                   CONSTANTS AND STRINGS
+; ----------------------------------------------------------------------
+
+[Strings]
+Msft                        = "Microsoft"
+
+SPARTADRV_Desc              = "SPARTA Protocol Test Driver"
+SPARTADRV_HELP              = "This is a NDIS protocol driver used as part of the SPARTA testing architecture."
+
+; ServiceType values
+SERVICE_KERNEL_DRIVER       = 0x00000001
+SERVICE_FILE_SYSTEM_DRIVER  = 0x00000002
+SERVICE_ADAPTER             = 0x00000004
+SERVICE_RECOGNIZER_DRIVER   = 0x00000008
+SERVICE_WIN32_OWN_PROCESS   = 0x00000010
+SERVICE_WIN32_SHARE_PROCESS = 0x00000020
+SERVICE_INTERACTIVE_PROCESS = 0x00000100
+SERVICE_INTERACTIVE_SHARE_PROCESS = 0x00000120
+
+; StartType values
+SERVICE_BOOT_START          = 0x00000000
+SERVICE_SYSTEM_START        = 0x00000001
+SERVICE_AUTO_START          = 0x00000002
+SERVICE_DEMAND_START        = 0x00000003
+SERVICE_DISABLED            = 0x00000004
+
+; ErrorControl values
+SERVICE_ERROR_IGNORE        = 0x00000000
+SERVICE_ERROR_NORMAL        = 0x00000001
+SERVICE_ERROR_SEVERE        = 0x00000002
+SERVICE_ERROR_CRITICAL      = 0x00000003
+
+; Characteristic flags
+NCF_VIRTUAL                 = 0x0001
+NCF_WRAPPER                 = 0x0002
+NCF_PHYSICAL                = 0x0004
+NCF_HIDDEN                  = 0x0008
+NCF_NO_SERVICE              = 0x0010
+NCF_NOT_USER_REMOVABLE      = 0x0020
+NCF_HAS_UI                  = 0x0080
+NCF_MODEM                   = 0x0100
+
+; Registry types
+REG_MULTI_SZ                = 0x10000
+REG_EXPAND_SZ               = 0x20000
+REG_DWORD                   = 0x10001
+
+; Service install flags
+SPSVCINST_TAGTOFRONT        = 0x1
+SPSVCINST_ASSOCSERVICE      = 0x2
+

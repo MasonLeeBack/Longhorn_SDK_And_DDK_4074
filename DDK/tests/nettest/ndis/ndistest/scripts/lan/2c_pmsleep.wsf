@@ -1,0 +1,513 @@
+<!-- CRC = 0x6a6296ed -->
+<package>
+<SCRIPTDEF>
+<CARDMACH>
+2C,1M,2M
+</CARDMACH>
+<RUNORDER>
+1725
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[This test will check for support for different sleep states (S1, S2, S3 and S4)
+by the network device. A system (or systems) capable of handling atleast S1, S3 and S4 is
+a requirement for this test.
+The script looks for all the states sleep supported by the NIC. By default, atleast S1, S3 and
+S4 are required to be supported. The states tested can be overridden through command line switches
+The script puts the system to one of the test sleep states and then wakes it up after a fixed amount
+of time. A simple Send Receive test is run to check that the adapter is functioning properly after
+coming out of the sleep state.
+The script will permute supported sleep states in such a way that all possible transitions from one
+sleep state to another are covered.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+    <job id="2c_sleep" prompt="no">
+        <reference object="NDInfo.Info.1" version="1.0"/>
+        <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+        <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+        <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+        <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+        <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+        <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+        <script language="VBScript" src="..\inc\constwlan.vbs"/>
+        <script language="VBScript" src="..\inc\cwlan.vbs"/>
+		  <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+        <script language="VBScript" src="..\inc\ccard.vbs"/>
+        <script language="VBScript" src="..\inc\copen.vbs"/>
+        <script language="VBScript" src="..\inc\clog.vbs"/>
+        <script language="VBScript" src="..\inc\general.vbs"/>
+        <script language="VBScript" src="..\inc\Events.vbs"/>
+        <script language="VBScript" src="..\inc\Utilities.vbs"/>
+        <script language="VBScript" src="..\inc\Constants.vbs"/>
+        <script language="VBScript" src="..\inc\DevChars.vbs"/>
+        <script language="VBScript" src="..\inc\PnPPowerLib.vbs"/>
+        <script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+        <script id="2c_sleep" language="VBScript">
+
+
+'==========================================================================
+' Script Name:    2c_sleep
+'==========================================================================
+Option Explicit
+
+Call Initialize ()
+Call Main(GetTestAdapterIndex (oNDInfo.AdapterList, 0), GetSupportAdapterIndex (oNDInfo.AdapterList, 0))
+Call Terminate ()
+
+Function Main(lTestAdapterIndex, lSupportAdapterIndex)
+
+    Dim oSleepTest
+
+    Set oSleepTest = new CSleepTest
+
+    ' Run the test
+    call oSleepTest.RunTest (lTestAdapterIndex, lSupportAdapterIndex)
+
+    ' Cleanup
+    Set oSleepTest = Nothing
+
+End Function
+
+
+Class CSleepTest
+    Private oPnPPowerObj
+    Private nTimeToSleep
+    Private nTestIterations
+    Private nNumStatesSupported
+    Private nSleepStatesToTest
+    Private bFailOnUnsupportedS2
+    Private bStandbyOptional
+    Private bHibernateOptional
+
+    Private oTestCard
+    Private oSuppCard
+    Private oTestOpen
+    Private oSuppOpen
+    Private nPhysicalMedium
+
+    Private nTestAdapterIndex, nSupportAdapterIndex
+
+    ' Wireless specific variables
+    Private cWlanInst, oCard
+    Private sSsid, sKeyMaterial
+    Private nInfraMode, nAuthMode, nWepStatus, nKeyIndex
+
+    Sub Class_Initialize ()
+        ' Create the Power lib object
+        Set oPnPPowerObj = new PnPPower
+
+        ' Set time to put machine to sleep for in seconds
+        nTimeToSleep = 60
+
+        ' Choose how many test iterations need to be run if only 1 sleep state is supported
+        nTestIterations = 10
+
+        ' Fail if S2 is not supported by default
+        bFailOnUnsupportedS2 = True
+
+        ' Standby and hiberante not optional by default
+        bStandbyOptional = False
+        bHibernateOptional = False
+
+        ' Set the log pointer
+        oNDTCore.LogPtr = oLog.LogPtr
+        oNDTSupp.LogPtr = oLog.LogPtr
+    End Sub
+
+
+    Sub Class_Terminate ()
+        Set oPnPPowerObj = Nothing
+    End Sub
+
+
+    Function RunTest (lTestAdapterIndex, lSupportAdapterIndex)
+        nTestAdapterIndex = lTestAdapterIndex
+        nSupportAdapterIndex = lSupportAdapterIndex
+
+        ' Get the physical medium in question
+        nPhysicalMedium = oNDTSession.Variable(lTestAdapterIndex & "DriverPhysicalMediumConst")
+
+        ' If wireless then do association first
+        If(nPhysicalMedium = NDISPHYSICALMEDIUMWIRELESSLAN) Then
+            If(Associate2x(lTestAdapterIndex, lSupportAdapterIndex) = False) Then
+                Exit Function
+            End If
+
+            Set cWlanInst   = new CWlan
+            sSsid           = DEFAULTAP.Ssid
+            sKeyMaterial    = DEFAULTAP.KeyMaterial
+            nInfraMode      = DEFAULTAP.InfrastructureMode
+            nAuthMode       = DEFAULTAP.AuthenticationMode
+            nWepStatus      = DEFAULTAP.WepStatus
+            nKeyIndex       = DEFAULTAP.KeyIndex
+        End if
+
+        ' Check if system supports power management
+        If (Not SystemSupportsPM ()) Then
+            call oLog.Failed ("Test could not be run due to lack of Power Management support!", 88888)
+            Exit Function
+        End If
+
+        oLog.Variation ("Determine states to test")
+        call SetupStatesToTest ()
+
+        ' Setup test and support card
+        oLog.Variation ("Setup test and support card")
+        Set oTestCard = new CCard
+        Set oTestOpen = oTestCard.SetupBasicTest (oNDInfo.AdapterList (lTestAdapterIndex))
+
+        Set oSuppCard = new CCard
+        Set oSuppOpen = oSuppCard.SetupBasicTest (oNDInfo.AdapterList (lSupportAdapterIndex))
+        If (oTestOpen Is Nothing Or oSuppOpen Is Nothing) Then
+            oLog.Write ("Failed to setup up test and support card/open instances! Bailing out!")
+            Set oTestCard = Nothing
+            Set oSuppCard = Nothing
+            Exit Function
+        End If
+
+        'oTestOpen.Close ()
+        'oSuppOpen.Close ()
+
+        call TestSleepStates (lTestAdapterIndex, lSupportAdapterIndex)
+
+    End Function
+
+
+    Function SystemSupportsPM ()
+        ' IA64 machines do not support hibernate or standby
+        Dim Win64
+        Win64 = oNDTSession ("Win64")
+        If (IsEmpty (Win64)) Then
+            oLog.SafeWarned ("IA 64 info could not be found in the session!!!")
+            ' Assuming not 64 bit and pressing on
+            SystemSupportsPM = True
+        Else
+            If (Win64 = 1) Then
+                oLog.Write ("Power Management is not supported on 64 bit machines")
+                SystemSupportsPM = False
+                Exit Function
+            Else
+                SystemSupportsPM = True
+            End If
+        End If
+
+        ' If data center, then testing is optional
+        Dim SystemSKU
+        SystemSKU = oNDTSession("SystemSKU")
+        If (not(IsEmpty (SystemSKU))) Then
+            if (SystemSKU And (VER_SUITE_DATACENTER Or VER_SUITE_ENTERPRISE)) Then
+                oLog.Write("This is a data center machine! Standby and hibernate test are optional")
+                bStandbyOptional = True
+                bHibernateOptional = True
+                SystemSupportsPM = True
+            End If
+        End If
+
+    End Function
+
+    Function SetupStatesToTest
+
+        ' Get Sleep States to be tested from the session
+        nSleepStatesToTest = oNDTSession ("SleepStatesToTest")
+
+        ' If no info in session, test all sleep states
+        If (IsEmpty (nSleepStatesToTest)) Then
+            nSleepStatesToTest = CLng (15)
+            ' In this case, we will not fail for lack of S2 support
+            bFailOnUnsupportedS2 = False
+        ElseIf (nSleepStatesToTest = 0) Then
+            ' The following assignation may cause an unused WAKEUP_TIMER_SUPPORTED bit to get set
+            nSleepStatesToTest = oPnPPowerObj.SupportedPowerStates
+            ' Clear out the WAKEUP_TIMER_SUPPORTED bit if set! Just precaution, not necessary
+            nSleepStatesToTest = (nSleepStatesToTest And (Not (WAKEUP_TIMER_SUPPORTED)))
+        End If
+
+        oLog.Write ("Sleep states needed to be tested are 0x" & Hex(nSleepStatesToTest))
+
+    End Function
+
+
+    Function TestSleepStates (lTestAdapterIndex, lSupportAdapterIndex)
+        Dim SleepTransitionOrder, SavedMask
+        Dim CurrentSleepState, lMedium
+
+        oLog.Write ("Establish link for message card")
+
+        SleepTransitionOrder = GetSleepTransitionOrder ()
+        If (IsNull (SleepTransitionOrder)) Then
+            call oLog.Failed ("Could not get a valid set of sleep states to test", 88888)
+            Exit Function
+        End If
+
+        For Each CurrentSleepState in SleepTransitionOrder
+
+            ' Check if system supports AutoWake (RTC)
+            If ((oPNPPowerObj.SupportedPowerStates And WAKEUP_TIMER_SUPPORTED) = 0) Then
+               MsgBox "Choose OK to Sleep. After machine has slept, power cycle it.", vbOKOnly or vbSystemModal, "SLEEP TEST"
+            End If
+
+            ' Put the machine to sleep for specified amount of time
+            call oPnPPowerObj.VerifiedSleep (CurrentSleepState, nTimeToSleep)
+
+            ' If wireless ReAssociate
+            ' Reassociate wireless device
+            If(nPhysicalMedium = NDISPHYSICALMEDIUMWIRELESSLAN) Then
+                Set oCard = oTestCard.CreateOpen
+                Set cWlanInst.OpenInstanceClass = oCard
+                Call cWlanInst.ReAssociate(sSsid, nInfraMode, nAuthMode, nKeyIndex, sKeyMaterial, nWepStatus)
+                oCard.Close()
+            End if
+
+            ' Wait for links etc. to be reestablished
+            oTestCard.WaitForLink ()        ' Test card link
+
+            ' Establish support card link only if it is local! Remote machine never slept so no need
+            If (oNDInfo.AdapterList(nSupportAdapterIndex).ConnectionID = 0) then
+                oLog.Write ("Establish link for support card")
+                oSuppCard.WaitForLink ()
+            End If
+
+            ' Message card link needs to checked for modem related RPC issues
+            ' EstablishMessageCardLink ()
+
+            ' Open the instance of NdisOpen again as sleep closes them
+            lMedium = oTestCard.GetNdisMedium()
+
+            'oTestOpen.ReOpen (lMedium)
+            'oSuppOpen.ReOpen (lMedium)
+
+            ' Excahnge data to check NIC works
+            call RunCommunicationTest (lTestAdapterIndex, lSupportAdapterIndex)
+
+            ' Close the open instances
+            'oTestOpen.Close()
+            'oSuppOpen.Close()
+
+        Next
+
+    End Function
+
+    Function EstablishMessageCardLink
+       Dim errStatus, MessageGUID, oAdapter
+
+       EstablishMessageCardLink = False
+
+       MessageGUID = NULL
+       for Each oAdapter in oNDInfo.AdapterList
+          If (oAdapter.AdapterType = 3) Then
+            MessageGUID = oAdapter.GUID
+            Exit For
+          End If
+       Next
+
+       If (IsNull (MessageGUID)) Then
+          Dim ConnectStatus, BytesWritten, ErrorStatus
+          Dim Connected, lCount
+
+          ConnectStatus = 0
+          Connected = 0
+          lCount = 0
+
+          Do While (True)
+            ' Sleep for a second
+            Wscript.Sleep 1000
+
+            If (Not oSuppCore.NdisIoControl (MessageGUID, OID_GEN_MEDIA_CONNECT_STATUS, ConnectStatus, BytesWritten, ErrorStatus, QUERY_GLOBAL_STATS)) Then
+                call oLog.Write ("Unable to query media connect status.  If this is transient then it is not a failure." )
+            ElseIf (ConnectStatus = Connected) Then
+                ' If connected, then we are done! Return success
+                EstablishMessageCardLink = TRUE
+                Exit Do
+            End If
+
+            If (lCount = 90) Then
+                call oLog.SafeFailed ("Could not establish the link in 90 seconds! Bailing out", 88888)
+                Exit Do
+            End If
+
+            lCount = lCount + 1
+          Loop
+       Else
+           oLog.Write ("Did not find the message card! Pressing on")
+       End If
+
+    End Function
+
+
+    Function GetSleepTransitionOrder ()
+        Dim lSleepState, i, index
+        Dim TransitionOrder (), SleepStateList()
+
+        ' This function fills in the supported sleep states in the
+        ' Sleep State List array for later testing.
+        nNumStatesSupported = 0
+        Index = 0
+
+        For i=0 to 3
+            lSleepState = 2^i
+            If ((nSleepStatesToTest And lSleepState) > 0) Then      ' Means we want to test this state
+                If ( (oPnPPowerObj.SupportedPowerStates And lSleepState) > 0) Then  ' Means we actually CAN as it is supported
+                    oLog.Write ("Sleep state S"& i+1 & " will be tested")
+                    nNumStatesSupported = nNumStatesSupported + 1
+                    ReDim Preserve SleepStateList (index)
+                    SleepStateList (index) = i + 1
+                    Index = Index + 1
+                Else                                                ' Means this state is not supported
+                    If ( (lSleepState > SLEEP_STATE_S0 And lSleepState < SLEEP_STATE_S4) And bStandbyOptional) Then
+                        ' If standby test is optional then do not fail this variation
+                        oLog.Write ("Standby test for S" & i+1 & " is optional! Skipping")
+                    ElseIf (lSleepState = SLEEP_STATE_S4 And bHibernateOptional) Then
+                        ' If hibernate test is optional then do not fail this variation
+                        oLog.Write ("Hibernate test is optional! Skipping")
+                    ELseIf ( (Not bFailOnUnsupportedS2) And (lSleepState = SLEEP_STATE_S2) ) Then
+                        ' If S2 support is not required, do not fail this variation
+                        oLog.Write ("Cannot test optional sleep state S" & i+1 & " as it is unsupported")
+                    Else
+                        ' This sleep state should have been supported! Fail the variation
+                        call oLog.SafeFailed ("Cannot test required sleep state S" & i+1 & " as it is unsupported", 88888)
+                    End If
+                End If
+            End If
+        Next
+
+        select case nNumStatesSupported
+        case 0
+            GetSleepTransitionOrder = Null
+            Exit Function
+        case 1
+            ReDim TransitionOrder (nTestIterations - 1)
+            For i=0  to nTestIterations - 1
+                TransitionOrder (i) = SleepStateList (0)
+            Next
+
+        case 2
+            ReDim TransitionOrder (4)
+            TransitionOrder (0) = SleepStateList (0)
+            TransitionOrder (1) = SleepStateList (0)
+            TransitionOrder (2) = SleepStateList (1)
+            TransitionOrder (3) = SleepStateList (1)
+            TransitionOrder (4) = SleepStateList (0)
+
+        case 3
+            ReDim TransitionOrder (9)
+            TransitionOrder (0) = SleepStateList (0)
+            TransitionOrder (1) = SleepStateList (1)
+            TransitionOrder (2) = SleepStateList (2)
+            TransitionOrder (3) = SleepStateList (0)
+            TransitionOrder (4) = SleepStateList (0)
+            TransitionOrder (5) = SleepStateList (2)
+            TransitionOrder (6) = SleepStateList (2)
+            TransitionOrder (7) = SleepStateList (1)
+            TransitionOrder (8) = SleepStateList (1)
+            TransitionOrder (9) = SleepStateList (0)
+
+        case 4
+            ReDim TransitionOrder (16)
+            TransitionOrder (0) = SleepStateList (0)
+            TransitionOrder (1) = SleepStateList (1)
+            TransitionOrder (2) = SleepStateList (2)
+            TransitionOrder (3) = SleepStateList (3)
+            TransitionOrder (4) = SleepStateList (0)
+            TransitionOrder (5) = SleepStateList (0)
+            TransitionOrder (6) = SleepStateList (2)
+            TransitionOrder (7) = SleepStateList (2)
+            TransitionOrder (8) = SleepStateList (1)
+            TransitionOrder (9) = SleepStateList (1)
+            TransitionOrder (10) = SleepStateList (3)
+            TransitionOrder (11) = SleepStateList (3)
+            TransitionOrder (12) = SleepStateList (1)
+            TransitionOrder (13) = SleepStateList (0)
+            TransitionOrder (14) = SleepStateList (3)
+            TransitionOrder (15) = SleepStateList (2)
+            TransitionOrder (16) = SleepStateList (0)
+
+        case else
+            GetSleepTransitionOrder = Null
+            Exit Function
+
+        End select
+
+        GetSleepTransitionOrder = TransitionOrder
+
+    End Function
+
+
+    Function RunCommunicationTest (lTestAdapterIndex, lSupportAdapterIndex)
+
+        Dim lTotalPackets, lPacketSize, lTestID, lMinimumPass
+
+        If(Not SetupTestForIP(oTestOpen,lTestAdapterIndex, oSuppOpen, lSupportAdapterIndex)) Then
+            Exit Function
+        End If
+
+        lTotalPackets = glPacketsToSend
+        lPacketSize = glMinimumPacketSize
+
+        ' Assign channel id
+        lTestId = oNDTSupp.Random(1, 32765)
+        oTestOpen.SetChannelId(lTestId)
+        oSuppOpen.SetChannelId(lTestId)
+
+        ' For functional tests, we allow the oring of this bit
+        oTestOpen.SetReceiveOption(RECEIVE_DEFAULT Or RECEIVE_ALLOW_BUSY_NET)
+
+        If (nPhysicalMedium = NDISPHYSICALMEDIUMWIRELESSLAN) Then
+           ' More lenient for wireless medium
+            lMinimumPass = (glPercentToPassWLessDirected * lTotalPackets) / 100
+        Else
+            lMinimumPass = (glPercentToPass * lTotalPackets) / 100
+        End If
+
+        ' Set packet filters
+        Call oTestOpen.SetPacketFilter(DIRECTED)
+        Call oSuppOpen.SetPacketFilter(DIRECTED)
+
+        oTestOpen.StartReceive()
+        oSuppOpen.StartReceive()
+
+        call oSuppOpen.VerifiedSend(oTestOpen.MACAddress, lPacketSize, glPacketsToSend, 0, oSuppOpen.MACAddress)
+
+        ' the test card should receive all packets
+        call oTestOpen.VerifyReceiveResend(lTotalPackets, lMinimumPass, lTotalPackets, lMinimumPass)
+
+        ' the support card should receive all packets
+        call oSuppOpen.VerifyReceiveResend(lTotalPackets, lMinimumPass, 0, 0)
+
+        ' Make sure not resets, disconnects or connects occurred
+        Call VerifyEvents (oTestOpen, 0, 0, 0)
+
+    End Function
+
+
+    Function VerifyEvents (oOpen, nResetsExp, nDisconnectsExp,  nConnectsExp)
+        Dim bResult
+        Dim nResets, nDisconnects,  nConnects
+
+        VerifyEvents = oOpen.GetEvents (nResets, nDisconnects, nConnects)
+
+        If (VerifyEvents) Then
+            If (nResets <> nResetsExp) Then
+                call oLog.Warned ("A reset event occured! NIC should not have reset during a sleep event. Look at ndistest.htm for details")
+                VerifyEvents = False
+            End If
+
+            If (nDisconnects <> nDisconnectsExp) Then
+                call oLog.Warned ("A Disconnect event occured! NIC should not have disconnected during a sleep event. Look at ndistest.htm for details")
+                VerifyEvents = False
+            End If
+
+            If (nConnects <> nConnectsExp) Then
+                oLog.Warned ("A Connect event occured! NIC should not have connected during a sleep event. Look at ndistest.htm for details")
+                VerifyEvents = False
+            End If
+        End If
+    End Function
+
+End Class
+
+
+</script>
+</job>
+</package>
+
+<!--- CRC = 0xde143e6c --->

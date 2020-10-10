@@ -1,0 +1,1108 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+ALL
+</MEDIA>
+<WHQL>
+ALL
+</WHQL>
+<CARDMACH>
+1C,1M
+</CARDMACH>
+<RUNORDER>
+1100
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[This script checks certain requirements for WHQL Logo.
+Correct operating system sku
+Both a Local and Remote support adapter selected
+Machine a Multiprocessor
+Checked system files with driver verifier or
+Free system files without driver verifier
+PCI bus location of test device and local support device is differnt
+Logo tests cannot be run on Server or Personal editions
+For Advanced Server and Data Center:
+* The driver must be deserialized
+* The driver must use Scatter Gather, it must not fall back to use map registers
+* The machine must have at least 6 gig and 4 CPUs.
+* The device must be able to address memory above 4 gig (support 64 bit DMA).
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="WHQLConfigCheck" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <reference object="NDTCore.base.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oKrnlCallsVerifier" progid="NDTSupp.KernelCallsVerifier.1" events="true"/>                
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/>                
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CIrdaCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COffloadCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CIrdaOpen.vbs"/>      
+      <script language="VBScript" src="..\newinc\COffloadOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\DevChars.vbs"/>
+      <script language="VBScript" src="..\inc\Offload.vbs"/>        
+      <script id="WHQLConfigCheck" language="VBScript">
+'==========================================================================
+' Script Name:    WHQLConfigCheck
+'==========================================================================
+Option Explicit 
+
+'--------------------------------------------------------------------------
+Call Initialize ()
+Call Main ()
+Call Terminate ()
+'--------------------------------------------------------------------------
+
+'----------------------------Script Global Variables-----------------------
+Class Adapter
+   Dim szDescription
+   Dim nBusNumber
+   Dim szAdapterType
+
+   Private Sub Class_Initialize()
+      szDescription = ""
+      nBusNumber = -1
+      szAdapterType = ""
+   End Sub
+
+   Private Sub Class_Terminate() 
+	'Nothing to put here as of now.
+   End Sub
+End Class
+
+Class All_Adapter_Info
+   Dim nTotalCards
+   Dim szTestAdapterMediaType
+   Dim szTestAdapterPhysicalMediaType
+   Dim szTestAdapterBusType
+   Dim nTotalLocalSupportCards
+   Dim nTotalRemoteSupportCards
+   Dim bIdenticalLTCards
+   Dim bIdenticalRTCards
+   Dim oAdapterCollection()   
+   Dim nTestAdapterIndex
+
+   Public Sub Add_Adapter()
+      ReDim Preserve oAdapterCollection(nTotalCards)
+   End Sub
+   
+   Private Sub Class_Initialize()
+      nTotalCards = 0
+      szTestAdapterMediaType = ""
+      szTestAdapterPhysicalMediaType = ""
+      nTotalLocalSupportCards = 0
+      nTotalRemoteSupportCards = 0
+      bIdenticalLTCards = 0
+      nTestAdapterIndex = 1
+   End Sub   
+End Class
+
+Class System_Info
+   Dim nNumberOfProcessors
+   Dim nSku
+   Dim bCheckedNDIS
+   Dim bVerifierOn
+   Dim nMemorySize
+   Dim bIsLaptop
+   Dim bIsIA64
+
+   Private Sub Class_Initialize()
+      nNumberOfProcessors = 0
+      nSku = ""
+      bCheckedNDIS = 0
+      bVerifierOn = 0
+      nMemorySize = 0
+      bIsLaptop = 0
+      bIsIA64 = 0
+   End Sub
+End Class
+'-----------------------Script Global Variables-----------------------------
+
+
+
+'***************************************************************************************
+'Title:		Main
+'Author:	Christopher Hilbert
+'Date:		6/6/01
+'Purpose:	This function will call all necesary functions for this script
+'Input:		No values are passed
+'Output:	No values are explicitly returned
+'***************************************************************************************
+Function Main
+
+'--------------------------------------------------------------------------
+Dim Adapter
+Dim nTestCard	
+Dim nSuppCard
+Dim nRemoteSuppCard
+Dim szTestDescription
+Dim szSuppDescription
+Dim szRemoteSuppDescription
+Dim nTestBus
+Dim nSuppBus
+Dim nCounter
+Dim cMachine_Info
+Dim cAll_Adapter_Info
+
+'Initialize Variables
+nTestCard = 0 				 'Test Card will always be 0 in the array
+nSuppCard = -1
+nRemoteSuppCard = -1
+szTestDescription = ""
+szSuppDescription = ""
+szRemoteSuppDescription = ""
+nTestBus = -1
+nSuppBus = -1
+nCounter = 0
+Set cMachine_Info = new System_Info
+Set cAll_Adapter_Info = new All_Adapter_Info
+
+'==========================================================================
+'++++++++++++++++++++++++++++ BEGIN TEST ++++++++++++++++++++++++++++++++++
+'==========================================================================
+oNDTSupp.LogPtr = oLog.LogPtr
+
+If (oNDTSession("WHQLSystem")) Then
+   oLog.Write("Test run from WHQL Systems Kit so no devices specific setup requirements don't apply" )
+Else
+   oLog.Variation("Gathering Machine and Adapter Info")
+   call Gather_Info(cMachine_Info, cAll_Adapter_Info)
+
+   oLog.Variation("Verifying proper test configuration setup")
+
+   if(cAll_Adapter_Info.szTestAdapterMediaType = "Ethernet" Or _
+      cAll_Adapter_Info.szTestAdapterMediaType = "TokenRing" Or _
+      cAll_Adapter_Info.szTestAdapterMediaType = "FDDI" Or _
+      cAll_Adapter_Info.szTestAdapterMediaType = "ATM") Then
+      call Ethernet_Log(cMachine_Info,cAll_Adapter_Info)
+   End If
+
+   if(cAll_Adapter_Info.szTestAdapterMediaType = "Modem") Then
+      call Modem_Log(cMachine_Info, cAll_Adapter_Info)
+   End If
+End If
+
+Call Tabulate_Info(cMachine_Info, cAll_Adapter_Info)
+
+End Function 'Main ()
+
+
+
+'***************************************************************************************
+'Title:		Gather_Info
+'Author:	Christopher Hilbert
+'Date:		6/6/01
+'Purpose:	This function will gather all information that is required for to check
+'		proper test machine configuration.  All information is gathered using
+'		oNDTSession or oNDTInfo
+'Input:		cMachine_Info		Class object that contains information about the system used for 
+'					testing.  This is passed in by reference
+'		cAll_Adapter_Info	Class object that contains information abou the adapters used
+'					for testing.  This is passed in by reference
+'Output:	No values are explicitly returned
+'***************************************************************************************
+Function Gather_Info(ByRef cMachine_Info, ByRef cAll_Adapter_Info)
+
+Dim pAdapterList			' List obtained from oNDInfo
+Dim Card
+Dim szDriverName
+Dim szTimeStamp
+Dim szVersion
+Dim nSize
+Dim bChecked
+Dim nTrimNumber
+Dim nIndex
+'
+' Get Adapter collection from UI Object
+'
+Set pAdapterList = oNDInfo.AdapterList 
+cAll_Adapter_Info.nTestAdapterIndex = GetTestAdapterIndex(pAdapterList, 0)
+nIndex = 1
+'==========================================================================
+'Getting the adapter Information
+'==========================================================================
+
+For Each Card In pAdapterList
+   If (nIndex = cAll_Adapter_Info.nTestAdapterIndex) Then
+      cAll_Adapter_Info.szTestAdapterMediaType = oNdtSession(cAll_Adapter_Info.nTestAdapterIndex & "DriverMedium")
+      cAll_Adapter_Info.szTestAdapterPhysicalMediaType = oNdtSession(cAll_Adapter_Info.nTestAdapterIndex & "DriverPhysicalMedium")
+      cAll_Adapter_Info.szTestAdapterBusType = oNdtSession(cAll_Adapter_Info.nTestAdapterIndex & "DriverBus")
+      cAll_Adapter_Info.bIdenticalLTCards = 1
+      cAll_Adapter_Info.bIdenticalRTCards = 1
+   End If
+
+   If (Card.AdapterType = ADAPTERTYPE_SUPPORT) Then
+      If (Card.ConnectionID) Then
+         cAll_Adapter_Info.nTotalRemoteSupportCards = cAll_Adapter_Info.nTotalRemoteSupportCards + 1
+      Else
+         cAll_Adapter_Info.nTotalLocalSupportCards = cAll_Adapter_Info.nTotalLocalSupportCards + 1
+      End If
+   End If
+  
+   'ReDim Array for additional object
+   'ReDim Preserve cAll_Adapter_Info.oAdapterCollection(cAll_Adapter_Info.nTotalCards)
+   cAll_Adapter_Info.Add_Adapter()   
+   Set cAll_Adapter_Info.oAdapterCollection(cAll_Adapter_Info.nTotalCards) = new Adapter
+   
+   'Gather Descripton of the Test Card, with number and # trimmed
+   cAll_Adapter_Info.oAdapterCollection(cAll_Adapter_Info.nTotalCards).szDescription = TrimNumberField(Card.Description)
+   
+   'Check to how to set the IdenticalCard Flag. Here there is an assumption of oAdapterCollection(0) being test card.
+   If (Card.AdapterType <> ADAPTERTYPE_MESSAGE And cAll_Adapter_Info.oAdapterCollection(cAll_Adapter_Info.nTotalCards).szDescription <> cAll_Adapter_Info.oAdapterCollection(0).szDescription) Then      
+      If (Card.ConnectionID) Then
+         cAll_Adapter_Info.bIdenticalRTCards = 0   
+      Else
+         cAll_Adapter_Info.bIdenticalLTCards = 0
+      End If
+   End If
+
+   'Get the Bus number of the adapter
+   cAll_Adapter_Info.oAdapterCollection(cAll_Adapter_Info.nTotalCards).nBusNumber = oNdtSession(nIndex & "DriverBusNo")
+
+   'Get the adadpter type, TEST, LOCALSUPPORT, REMOTESUPPORT, MESSAGE
+   If (Card.AdapterType = ADAPTERTYPE_SUPPORT) Then
+      If (Card.ConnectionID) Then
+         cAll_Adapter_Info.oAdapterCollection(cAll_Adapter_Info.nTotalCards).szAdapterType = "REMOTESUPPORT"
+      Else
+         cAll_Adapter_Info.oAdapterCollection(cAll_Adapter_Info.nTotalCards).szAdapterType = "LOCALSUPPORT"
+      End If
+   End If
+   
+   If (Card.AdapterType = ADAPTERTYPE_MESSAGE) Then
+      cAll_Adapter_Info.oAdapterCollection(cAll_Adapter_Info.nTotalCards).szAdapterType = "MESSAGE"
+   End If
+
+   If (Card.AdapterType = ADAPTERTYPE_TEST) Then
+      cAll_Adapter_Info.oAdapterCollection(cAll_Adapter_Info.nTotalCards).szAdapterType = "TEST"
+   End If
+      
+   cAll_Adapter_Info.nTotalCards = cAll_Adapter_Info.nTotalCards + 1   
+   nIndex = nIndex + 1
+Next
+
+'==========================================================================
+'Getting the System Information
+'==========================================================================
+
+'Get number of processors
+cMachine_Info.nNumberOfProcessors = LTrim(Right(oNdtSession("CPUNum"),2))
+
+'Get System Sku information
+cMachine_Info.nSku = oNDTSession("SystemSKU")
+
+'Set flag to see if checked ndis is loaded or not
+szDriverName = "ndis.sys"
+oNDTSupp.DriverInfo szDriverName,nSize,szTimeStamp,szVersion,bChecked
+
+if (bChecked = 0) Then
+   cMachine_Info.bCheckedNDIS = 0
+Else
+   cMachine_Info.bCheckedNDIS = 1
+End If
+
+'Set flag to see if driver verifier is on or not, WILL IMPLEMENT LATER
+'cMachine_Info.bVerifierOn
+
+'Get total amount of system memory
+cMachine_Info.nMemorySize = oNDTSession("PhysicalMem")
+
+'Set Flag to see if this is a laptop
+cMachine_Info.bIsLaptop = oNDTSession("IsLaptop")
+
+'Set Flag to see if this is a 64 bit machine
+cMachine_Info.bIsIA64 = oNDTSession("Win64")
+
+End Function 'Gather_Info
+
+
+
+'***************************************************************************************
+'Title:		Ethernet_Log
+'Author:	Christopher Hilbert
+'Date:		6/6/01
+'Purpose:	This function will log all failures in test configuration for 
+'		Ethernet testing.  This is based on WHQL documentation
+'Input:		cMachine_Info		Class object that contains information about the system used for 
+'					testing.  This is passed in by value
+'		cAll_Adapter_Info	Class object that contains information abou the adapters used
+'					for testing.  This is passed in by value
+'Output:	No values are explicitly returned
+'***************************************************************************************
+Function Ethernet_Log(ByVal cMachine_Info, ByVal cAll_Adapter_Info)
+
+Dim szTestDescription
+Dim szSuppDescription
+Dim szRemoteSuppDescription
+Dim nTestBusNumber
+Dim nLocalSupportBusNumber
+Dim Adapter
+Dim nTotalCardsRequired
+
+
+
+'=========================================================================
+'Gather any info needed from adapters for configuration checking
+'=========================================================================
+For Each Adapter in cAll_Adapter_Info.oAdapterCollection
+   if(Adapter.szAdapterType = "TEST") Then
+      szTestDescription = Adapter.szDescription
+      nTestBusNumber = Adapter.nBusNumber
+   End If
+
+   if(Adapter.szAdapterType = "LOCALSUPPORT") Then
+      szSuppDescription = Adapter.szDescription
+      nLocalSupportBusNumber = Adapter.nBusNumber
+   End If
+
+   if(Adapter.szAdapterType = "REMOTESUPPORT") Then
+      szRemoteSuppDescription = Adapter.szDescription
+   End If
+Next
+
+'CardBus requires local support so remove laptop check.
+'If this isn't a PCI adapter then you don't have to have a local support card
+If(cAll_Adapter_Info.szTestAdapterBusType = "PCI" And cMachine_Info.bIsLaptop = 0) Then
+   nTotalCardsRequired = 4
+Else
+   nTotalCardsRequired = 3
+End If
+
+'===========================================================================
+'Check for correct test mode selection
+'===========================================================================
+oLog.Variation("Check for correct test mode")
+Dim WhqlMode, HctOption
+
+HctOption = oNDTSession("HCT_OPTION")
+WhqlMode = oNDTSession("WHQL_TESTS")
+
+If (WhqlMode <> "" And HctOption <> "") Then
+   If (HctOption = 1) Then
+      oLog.Write ("Command line had HCT option specified")
+      If (WhqlMode = 1) Then
+         oLog.Write ("Running tests under WHQL mode.")
+      Else
+         Call oLog.Failed ("WHQL TESTS button must be selected in NDIS Tester during HCT testing.", 88888)
+      End If
+   Else
+      oLog.Write ("HCT Option not specified on command line. Not checking test mode")
+   End If
+Else
+   oLog.Write ("Unable to verify if running in correct test mode")
+End If
+
+'****************************System Specific Checks*************************
+'===========================================================================
+'Check OS version is Workstation or Server.
+'===========================================================================
+oLog.Variation("Check OS version")
+
+'The SKU variable is set as below:
+'VER_SUITE_DATACENTER : DataCenter
+'VER_SUITE_ENTERPRISE : Advanced/Enterprise server
+'VER_NT_SERVER        : Standard server
+'VER_NT_WORKSTATION   : Professional
+'VER_SUITE_PERSONAL   : Personal/Home edition
+
+If (cMachine_Info.nSKU And (VER_SERVER_NT Or VER_SUITE_PERSONAL)) Then
+     Call oLog.Failed("Logo tests cannot be run on Personal or Server.", 21841)
+     oLog.Write ("Allowed platforms: Professional, DataCenter and Enterprise Server")
+End If     
+        
+If (cMachine_Info.nSKU And (VER_SUITE_DATACENTER Or VER_SUITE_ENTERPRISE)) Then
+    ' Special requirements for datacenter and advanced server
+    If (cMachine_Info.nMemorySize < 6400000000) Then       ' 5.96GB: Crude test
+        Call oLog.Failed("Advanced Server and DataCenter: machine should have at least 6 gig of ram.", 88888)
+    End If
+
+    If (cMachine_Info.nNumberOfProcessors < 4) Then       
+        Call oLog.Failed("Advanced Server and DataCenter: machine should have at least 4 processors.", 88888)
+    End If
+    
+    Dim MiniportInfoVal
+    MiniportInfoVal = oNDTSession((cAll_Adapter_Info.nTestAdapterIndex) &  "OID_GEN_MINIPORT_INFO")
+    If (IsEmpty(MiniportInfoVal)) Then
+       Call oLog.Write ("Unable to obtain miniport info to determine miniports capabilities")
+    Else
+       If ((MiniportInfoVal AND NDIS_MINIPORT_SG_LIST) = 0) Then
+           Call oLog.Warned("Advanced Server and DataCenter: driver should use Scatter Gather DMA")
+       End If
+
+       If ((MiniportInfoVal AND NDIS_MINIPORT_DESERIALIZE) = 0) Then
+           Call oLog.Warned("Advanced Server and DataCenter: driver should be Deserialized")
+       End If
+
+       If ((MiniportInfoVal AND NDIS_MINIPORT_64BITS_DMA) = 0) Then
+           Call oLog.Warned("Advanced Server and DataCenter: driver should be capable of 64 bit addressing")
+       End If
+   End If
+End If
+
+'=====================================================================================================
+'Check to see if it is a multiprocessor machine
+'=====================================================================================================
+If (cMachine_Info.bIsLaptop = 0) Then
+   oLog.Variation("Check for multiprocessor")
+
+   If (cMachine_Info.nNumberOfProcessors < 2 ) Then
+      call oLog.Failed ("Must test on a multiprocessor machine!", 21842) 
+   Else
+      oLog.Write (cMachine_Info.nNumberOfProcessors & " processors found" )
+   End If
+End If
+
+'=====================================================================================================
+'Check if Driver Verifier is on that Checked ndis.sys is loaded or that Driver Verifier is off and Free ndis.sys is loaded.
+'=====================================================================================================
+oLog.Variation("Check for correct version of ndis.sys")
+'*************************************End System Specific Checks***************************************
+
+
+'*************************************Device Specific Checks*******************************************
+
+'===============================================================================================
+'USB devices cannot be tested on laptops. (must be tested on dual proc machines)
+'===============================================================================================
+If (cAll_Adapter_Info.szTestAdapterBusType = "USB") Then
+   call oLog.Variation("Check if USB test run on laptop")
+   If (cMachine_Info.bIsLaptop <> 0) Then
+      call oLog.Failed ("USB bus devices cannot be tested on a laptop!", 21845)
+   End If
+End If
+
+
+'*******************************************
+'    Ethernet, Home Phone, Home Plug, & 1394???
+'    Need to check on this, may be this should be a switch statement and have this be the default check
+'*******************************************
+
+If(cAll_Adapter_Info.szTestAdapterPhysicalMediaType = "" Or cAll_Adapter_Info.szTestAdapterPhysicalMediaType = "Undefined" Or cAll_Adapter_Info.szTestAdapterPhysicalMediaType = "Phone Line" Or cAll_Adapter_Info.szTestAdapterPhysicalMediaType = "Power Line" Or cAll_Adapter_Info.szTestAdapterPhysicalMediaType = "NIC1394") Then
+   '-----------------------------------------------------------------------
+   'Checking to make sure the right amount of support devices are available
+   '-----------------------------------------------------------------------
+   If (cMachine_Info.bIsLaptop = 0) Then
+      oLog.Variation("Check to see if the correct adapters are present")
+      'Check to see if there is a remote support adapter selected.
+      If (cAll_Adapter_Info.nTotalCards < nTotalCardsRequired And cAll_Adapter_Info.nTotalRemoteSupportCards = 0 ) Then
+         call oLog.Failed ("No remote support adapter available!", 21843)
+      End If
+
+      'This may cause problems for pcmcia
+      'Check to see if there is a local support adapter selected.
+      If (cAll_Adapter_Info.nTotalCards < nTotalCardsRequired And cAll_Adapter_Info.nTotalLocalSupportCards = 0 And cAll_Adapter_Info.szTestAdapterBusType = "PCI") Then
+         call oLog.Failed ("No local support adapter available!", 21844)
+      End If
+
+   Else
+      'Check to see if there is a remote support adapter selected.
+      If (cAll_Adapter_Info.nTotalCards < nTotalCardsRequired And cAll_Adapter_Info.nTotalRemoteSupportCards = 0 ) Then
+         call oLog.Failed ("No remote support adapter available!", 21846)
+      End If
+   End If
+
+   '===============================================================================================
+   'Check to see if there is a Test Adapter and Local Support Adapter that
+   'are all identical Card Types.
+   '===============================================================================================
+
+   'Need to check how devnodes for USB, 1394, AC97 are formatted.  Need to add check for AC97 here.
+   If (cAll_Adapter_Info.szTestAdapterBusType <> "USB" And cAll_Adapter_Info.szTestAdapterBusType <> "1394") Then
+      oLog.Variation("Check Test Adapter Configuration")
+
+      oLog.Write("Test Description: " & szTestDescription )
+
+      oLog.Write("Local Support Description: " & szSuppDescription )
+
+      oLog.Write("Remote Support  Description: " & szRemoteSuppDescription )
+
+      If (cAll_Adapter_Info.bIdenticalLTCards) Then
+         If(cAll_Adapter_Info.nTotalLocalSupportCards) Then
+            oLog.Write("All test adapters are identical." )
+         Else
+            call oLog.Failed("Local Support Card is missing!", 21848)
+         End If
+      Else
+         call oLog.Failed ("Test Adapter and Local Support Adapter do not match!", 21849)
+         If(cAll_Adapter_Info.nTotalLocalSupportCards > 1) Then
+            oLog.Write("More than 1 local support adapter was selected, so mismatched adapter may not be listed above!" )
+         End If
+      End If
+   End If
+   '=====================================================================================================
+   'Check PCI bus location of the Test Adpater & the Local Adapter to make sure they different
+   '=====================================================================================================
+   If (cMachine_Info.bIsLaptop = 0 And cAll_Adapter_Info.szTestAdapterBusType = "PCI") Then
+      oLog.Variation("Check bus location of adapters")
+
+      oLog.Write ("Test Adapter Bus#:  " & nTestBusNumber )
+      oLog.Write ("Support Adapter Bus#:  " & nLocalSupportBusNumber )
+      If(cAll_Adapter_Info.nTotalLocalSupportCards) Then      
+         If (nTestBusNumber = nLocalSupportBusNumber) Then
+            call oLog.Failed ("Test Adapter and Local Support Adapter must reside on different PCI bus'!", 21850)
+         End If
+      Else
+         call oLog.Failed("No Local Support Adapter was selected!", 21851)
+      End If
+   End If
+End If
+
+
+'*************************
+'      Cable Modem
+'*************************
+
+If(cAll_Adapter_Info.szTestAdapterPhysicalMediaType = "Cable Modem") Then
+
+   'Cable Modems arent required to test accross a PCI bridge
+   nTotalCardsRequired = 3
+   '-----------------------------------------------------------------------
+   'Checking to make sure the right amount of support devices are available
+   '-----------------------------------------------------------------------
+   oLog.Variation("Check to see if the correct adapters are present")
+   'Check to see if there is a remote support adapter selected.
+   If (cAll_Adapter_Info.nTotalCards < nTotalCardsRequired And cAll_Adapter_Info.nTotalRemoteSupportCards = 0 ) Then
+      call oLog.Failed ("No remote support adapter available!", 21852)
+   End If
+
+   'Check to make sure that no more than 3 devices are selected
+   If (cAll_Adapter_Info.nTotalCards > nTotalCardsRequired) Then
+      call oLog.Failed ("Too many support devices have been selected!", 21853)
+   End If
+
+   '=====================================================================================================
+   'Check if PCI then bus location of the Test Adpater must be greater than 0
+   '=====================================================================================================
+   If (cMachine_Info.bIsLaptop = 0 And cAll_Adapter_Info.szTestAdapterBusType = "PCI") Then
+      oLog.Variation("Check bus location of adapter")
+
+      oLog.Write ("Test Adapter Bus#:  " & nTestBusNumber )
+      
+      If (nTestBusNumber) Then
+         oLog.Write("Test adapter resides on a PCI bus greater than 0" )
+      Else
+         call oLog.Failed ("Test Adapter must reside on a PCI bus greater than 0!", 21854)
+      End If
+   End If
+End If
+
+'*************************
+'      Wireless Lan
+'*************************
+
+If(cAll_Adapter_Info.szTestAdapterPhysicalMediaType = "Wireless Lan") Then
+
+   'Wireless Lan cards aren't required to test accross a PCI bridge
+   nTotalCardsRequired = 3
+   '-----------------------------------------------------------------------
+   'Checking to make sure the right amount of support devices are available
+   '-----------------------------------------------------------------------
+   oLog.Variation("Check to see if the correct adapters are present")
+   'Check to see if there is a remote support adapter selected.
+   If (cAll_Adapter_Info.nTotalCards < nTotalCardsRequired And cAll_Adapter_Info.nTotalRemoteSupportCards = 0 ) Then
+      call oLog.Failed ("No remote support adapter available!", 21855)
+   End If
+
+   'Check to make sure that no more than 3 devices are selected
+   If (cAll_Adapter_Info.nTotalCards > nTotalCardsRequired) Then
+      call oLog.Failed ("Too many support devices have been selected!", 21856)
+   End If
+   '=====================================================================================================
+   'Check if PCI then bus location of the Test Adpater must be greater than 0
+   '=====================================================================================================
+   If (cMachine_Info.bIsLaptop = 0 And cAll_Adapter_Info.szTestAdapterBusType = "PCI") Then
+      oLog.Variation("Check bus location of adapter")
+
+      oLog.Write ("Test Adapter Bus#:  " & nTestBusNumber )
+      
+      If (nTestBusNumber) Then
+         oLog.Write("Test adapter resides on a PCI bus greater than 0" )
+      Else
+         call oLog.Failed ("Test Adapter must reside on a PCI bus greater than 0!", 21857)
+      End If
+   End If
+End If
+
+'*************************
+'      xDSL
+'*************************
+
+If(cAll_Adapter_Info.szTestAdapterPhysicalMediaType = "xDSL") Then
+
+   'xDSL isn't required to test accross a PCI bridge
+   nTotalCardsRequired = 3
+   '-----------------------------------------------------------------------
+   'Checking to make sure the right amount of support devices are available
+   '-----------------------------------------------------------------------
+   oLog.Variation("Check to see if the correct adapters are present")
+   'Check to see if there is a remote support adapter selected.
+   If (cAll_Adapter_Info.nTotalCards < nTotalCardsRequired And cAll_Adapter_Info.nTotalRemoteSupportCards = 0 ) Then
+      call oLog.Failed ("No remote support adapter available!", 21858)
+   End If
+
+   'Check to make sure that no more than 3 devices are selected
+   If (cAll_Adapter_Info.nTotalCards > nTotalCardsRequired) Then
+      call oLog.Failed ("Too many support devices have been selected!", 21859)
+   End If
+   '=====================================================================================================
+   'Check if PCI then bus location of the Test Adpater must be greater than 0
+   '=====================================================================================================
+   If (cMachine_Info.bIsLaptop = 0 And cAll_Adapter_Info.szTestAdapterBusType = "PCI") Then
+      oLog.Variation("Check bus location of adapter")
+
+      oLog.Write ("Test Adapter Bus#:  " & nTestBusNumber )
+      
+      If (nTestBusNumber) Then
+         oLog.Write("Test adapter resides on a PCI bus greater than 0" )
+      Else
+         call oLog.Failed ("Test Adapter must reside on a PCI bus greater than 0!", 21860)
+      End If
+   End If
+End If
+
+'***********************************End Device Specific Checks****************************************
+
+
+End Function 'Ethernet_Log
+
+
+
+'***************************************************************************************
+'Title:		Modem_Log
+'Author:	Christopher Hilbert
+'Date:		6/6/01
+'Purpose:	Function will check any modem specific test Machine Requirements
+'Input:		cMachine_Info		Class object that contains information about the system used for 
+'					testing.
+'		cAll_Adapter_Info	Class object that contains information abou the adapters used
+'					for testing
+'Output:	No values are explicitly returned
+'***************************************************************************************
+Function Modem_Log(ByVal cMachine_Info, ByVal cAll_Adapter_Info)
+'No Checking needs to be done at this time
+End Function 'Modem_Log
+
+'***************************************************************************************
+'Title:		Tabulate_Info
+'Date:		10/8/01
+'Purpose:	       Prints information about the driver in tabular format so that it can extracted into a spreadsheet
+'Input:		cMachine_Info		Class object that contains information about the system used for 
+'					testing.
+'		cAll_Adapter_Info	Class object that contains information abou the adapters used
+'					for testing
+'Output:	No values are explicitly returned
+'***************************************************************************************
+
+Function Tabulate_Info(ByVal cMachine_Info, ByVal cAll_Adapter_Info)
+    Dim MiniportInfoVal
+    Dim Index 
+    Dim tempVal
+    Dim lLogMask
+    Dim oLogPtr
+    Dim bIsBusMaster, bUsesSG
+    
+    Dim RetString
+    Dim strCallsMade, isCalling
+
+    oLog.Variation("Driver information table")
+
+    Set oLogPtr = oLog.LogPtr
+    lLogMask = oLogPtr.OutputControl
+
+    ' Reset all logging flags other than serious. Remove to debug failures
+    oLogPtr.OutputControl = lLogMask And &HFFFFF302
+
+    Index = cAll_Adapter_Info.nTestAdapterIndex
+    tempVal = oNDTSession (Index & "DriverName")    
+    If (tempVal <> "") Then
+       If (Not (oKrnlCallsVerifier.GetImportedFunctions (tempVal, _
+               "ndis.sys",_
+               strCallsMade))) Then
+               Call oLog.Failed ("Unable to obtain list of imported functions", 88888)
+       End If
+    Else
+      ' No driver, so lets say that no calls are made
+      strCallsMade = ""
+    End If
+    
+    RetString = vblf & "SUMMARYINFO: "
+    
+    ' Indexing information
+    Call AppendVar (RetString, (oNDInfo.AdapterList(Index)).Description)
+    Call AppendSessionVar(RetString, oNdtSession(Index & "DriverComponentId"))
+    Call AppendSessionVar(RetString, oNdtSession(Index & "DriverGUID"))
+'    Call AppendSessionVar(RetString, oNdtSession(Index & "DriverName"))
+
+    MiniportInfoVal = oNDTSession(Index &  "OID_GEN_MINIPORT_INFO")
+    
+    'Supported bus type(s)
+    Call AppendSessionVar(RetString, oNDTSession (Index & "DriverBus"))
+    
+    'Support for Bus Master DMA
+    If (MiniportInfoVal AND NDIS_MINIPORT_BUS_MASTER) Then
+        bIsBusMaster = TRUE
+        Call AppendVar (RetString, "Y")
+    Else
+        bIsBusMaster = FALSE
+        Call AppendVar (RetString, "N")
+    End If
+        
+    'Support for Slave DMA
+    tempVal = "N"
+    If strCallsMade <> "" Then    ' make sure found any calls at all
+            isCalling = InStr(strCallsMade, "NdisMRegisterDmaChannel")
+            If (isCalling <> 0) Then
+                ' Okay, so making the call this means it supports slave DMA
+                tempVal = "Y"
+            End If
+    Else
+        tempVal = "- "
+    End If
+    
+    Call AppendVar (RetString, tempVal)
+    
+    'Level of Power Management support. 
+    Dim PowerMgmtVal
+    Dim Magic,Pattern,Link
+    
+    PowerMgmtVal = oNDTSession(Index & "OID_PNP_CAPABILITIESFlags")
+    
+    Magic = oNDTSession(Index & "OID_PNP_CAPABILITIESMagic")
+    if (not(IsEmpty (Magic))) Then
+        Magic = ConvertDeviceState(Magic)
+    Else
+        Magic = "N"
+    End If
+    
+    Pattern = oNDTSession(Index & "OID_PNP_CAPABILITIESPattern")
+    if (not(IsEmpty (Pattern))) Then
+        Pattern = ConvertDeviceState(Pattern)
+    Else
+        Pattern = "N"
+    End If
+    
+    Link = oNDTSession(Index & "OID_PNP_CAPABILITIESLink")
+    if (not(IsEmpty (Link))) Then
+        Link = ConvertDeviceState(Link)
+    Else
+        Link = "N"
+    End If
+
+    'oLog.Write("   Flags\Magic\Pattern\Link Wake ")
+    Call AppendVar (RetString, Hex(PowerMgmtVal) & "\" & Magic &"\"& Pattern &"\"& Link)
+     
+    'Task offload capabilities
+    Dim Offload, LSend, Cksum, IPSec
+
+    Offload = "N"
+    LSend = "N"
+    Cksum = "N"
+    IPSec = "N"
+
+    tempVal = CLng(oNDInfo.AdapterList(Index).NdisMedium)
+
+    If (tempVal = NDISMEDIUM802_3 Or tempVal = NDISMEDIUM802_5 Or tempVal = NDISMEDIUMFDDI) Then
+       Dim oTestCard, oTestOpen
+       oLog.Variation ("Setting up Test Adapter")
+               
+       Set oTestCard = New COffloadCard
+       Set oTestOpen = oTestCard.vbSetupBasicTest (oNDInfo.AdapterList(Index))
+       If (Not oTestOpen is Nothing) Then
+          If(oTestOpen.vbGetTaskOffloadInfo()) Then
+               If (GlobTaskOffloadSupport) Then
+                   Offload = "Y"
+                   If(GlobLargeSendTasks > 0) Then
+                       LSend = "Y"
+                   End If
+                   If(GlobCksumTasks > 0) Then
+                       Cksum = "Y"
+                   End If
+                   If(GlobIpsecOffloadTasks > 0) Then
+                       IPSec = "Y"
+                   End If
+               End If
+           End If
+           oTestOpen.vbNdisClose
+       End If
+       Set oTestOpen = Nothing
+       Set oTestCard = Nothing
+    End If
+    Call AppendVar (RetString, Offload & "\" & LSend &"\"& Cksum &"\"& IPSec)
+        
+    '64 Bit DMA
+    If (MiniportInfoVal AND NDIS_MINIPORT_64BITS_DMA) Then
+        Call AppendVar (RetString, "Y")
+    Else
+        Call AppendVar (RetString, "N")
+    End If
+    
+    'Media type (Ethernet, Token Ring, FDDI, Arcnet)
+    Call AppendSessionVar (RetString, oNdtSession(Index & "DriverMedium"))
+    
+    'Physical medium type
+    Call AppendSessionVar (RetString, oNdtSession(Index & "DriverPhysicalMedium"))
+    
+    'Supported media speed
+    tempVal = oNDTSession(Index & "OID_GEN_LINK_SPEED")
+    if (not(IsEmpty (tempVal))) Then
+        If (tempVal > 9999999) Then
+            Call AppendVar (RetString, tempVal/10000000 & " Gbps")
+        ElseIf (tempVal > 9999) Then
+            Call AppendVar (RetString,  tempVal/10000 & " Mbps")
+        Else
+            Call AppendVar (RetString,  tempVal/10 & " kbps")
+        End If
+    Else
+        Call AppendVar (RetString, "- ")
+    End If
+    
+    'Support media status indication: Not implemented
+    'Whether or not they relay on polling to detect media state (hard to tell): Not implemented
+    
+    'Whether or not they require media polling done by NDIS
+    If (MiniportInfoVal AND NDIS_MINIPORT_REQUIRES_MEDIA_POLLING) Then
+        Call AppendVar (RetString, "Y")
+    Else
+        Call AppendVar (RetString, "N")
+    End If
+    
+    'Support Media sense (it has -some- way to find out if the media is connected or not)
+    If (MiniportInfoVal AND NDIS_MINIPORT_SUPPORTS_MEDIA_SENSE) Then
+        Call AppendVar (RetString, "Y")
+    Else
+        Call AppendVar (RetString, "N")
+    End If
+    
+    'NDIS version number they support 4.0, 5.0, 5.1?
+    If (MiniportInfoVal AND NDIS_MINIPORT_IS_NDIS_5) Then
+        tempVal = oNDTSession (Index & "OID_GEN_DRIVER_VERSION")
+        If (IsEmpty(tempVal)) Then
+            Call AppendVar(RetString, "5.0")
+        Else
+            If (tempVal = &H500) Then
+                Call AppendVar(RetString, "5.0")
+            ElseIf (tempVal = &H501) Then
+                Call AppendVar (RetString, "5.1")
+            Else
+                Call AppendVar (RetString, "6.0")
+            End If
+        End If
+    Else
+        Call AppendVar(RetString, "4.0")
+    End If
+    
+    'Binary compatibility   
+    Dim bcCallsArray(1), bcCall      ' Binary compatibility functions & call
+    
+    bcCallsArray(0) = "NdisQueryBufferOffset"
+    
+    tempVal = "N"
+
+    If strCallsMade <> "" Then    ' make sure found any calls at all
+        For Each bcCall In bcCallsArray
+                isCalling = InStr(strCallsMade, bcCall)
+                If (isCalling <> 0) Then
+                    ' Okay, so making the call this means it is binary compatible
+                    tempVal = "Y"
+                    Exit For
+                End If
+        Next 
+    Else
+        tempVal = "- "
+    End If
+
+    ' WDM drivers are a special case
+    If (MiniportInfoVal AND NDIS_MINIPORT_WDM_DRIVER) Then
+        Call AppendVar (RetString, "W ")
+    Else
+        Call AppendVar(RetString, tempVal)    
+    End If
+       
+    'Support for Scatter Gather DMA
+    If (MiniportInfoVal AND NDIS_MINIPORT_SG_LIST) Then
+        bUsesSG = TRUE
+        Call AppendVar (RetString, "Y")
+    Else
+        bUsesSG = FALSE
+        Call AppendVar (RetString, "N")
+    End If
+    
+    'Serialized or Deserialized
+    If (MiniportInfoVal AND NDIS_MINIPORT_DESERIALIZE) Then
+        Call AppendVar (RetString, "Y")
+    Else
+        Call AppendVar (RetString, "N")
+    End If
+        
+    'Is a NDIS-WDM driver
+     If (MiniportInfoVal AND NDIS_MINIPORT_WDM_DRIVER) Then
+        Call AppendVar (RetString, "Y")
+    Else
+        Call AppendVar (RetString, "N")
+    End If
+        
+    'Uses safe APIs
+    If (MiniportInfoVal AND NDIS_MINIPORT_USES_SAFE_BUFFER_APIS) Then
+        Call AppendVar (RetString, "Y")
+    Else
+        Call AppendVar (RetString, "N")
+    End If
+        
+    'Is Connection Oriented (CO-NDIS)
+    If (MiniportInfoVal AND NDIS_MINIPORT_IS_CO) Then
+        Call AppendVar (RetString, "Y")
+    Else
+        Call AppendVar (RetString, "N")
+    End If
+    
+    'Supports CancelSendPackets
+    If (MiniportInfoVal AND NDIS_MINIPORT_SUPPORTS_CANCEL_SEND_PACKETS) Then
+        Call AppendVar (RetString, "Y")
+    Else
+        Call AppendVar (RetString, "N")
+    End If
+
+    'Needs map registers
+    If (bIsBusMaster And (Not bUsesSG)) Then
+        Call AppendVar (RetString, "Y")
+    Else
+        Call AppendVar (RetString, "N")
+    End If
+        
+    'Support for multi-packet receive indication
+    If (MiniportInfoVal AND NDIS_MINIPORT_INDICATES_PACKETS) Then
+        Call AppendVar (RetString, "Y")
+    Else
+        Call AppendVar (RetString, "N")
+    End If
+
+    If (MiniportInfoVal AND NDIS_MINIPORT_USE_NEW_BITS) Then
+        'Support for multi-packet send
+        If (MiniportInfoVal AND NDIS_MINIPORT_SENDS_PACKET_ARRAY) Then
+            Call AppendVar (RetString, "Y")
+        Else
+            Call AppendVar (RetString, "N")
+        End If
+
+        'Shared or exclusive interrupt
+        If (MiniportInfoVal AND NDIS_MINIPORT_EXCLUSIVE_INTERRUPT) Then
+            Call AppendVar (RetString, "E")
+        Else
+            Call AppendVar (RetString, "S")
+        End If
+
+        'Is a MUX-IM driver
+        'Is a Filter IM driver
+        If (MiniportInfoVal AND NDIS_MINIPORT_INTERMEDIATE_DRIVER) Then
+            If (MiniportInfoVal AND NDIS_MINIPORT_FILTER_IM) Then
+                Call AppendVar (RetString, "Filter")
+            Else
+                Call AppendVar (RetString, "MUX")
+            End If
+        Else
+            Call AppendVar (RetString, "Not IM")
+        End If
+    Else
+        Call AppendVar (RetString, "- ")
+        Call AppendVar (RetString, "- ")
+        Call AppendVar (RetString, "- ")
+    End If
+
+    oLogPtr.OutputControl = lLogMask
+    oLog.Write (RetString)
+End Function 'Tabulate_Info
+
+Function AppendSessionVar(ByRef RetString, ByVal AppendVal)
+    If (IsEmpty(AppendVal)) Then
+        RetString = RetString & "- "
+    Else
+        RetString = RetString & AppendVal
+    End If
+    RetString = RetString & ", "
+End Function
+
+Function AppendVar(ByRef RetString, ByVal AppendVal)
+    RetString = RetString & AppendVal & ", "
+End Function
+
+Function ConvertDeviceState(State)
+    if (State = NDISDEVICESTATEUNSPECIFIED) Then
+        ConvertDeviceState = "Unspecified"
+    ElseIf (State = NDISDEVICESTATED0) Then
+        ConvertDeviceState = "D0"
+    ElseIf (State = NDISDEVICESTATED1) Then
+        ConvertDeviceState = "D1"
+    ElseIf (State = NDISDEVICESTATED2) Then
+        ConvertDeviceState = "D2"
+    ElseIf (State = NDISDEVICESTATED3) Then
+        ConvertDeviceState = "D3"
+    Else
+        ConvertDeviceState = "Unknown " & State & " "
+    End If
+End Function
+
+'
+' This function takes a string that is supposed to be an adapter description and removes
+' the #2 or whatever may be the number associated with the adapter. This is so that we 
+' can easily compare if two adapters are the same or not
+'
+Function TrimNumberField(strInput)
+   Dim oRegExp
+   Dim oMatches
+   Dim strOutput
+
+   ' Using regular expressions to remove " #NN..", where N is a number
+   Set oRegExp = new RegExp
+
+   ' Only concerned with first pattern
+   oRegExp.Global = False
+
+   ' Match any character followed by " #N..", followed by any character
+   oRegExp.Pattern = "(.*) #[0-9]+(.*)"
+        
+   Set oMatches = oRegExp.Execute (strInput)
+
+   If oMatches.Count > 0 Then          ' If there was a match found
+      Dim Match
+      Set Match = oMatches.Item (0)
+
+      ' string contained match pattern, lets combine the two matched parameters
+      strOutput = Match.Submatches(0) & Match.Submatches(1)
+   Else
+      ' match pattern not found
+      strOutput = strInput
+   End If
+
+   ' Cleanup
+   Set oMatches = Nothing
+   Set oRegExp = Nothing
+
+   TrimNumberField = strOutput
+End Function
+
+'--------------------------------------------------------------------------
+'==========================================================================
+'++++++++++++++++++++++++++++  END TEST  ++++++++++++++++++++++++++++++++++
+'==========================================================================
+        </script>
+    </job>
+</package>
+
+
+
+<!--- CRC = 0xefd8c283 --->

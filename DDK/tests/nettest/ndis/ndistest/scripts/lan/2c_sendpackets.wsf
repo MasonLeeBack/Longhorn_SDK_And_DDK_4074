@@ -1,0 +1,289 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, 802_5, FDDI
+</MEDIA>
+<WHQL>
+802_3, 802_5, FDDI
+</WHQL>
+<CARDMACH>
+2C,1M
+</CARDMACH>
+<RUNORDER>
+1630
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[
+This script sends packets using NdisSendPackets.  It will use different burst 
+sizes and packet sizes.  All packets are directed. This test logs a failure if
+there are send failures during NdisSendPackets. It tolerates receive failures 
+on the support card. Three packet sizes are used during the test : minimum
+of 64/96 bytes, maximum supported by ndis medium and average of these two
+sizes. Burst sizes vary from 1 to 8.
+
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="2c_SendPackets" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      
+        <!-- Begin Wireless Specific Includes -->
+        <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	     <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	     <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	     <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	     <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+        <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+        <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+        <!-- End Wireless Specific Includes -->
+      
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/> 
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script language="VBScript" src="..\inc\ConstLAN.vbs"/>
+      <script id="2c_SendPackets" language="VBScript">
+'==========================================================================
+' Script Name:    2c_SendPackets
+'==========================================================================
+Option Explicit 
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0), GetSupportAdapterIndex (oNDInfo.AdapterList, 0)) 
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard, oTestOpen
+   Private oSuppCard, oSuppOpen
+   Private m_lTestAdapterIndex, m_lSuppAdapterIndex
+      
+   Private Sub Class_Initialize
+      
+   End Sub
+   
+   Private Sub Class_Terminate
+         
+      Set oTestCard = Nothing
+      Set oTestOpen = Nothing
+      
+      Set oSuppCard = Nothing
+      Set oSuppOpen = Nothing
+   End Sub
+   
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+      
+      Set pAdapterList = oNDInfo.AdapterList
+      
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oTestOpen = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpen is Nothing) Then
+         Exit Function
+      End If
+      
+      oLog.Variation ("Setting up Support Adapter")
+      Set oSuppCard = New CLanCard
+      If (oSuppCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oSuppOpen = oSuppCard.vbSetupBasicTest(pAdapterList (m_lSuppAdapterIndex))
+      If (oSuppOpen is Nothing) Then
+         Exit Function
+      End If
+      
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+               
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")           
+         If(vbAssociateWep(oTestOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If	
+         
+         oLog.Variation ("Associating support device with " & NDTESTAP2 & " ...")       
+         If(vbAssociateWep(oSuppOpen, NDTESTAP2) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate support device with " & NDTESTAP2, 88888
+            Exit Function
+         End If	
+                           
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+      
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+   
+   Public Function RunTest (lTestAdapterIndex, lSuppAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      m_lSuppAdapterIndex = lSuppAdapterIndex
+      
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+      
+      ExecuteTestCore
+      
+      oLog.Variation("Clear Events")
+      
+      Call oTestOpen.vbClearEvents()
+      Call oSuppOpen.vbClearEvents()
+      
+      
+   End Function
+   
+   Public Function ExecuteTestCore
+      Dim bResult
+      Dim nMaxPacketSize, lAllowedSize, nPacketSize, nReceiveDelay
+      Dim nTestId,nPacketsSent,nReceived, nResent, NumBursts, MaxBurstSize, BurstSize, nTotalPackets
+      Dim SuppAddr
+      SuppAddr = NullAddr()
+      
+      oLog.Variation("Setup IP Related Information for Test and support Card")
+      bResult = SetupTestForIP(oTestOpen, m_lTestAdapterIndex, oSuppOpen, m_lSuppAdapterIndex)
+      If(Not bResult) Then
+         Exit Function
+      End If
+      
+      
+      lAllowedSize = glMinimumPacketSize
+      
+      
+      ' Check for MTU > Allowed Size
+      nMaxPacketSize = oTestOpen.vbGetMaxPacketSize ()
+      If (nMaxPacketSize < lAllowedSize ) Then
+         oLog.Write("Maximum packet size less than allowed size of" & lAllowedSize & ", unable to run test")
+         Exit Function
+      End If
+      
+      SuppAddr = oSuppOpen.vbGetCardAddress()
+      
+      nTestId = oNDTSupp.Random(1, 32765)
+      
+      oLog.Variation("Setup Instances")      
+      oTestOpen.vbSetRemoteId(nTestId)
+      oSuppOpen.vbSetLocalId(nTestId)
+      
+      ' For functional tests, we allow the oring of this bit
+      oSuppOpen.vbSetReceiveOption(RECEIVE_DEFAULT Or RECEIVE_ALLOW_BUSY_NET)
+      
+      
+      If(Not oSuppOpen.vbSetPacketFilter(DIRECTED)) Then
+         Exit Function
+      End If
+      
+      nPacketsSent = 0
+      nReceived = 0
+      nResent = 0
+      
+      NumBursts = 300
+      MaxBurstSize = 8
+      
+      ReDim arrSendAddr(MaxBurstSize * 6)
+      
+      arrSendAddr(0) = SuppAddr
+      arrSendAddr(1) = SuppAddr
+      arrSendAddr(2) = SuppAddr
+      arrSendAddr(3) = SuppAddr
+      arrSendAddr(4) = SuppAddr
+      arrSendAddr(5) = SuppAddr
+      arrSendAddr(6) = SuppAddr
+      arrSendAddr(7) = SuppAddr
+      
+      
+      
+      '------------------------------------------------
+      ' variation:   send bursts of various sizes
+      '------------------------------------------------
+      
+      
+      BurstSize = CLng(0)
+      Do While(BurstSize < MaxBurstSize)
+         BurstSize = BurstSize + 1
+         
+         nPacketSize = lAllowedSize
+         nTotalPackets = NumBursts * BurstSize
+         
+         Do While(TRUE)
+            '
+            ' start receives, send packets, check send results, then check
+            ' receive results
+            '
+            oSuppOpen.vbStartReceive()
+            
+            oLog.Variation("Sending Packets")
+            Call oTestOpen.vbVerifiedSendPackets(arrSendAddr, BurstSize, nPacketSize, NumBursts, 0, Null)
+            
+            oLog.Variation("Receive results")
+            nReceiveDelay = 150
+            WScript.Sleep nReceiveDelay    ' wait for all packets to be received
+            
+            '
+            ' the second open instance should receive packets
+            '
+            bResult = oSuppOpen.vbStopReceive
+            If (bResult) Then
+               bResult = oSuppOpen.vbVerifyReceiveResend (nTotalPackets,1, 0, 0)
+            End If
+            
+            If (nPacketSize = nMaxPacketSize) Then
+               Exit Do
+            ElseIf (nPacketSize = lAllowedSize) Then
+               nPacketSize = (nMaxPacketSize + lAllowedSize) \ 2
+               If ((nPacketSize And &H0001&) = 0) Then
+                  nPacketSize = nPacketSize + 1
+               End If
+            Else
+               nPacketSize = nMaxPacketSize
+            End If
+         Loop
+         
+      Loop   
+      
+      
+   End Function
+   
+End Class
+
+</script>
+</job>
+</package>
+
+
+
+
+
+<!--- CRC = 0x7a896c7c --->

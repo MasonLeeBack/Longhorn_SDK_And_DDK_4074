@@ -1,0 +1,440 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, FDDI
+</MEDIA>
+<WHQL>
+802_3, FDDI
+</WHQL>
+<CARDMACH>
+2C,1M
+</CARDMACH>
+<RUNORDER>
+1620
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[
+This script tests that the card can actually receive on as many 
+different multicast addresses as it claims to support. It uses up
+all available multicast addresses on the test card, and then tries 
+to send packets to each of those addresses from the support adapter. 
+It checks to make sure that packets are only received on those multicast 
+addresses that are actually active. This test requires that both Support 
+card and Test card be miniports.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="2c_RecvMulticast" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      
+        <!-- Begin Wireless Specific Includes -->
+        <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	     <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	     <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	     <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	     <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+        <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+        <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+        <!-- End Wireless Specific Includes -->
+        
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/> 
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script language="VBScript" src="..\inc\ConstLAN.vbs"/>
+      <script id="2c_RecvMulticast" language="VBScript">
+'==========================================================================
+' Script Name:    2c_RecvMulticast
+'==========================================================================
+Option Explicit 
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0), GetSupportAdapterIndex (oNDInfo.AdapterList, 0)) 
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard, oTestOpen
+   Private oSuppCard, oSuppOpen
+   Private m_lTestAdapterIndex, m_lSuppAdapterIndex
+   Private m_ulListOid, m_ulSizeOid
+   Private Sub Class_Initialize
+      
+   End Sub
+   
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+      Set oTestOpen = Nothing
+      
+      Set oSuppCard = Nothing
+      Set oSuppOpen = Nothing
+   End Sub
+   
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+
+      If (UseIPHeaders) Then
+         Exit Function
+      End If      
+      
+      Set pAdapterList = oNDInfo.AdapterList
+      
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oTestOpen = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpen is Nothing) Then
+         Exit Function
+      End If
+      
+      oLog.Variation ("Setting up Support Adapter")
+      Set oSuppCard = New CLanCard
+      If (oSuppCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oSuppOpen = oSuppCard.vbSetupBasicTest(pAdapterList (m_lSuppAdapterIndex))
+      If (oSuppOpen is Nothing) Then
+         Exit Function
+      End If
+      
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+               
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")           
+         If(vbAssociateWep(oTestOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If	
+         
+         oLog.Variation ("Associating support device with " & NDTESTAP2 & " ...")       
+         If(vbAssociateWep(oSuppOpen, NDTESTAP2) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate support device with " & NDTESTAP2, 88888
+            Exit Function
+         End If	
+                           
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+      
+      Set pAdapterList = Nothing
+      
+      Dim nMedium
+      nMedium = oTestCard.NdisMedium
+      If(nMedium = NDISMEDIUM802_3) Then
+         m_ulListOid = OID_802_3_MULTICAST_LIST
+         m_ulSizeOid = OID_802_3_MAXIMUM_LIST_SIZE 
+      ElseIf (nMedium = NDISMEDIUMFDDI) Then
+         m_ulListOid = OID_FDDI_LONG_MULTICAST_LIST
+         m_ulSizeOid = OID_FDDI_LONG_MAX_LIST_SIZE
+      Else
+         call oLog.Failed ("Media not valid for this script" , 21207)
+         Exit Function
+      End If
+      
+      SetupTest = TRUE
+   End Function
+   
+   Public Function RunTest (lTestAdapterIndex, lSuppAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      m_lSuppAdapterIndex = lSuppAdapterIndex
+      
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+      
+      ExecuteTestCore
+   End Function
+   
+   Private Function ExecuteTestCore
+      Dim nTestId
+      
+      Dim bResult
+      
+      Dim nReceiveDelay                 ' set depending on the media
+      nReceiveDelay = 150               ' Initial, will be actually queried for
+      
+      Dim nMaxPacketSize           
+      nMaxPacketSize = 48                ' Initial, will be actually queried for
+      
+      Dim nCount, nIndex
+      
+      Dim nMinimumPass
+      
+      Dim nTotalPackets
+      Dim nPacketSize
+      
+      Dim arrSendAddr(48)                 ' 8 * 6 bytes
+      Dim UnusedMulticastList(48)      ' 8 * 6 bytes
+      Dim NumBursts
+      Dim NumAddresses
+      
+      Dim lMaxList, nResultSize
+      Dim lListLength
+      
+      Dim AddrList()
+      Dim MulticastInUseList()
+      Dim MulticastAddr
+      
+      Dim Expected
+      Dim ToRemove                     
+      Dim Slot
+      
+      nMaxPacketSize = oTestOpen.vbGetMaxPacketSize()
+      nReceiveDelay = oTestOpen.vbGetReceiveDelay()
+      
+      nTestId = oNDTSupp.Random(1, 32765)
+      
+      oSuppOpen.vbSetRemoteId(nTestId)
+      oTestOpen.vbSetLocalId(nTestId)
+      
+      ' For functional tests, we allow the oring of this bit
+      oTestOpen.vbSetReceiveOption(RECEIVE_DEFAULT Or RECEIVE_ALLOW_BUSY_NET)
+      
+      NumBursts = 20
+      
+      nPacketSize = glMinimumPacketSize
+      
+      
+      oLog.Variation("GetMaxListSize")
+      
+      ' Get the maximum number of multicast addresses possible
+      lMaxList = CLng(0)
+      nResultSize = 4
+      bResult = oTestOpen.vbFastNdisRequest( _
+            m_ulSizeOid, _
+            lMaxList, _
+            nResultSize)
+      If(Not bResult) Then
+         call oLog.Failed ("Unable to get max multicast list size" , 21210)
+         Exit Function
+      ElseIf (lMaxList = 0) Then
+         call oLog.Failed ("List size may not equal zero" , 21211)
+         Exit Function
+      Else
+         If (lMaxList < 32) Then     ' requirement for PC99
+            call oLog.Failed ("Driver must support at least 32 multicast addresses" , 21212)
+         End If
+         
+         lListLength  = 0
+         
+         bResult = oTestCard.vbFastNdisIOControl(m_ulListOid, AddrList, QUERY_GLOBAL_STATS)
+         ' The length of the array allocated that would hold 6 elements(the netaddr) was allocated as 5 
+         ' but used an extra 0th element. So to get the actual length, add 1 to the length returned.
+         
+         If (bResult) Then
+            lListLength = UBound(AddrList) + 1
+            If ((lListLength \ 6) <> 0) Then
+               lMaxList = lMaxList - (lListLength \ 6)
+               oLog.Write("INFO: Multicast addresses in use by other active bindings." )
+               oLog.Write("      Ndis Tester will adjust list size to "& lMaxList )
+            End If
+         End If
+         
+         If (lMaxList > 256) Then
+            oLog.Write("List size greater than 256. ")
+            oLog.Write("Only 256 will be tested" )
+            lMaxList = 256
+         End If
+      End If
+      
+      oLog.Variation("SetPacketFilter")
+      If(Not oTestOpen.vbSetPacketFilter(MULTICAST)) Then
+         Exit Function
+      End If
+      
+      
+      '---------------------------------------------------
+      ' variation:   add multicast addresses, testing that we can receive on
+      '              all added addresses (and not on ones not added yet)
+      '---------------------------------------------------
+      
+      oLog.Variation("Adding max possible multicast addresses")
+      ReDim MulticastInUseList(lMaxList*6)
+      
+      UnusedMulticastList(0) = NetAddr(&H01&, &H02&, &H03&, &H04&, &H06&, &H00&)
+      UnusedMulticastList(1) = NetAddr(&H01&, &H02&, &H03&, &H04&, &H06&, &H01&)
+      UnusedMulticastList(2) = NetAddr(&H01&, &H02&, &H03&, &H04&, &H06&, &H02&)
+      UnusedMulticastList(3) = NetAddr(&H01&, &H02&, &H03&, &H04&, &H06&, &H03&)
+      UnusedMulticastList(4) = NetAddr(&H01&, &H02&, &H03&, &H04&, &H06&, &H04&)
+      UnusedMulticastList(5) = NetAddr(&H01&, &H02&, &H03&, &H04&, &H06&, &H05&)
+      UnusedMulticastList(6) = NetAddr(&H01&, &H02&, &H03&, &H04&, &H06&, &H06&)
+      UnusedMulticastList(7) = NetAddr(&H01&, &H02&, &H03&, &H04&, &H06&, &H07&)
+      
+      
+      nCount = CLng(0)
+      
+      Do While nCount < lMaxList
+         oLog.Variation("Count: "& nCount)
+         MulticastAddr = NetAddr(&H01&, &H02&, &H03&, &H04&, &H05&, nCount)
+         
+         bResult = oTestOpen.vbAddMulticastAddr(MulticastAddr)
+         If (Not bResult) Then
+            lMaxList = nCount
+         Else
+            MulticastInUseList(nCount) = MulticastAddr
+         End If
+         nCount = nCount + 1
+      Loop
+      
+      '----------------------------------------------------------
+      ' Check that we can receive packets sent to all the registered multicast
+      ' Addresses, but that we don't receive packets sent to non-registered addresses
+      ' Then, delete one or more addresses and try again, until there are no more
+      ' addresses registered...
+      '----------------------------------------------------------
+      
+      oLog.Variation("Checking receives on multicast addresses")
+      
+      Do While(TRUE)
+         ' first, test for no receives on all multicast addresses in unused list
+         
+         bResult = oTestOpen.vbPrintNdisRequest(m_ulListOid)
+         oTestOpen.vbStartReceive()
+         
+         NumAddresses = 8
+         
+         oLog.Variation("Sending Packets")
+         Call oSuppOpen.vbVerifiedSendPackets(UnusedMulticastList, NumAddresses, nPacketSize, NumBursts, 0, Null)   
+         
+         '
+         ' now, check receives -- should have none..
+         '
+         
+         oLog.Variation("Receive results")
+         WScript.Sleep nReceiveDelay    ' wait for all packets to be received
+         
+         
+         bResult = oTestOpen.vbStopReceive
+         If (bResult) Then
+            bResult = oTestOpen.vbVerifyReceiveResend(0, 0, 0, 0)
+         End If         
+         '
+         ' now check addresses that are still active
+         ' 
+         
+         oLog.Variation("Checking if addresses are still valid")
+         
+         If (lMaxList > 0) Then
+            oTestOpen.vbStartReceive()
+            nIndex = 0
+            
+            oLog.Variation("Sending packets")
+            Do While(nIndex < lMaxList)
+               NumAddresses = lMaxList - nIndex
+               If (NumAddresses > 8) Then
+                  NumAddresses = 8
+               End If
+               
+               Slot = 0
+               
+               Do While (Slot < NumAddresses)
+                  MulticastAddr = MulticastInUseList(nIndex + Slot)
+                  arrSendAddr(Slot) = MulticastAddr
+                  Slot = Slot + 1
+               Loop
+               
+               nIndex = nIndex + NumAddresses         
+               
+               Call oSuppOpen.vbVerifiedSendPackets(arrSendAddr, NumAddresses, nPacketSize, NumBursts, 0, Null)   
+            Loop
+            
+            '
+            ' now check receives -- should get these..
+            '
+            oLog.Variation("Checking receives")
+            WScript.Sleep nReceiveDelay       ' wait for all packets to be received
+            
+            Expected = NumBursts * lMaxList
+            nMinimumPass = (glPercentToPass * Expected) / 100
+            
+            bResult = oTestOpen.vbStopReceive
+            If (bResult) Then
+               bResult = oTestOpen.vbVerifyReceiveResend(Expected, nMinimumPass, 0, 0)
+            End If
+         Else
+            Exit Do
+         End If
+         
+         '
+         ' now, remove multicast addresses. Remove a set number randomly from the list,
+         ' placing them into the unused list
+         '
+         If (lMaxList > 128) Then
+            ToRemove = 8
+         ElseIf (lMaxList > 64) Then
+            ToRemove = 4
+         ElseIf (lMaxList > 32) Then
+            ToRemove = 3
+         ElseIf (lMaxList > 16) Then
+            ToRemove = 2
+         Else
+            ToRemove = 1
+         End If
+         
+         
+         oLog.Variation("Removing random multicast addresses")
+         nCount = CLng(0)
+         While (nCount < ToRemove)
+            Slot = oNDTSupp.Random(0, lMaxList-1)
+            MulticastAddr = MulticastInUseList(Slot)
+            oLog.Write ("Removing: " & NetAddr2Str(MulticastAddr) )
+            bResult = oTestOpen.vbRemoveMulticastAddr(MulticastAddr)
+            
+            UnusedMulticastList(nCount) = MulticastAddr
+            
+            If (Slot <> (lMaxList-1)) Then
+               MulticastInUseList(Slot) = MulticastInUseList(lMaxList-1)
+            End If
+            
+            lMaxList = lMaxList - 1
+            nCount = nCount + 1
+         WEnd
+      Loop
+      
+      oLog.Variation("Clear Events")
+      
+      Call oSuppOpen.vbClearEvents()
+      Call oTestOpen.vbClearEvents()
+      
+   End Function
+   
+End Class
+
+</script>
+</job>
+</package>
+
+
+
+
+<!--- CRC = 0x99fed62b --->

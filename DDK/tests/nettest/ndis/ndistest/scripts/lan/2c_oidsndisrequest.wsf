@@ -1,0 +1,2045 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, 802_5, FDDI, Irda
+</MEDIA>
+<WHQL>
+802_3, 802_5, FDDI, Irda
+</WHQL>
+<CARDMACH>
+2C,1M
+</CARDMACH>
+<RUNORDER>
+1320
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[This script performs a series of NdisRequest calls to the driver, to verify
+that it supports the querying of all required information OIDS.  It will query
+OID_GEN_SUPPORTED_OIDS, verify that all required oids are present and query them.
+The Ndis Tester is not able to verify the values returned by most of these OIDs.
+The user should check this log carefully for problems. It also checks that the requests
+modify the fields of the NDIS_REQUEST structure correctly for both queries and sets: It
+verifies the byteswritten/bytesread field equal the bytes required by the OID, and
+checks that the buffer is not inappropriately modified.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="2c_OidsNdisRequest" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+
+        <!-- Begin Wireless Specific Includes -->
+        <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	     <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	     <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	     <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	     <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+        <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+        <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+        <!-- End Wireless Specific Includes -->
+
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CIrdaCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CIrdaOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script language="VBScript" src="..\inc\DBRead.vbs"/>
+      <script language="VBScript" src="..\inc\ConstLAN.vbs"/>
+      <script id="2c_OidsNdisRequest" language="VBScript">
+'==========================================================================
+' Script Name:    2c_OidsNdisRequest
+'==========================================================================
+Option Explicit
+
+' Constants for each data type that we need to pass to the ndisrequest calls
+Const STRINGDATA = &H10
+Const ARRAYDATA = &H8
+Const STATDATA = &H4
+Const ADDRESS = &H2
+Const LONGDATA = &H1
+
+' Constants for each query type
+Const QUERYSET = &H3
+Const SET_REQUEST = &H2
+Const QUERY_REQUEST = &H1
+
+' Any other valid value for the above 2 sets is represented as OTHER
+Const OTHER = &H0
+
+' Constants for the kind of error to flag for the problem
+Const LOG_AS_FAIL = &H4
+Const LOG_AS_WARN = &H2
+Const LOG_AS_WRITE = &H1
+
+' Anything that is invalid. This is anything that does not appear above. This will
+' be used in the file to indicate that this field is not valid in this scenario
+Const INVALID = &H1000
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0), GetSupportAdapterIndex (oNDInfo.AdapterList, 0))
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+'============================================================================================='
+'/**
+'Compare two arrays of bytes and returns true if the arrays are same and false otherwise. The
+'lLength parameter indicates how many elements of the arrays should be compared.
+'*/
+Function wsfCmpArrays(arrByteOne, arrByteTwo, lLength)
+   Dim nIndex
+   wsfCmpArrays = TRUE
+
+   For nIndex = 0 To lLength - 1
+      If (arrByteOne(nIndex) <> arrByteTwo(nIndex)) Then
+         wsfCmpArrays = FALSE
+         Exit For
+      End If
+   Next
+End Function
+
+
+Function wsfMulticastAddressList(AddrArray, lFillSize, lOperation)
+   Dim FirstAddr(6)
+   Dim CurrIndex, nIndex
+
+   wsfMulticastAddressList = TRUE
+
+   For nIndex = 0 To 5
+      FirstAddr(nIndex) = CByte(GoodMulticastAddr(nIndex))
+   Next
+
+   CurrIndex = 0
+
+   For nIndex = 0 To lFillSize - 1
+
+      If (lOperation = 0) Then
+         ' Fill
+         AddrArray(nIndex) = CByte(FirstAddr(CurrIndex))
+      Else
+         ' Compare
+         If (AddrArray(nIndex) <> FirstAddr(CurrIndex)) Then
+            oLog.Write ("Index " & nIndex & ": "  & AddrArray(nIndex) & " <> " & FirstAddr(CurrIndex))
+            wsfMulticastAddressList = FALSE
+         End If
+      End If
+
+      CurrIndex = CurrIndex + 1
+
+      If (CurrIndex > 5) Then
+         FirstAddr(5) = FirstAddr(5) + 1
+         If (FirstAddr(5) > 255) Then
+            FirstAddr(4) = CByte(FirstAddr(4) + 1)
+            FirstAddr(5) = CByte(0)
+         End If
+         CurrIndex = 0
+      End If
+   Next
+
+End Function
+
+Class TestObj
+
+   Private m_lTestAdapterIndex
+   Private m_lSuppAdapterIndex
+   Private m_lMedium
+   Private m_lPhysicalMedium
+   Private m_TestableOids                 ' Initially contains required oids, then would contain all OIDs testable
+   Private m_OptionalOids                 ' Optional OIDs, some of which would be later tranferred to TestableOids
+
+   Private m_lLastPrivateOid              ' Last private oid
+
+   Private oTestCard
+   Private oSuppCard
+
+   Private oOpenOne
+   Private oOpenTwo
+   Private oSuppOpen
+
+   Private OptDirectedF, OptMulticastF, OptBroadcastF  ' count of how many of optionalstat (frame) oids are supported
+   Private OptDirectedB, OptMulticastB, OptBroadcastB  ' count of how many of optionalstat (bytes) oids are supported
+
+   Private m_nFaultSeverity
+
+   Private Sub Class_Initialize
+      m_lTestAdapterIndex = 1
+      m_lSuppAdapterIndex = 2
+      Set m_TestableOids = New OidList
+      Set m_OptionalOids = New OidList
+      m_lLastPrivateOid = &HFF000000&
+      OptDirectedF = 0
+      OptMulticastF = 0
+      OptBroadcastF = 0
+
+      OptDirectedB = 0
+      OptMulticastB = 0
+      OptBroadcastB = 0
+
+      m_nFaultSeverity = LOG_AS_FAIL
+   End Sub
+
+   Private Sub Class_Terminate
+      '
+      ' The closing of all the open handles is taken care of by the dll.
+      '
+      Set m_TestableOids = Nothing
+      Set m_OptionalOids = Nothing
+
+      Set oOpenOne = Nothing
+      Set oOpenTwo = Nothing
+      Set oTestCard = Nothing
+   End Sub
+
+   '============================================================================================='
+   '/**
+   'Can be used to specify the type of logging that would be done for a particular OID. The
+   'm_TestableOids list would decide what type of failure to log for the oid
+   '*/
+   Function LogFault (strErr, lFailureId)
+      Select Case m_nFaultSeverity
+         Case LOG_AS_FAIL
+            Call oLog.Failed (strErr, lFailureId)
+         Case LOG_AS_WARN
+            oLog.Warned (strErr)
+         Case Else
+            oLog.Write (strErr)
+      End Select
+   End Function
+
+   '============================================================================================='
+   '/**
+   '*/
+   Function SetupTest
+      Dim pAdapterList
+
+      SetupTest = FALSE
+      Set pAdapterList = oNDInfo.AdapterList
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = CreateCardObject(pAdapterList (m_lTestAdapterIndex))
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+
+      Set oOpenOne = oTestCard.vbSetupBasicTest (pAdapterList (m_lTestAdapterIndex))
+      If (oOpenOne Is Nothing) Then
+         SetupTest = FALSE
+         Exit Function
+      End If
+
+      Set oOpenTwo = oTestCard.vbOpenAdapter()
+      If(oOpenTwo is Nothing) Then
+         SetupTest = FALSE
+         Exit Function
+      End If
+
+      m_lMedium = oTestCard.NdisMedium()
+      m_lPhysicalMedium = oTestCard.vbGetPhysicalMedium()
+
+      oLog.Variation ("Setting up Support Adapter")
+      Set oSuppCard = CreateCardObject(pAdapterList (m_lSuppAdapterIndex))
+      If (oSuppCard is Nothing) Then
+         Exit Function
+      End If
+
+      Set oSuppOpen = oSuppCard.vbSetupBasicTest (pAdapterList (m_lSuppAdapterIndex))
+      If (oSuppOpen Is Nothing) Then
+         SetupTest = FALSE
+         Exit Function
+      End If
+
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then
+
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")
+         If(vbAssociateWep(oOpenOne, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If
+
+         oLog.Variation ("Associating support device with " & NDTESTAP2 & " ...")
+         If(vbAssociateWep(oSuppOpen, NDTESTAP2) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate support device with " & NDTESTAP2, 88888
+            Exit Function
+         End If
+
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+
+      ' Get the required OIDs list for this media
+      wsfGetOidList
+
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+
+   '============================================================================================='
+   '/**
+   ' Main driving function that setup and executes the various test cases
+   '*/
+   Function RunTest(lTestAdapterIndex, lSuppAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      m_lSuppAdapterIndex = lSuppAdapterIndex
+
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+
+      ' Check if all required oids are supported
+      Call wsfSupportedOidsQueryTest
+
+      ' Check buffer integrity with queries
+      oLog.Variation("Checking buffer integrity for query requests")
+      Call wsfNdisRequestStructTest(QUERY_REQUEST)
+
+      ' Check buffer integrity with sets
+      oLog.Variation("Checking buffer integrity for set requests")
+      Call wsfNdisRequestStructTest(SET_REQUEST)
+
+      ' Check failures by querying set only and setting query only
+      Call wsfFailureTest
+
+      '
+      ' cleanup
+      '
+      oLog.Variation("Clear Events")
+      Call oOpenOne.vbClearEvents()
+      Call oOpenTwo.vbClearEvents()
+      Call oSuppOpen.vbClearEvents()
+
+   End Function
+
+   '============================================================================================='
+   '/**
+   'Store all the required OIDs and optional OIDs into lists so that all functions can access them
+   '*/
+   Function wsfGetOidList()
+      Dim oDBManager
+
+      oLog.Variation("Setting up OID arrays")
+
+      ' Create the database manager
+      Set oDBManager = New CDatabaseManager
+      oDBManager.DBFile = "..\inc\oidsdb.vbs"
+
+      ' Create the list of tag keys we are interested in
+      Dim TagArraySize, TagArray(3,2)
+
+      ' The interface to use is NdisRequest
+      TagArray(0,0) = "Interface"
+      TagArray(0,1) = "NDISREQUEST"
+
+      ' Choose the media type
+      TagArray(1,0) = "Media"
+
+      Select Case (m_lMedium)
+         Case NDISMEDIUM802_3:
+               TagArray(1,1) = "NDISMEDIUM802_3"
+         Case NDISMEDIUM802_5:
+               TagArray(1,1) = "NDISMEDIUM802_5"
+         Case NDISMEDIUMFDDI:
+               TagArray(1,1) = "NDISMEDIUMFDDI"
+         Case NDISMEDIUMIRDA:
+               TagArray(1,1) = "NDISMEDIUMIRDA"
+         Case Else:
+               Call oLog.Failed ("Incorrect media type", 88888)
+      End Select
+
+      TagArray(2,0) = "OidSupport"
+      TagArraySize = 3
+
+      ' The required oids go into the TestableOids array
+      TagArray(2,1) = "REQUIRED"
+
+      Call oDBManager.FillDBFromFile (m_TestableOids, TagArray, TagArraySize)
+
+      ' The optional oids for now go into the OptionalOids array
+      TagArray(2,1) = "OPTIONAL"
+
+      Call oDBManager.FillDBFromFile (m_OptionalOids, TagArray, TagArraySize)
+
+      If (m_lPhysicalMedium = NDISPHYSICALMEDIUMWIRELESSLAN) Then
+         ' Add the extra entries for the wireless lan
+         TagArray(1,1) = "NDISPHYSICALMEDIUMWIRELESSLAN"
+
+         TagArray(2,1) = "REQUIRED"
+         Call oDBManager.FillDBFromFile (m_TestableOids, TagArray, TagArraySize)
+
+         TagArray(2,1) = "OPTIONAL"
+         Call oDBManager.FillDBFromFile (m_OptionalOids, TagArray, TagArraySize)
+
+      End If
+
+      Set oDBManager = Nothing
+
+   End Function
+
+   '============================================================================================='
+   '/**
+   ' This function checks that all OIDs in the required OIDs list are supported by the
+   ' device, by querying them. When possible, it also compares the return values from
+   ' two open instances and also checks the bytes written for a query.
+   '*/
+   Function wsfSupportedOidsQueryTest
+
+      Dim bResult
+
+      Dim ReturnOne(32)         ' Max known length in our OIDs array
+      Dim ReturnTwo(32)
+
+      Dim ReturnSize
+
+      Dim OidsToSkip(50), OidsToSkipLength
+      Dim ThisOid
+
+      Dim RequiredOidsLength
+
+      Dim ListOne()
+      Dim ListTwo()
+      Dim ListOneLength, ListTwoLength
+
+      Dim Found
+      Dim nCount, nIndex
+      Dim lExpectedSize, lDataType
+      Dim BytesWritten
+
+      '
+      ' get the supported list for the two open instances..
+      '
+      oLog.Variation("Get Supported OID List from open 1")
+      ReDim ListOne(256)
+      ListOne(0) = CLng(ListOne(0))
+      ListOneLength = 256*4
+      bResult = oOpenOne.vbFastNdisRequest(OID_GEN_SUPPORTED_LIST, ListOne, ListOneLength)
+      If (Not bResult) Then
+         call oLog.Failed ("Unable to get list of supported OIDs for open instance 1." , 21793)
+         Exit Function
+      End If
+      ' ListOne is an array of longs, so actual num of entries written into the array are
+      ListOneLength = ListOneLength/4
+
+      oLog.Variation("Get Supported OID List from open 2")
+      ReDim ListTwo(256)
+      ListTwo(0) = CLng(ListTwo(0))
+      ListTwoLength = 256*4
+      bResult = oOpenTwo.vbFastNdisRequest(OID_GEN_SUPPORTED_LIST, ListTwo, ListTwoLength)
+      If ( Not bResult) Then
+         call oLog.Failed ("Unable to get list of supported OIDs for open instance 2." , 21794)
+         Exit Function
+      End If
+      ' ListTwo is an array of longs, so actual num of entries written into the array are
+      ListTwoLength = ListTwoLength/4
+
+      '
+      ' and compare with our expected list, to make sure all the required ones are there..
+      '
+      oLog.Variation("Check for all required oids")
+      nCount = CLng(0)
+      RequiredOidsLength = m_TestableOids.Size
+      Do While (nCount < RequiredOidsLength)
+         If (m_TestableOids.OidAt(nCount) <> 0) Then
+            Found = isItemInList(m_TestableOids.OidAt(nCount), ListOne, ListOneLength)
+
+            If (Not Found ) Then
+               oNDTCore.PrintOidName(m_TestableOids.OidAt(nCount))
+               call oLog.Failed ("Supported list does not contain required Oid" , 21795)
+            End If
+         End If
+         nCount = nCount + 1
+      Loop
+
+      '
+      ' the following OIDS are technically required, but will be
+      ' warned instead of generating a failure if they are not supported
+      ' (no protocol uses them as of this date)
+      ' At some later date this may be changed to a failure
+      '
+      '      If (m_lMedium = NDISMEDIUMFDDI) Then
+      '         Dim FddiOids
+      '         Set FddiOids = New OidList
+      '
+      '         FddiOids.Add OID_FDDI_SHORT_PERMANENT_ADDR, "OID_FDDI_SHORT_PERMANENT_ADDR", 2, ADDRESS, QUERY_REQUEST, LOG_AS_FAIL
+      '         FddiOids.Add OID_FDDI_SHORT_CURRENT_ADDR, "OID_FDDI_SHORT_CURRENT_ADDR", 2, ADDRESS, QUERY_REQUEST, LOG_AS_FAIL
+      '         FddiOids.Add OID_FDDI_SHORT_MULTICAST_LIST, "OID_FDDI_SHORT_MULTICAST_LIST", -1, ARRAYDATA, QUERYSET, LOG_AS_FAIL
+      '         FddiOids.Add OID_FDDI_SHORT_MAX_LIST_SIZE, "OID_FDDI_SHORT_MAX_LIST_SIZE", 4, LONGDATA, QUERY_REQUEST, LOG_AS_FAIL
+      '
+      '         For nCount = 0 To 3
+      '            ThisOid = FddiOids.OidAt(nCount)
+      '            Found = isItemInList(ThisOid, ListOne, ListOneLength)
+      '            If (Not Found) Then
+      '               oNDTCore.PrintOidName(ThisOid)
+      '               oLog.Warned("Supported list does not contain required Oid" )
+      '            Else
+      '               ' It is supported, so add it to the required oids list to make checking simpler
+      '               nIndex = FddiOids.GetIndex(ThisOid)
+      '               m_TestableOids.Add ThisOid, FddiOids.OidName(nIndex), FddiOids.Length(nIndex), FddiOids.DataType(nIndex), _
+      '                     FddiOids.RequestType(nIndex), FddiOids.FaultSeverity(nIndex)
+      '            End If
+      '         Next
+      '         Set FddiOids = Nothing
+      '      End If
+
+      '
+      ' make sure that the two lists are identical
+      '
+      oLog.Variation("Compare the two oid lists obtained")
+      If (ListOneLength <> ListTwoLength) Then
+         call oLog.Failed ("OID lists are not the same length" , 21796)
+      Else
+         nCount = CLng(0)
+         Do While (nCount < ListOneLength)
+            If (ListOne(nCount) <> ListTwo(nCount)) Then
+               call oLog.Failed ("OID lists are not identical" , 21797)
+            End If
+            nCount = nCount + 1
+         Loop
+      End If
+
+      '--------------------------------------------------------------
+      ' variation:  check to see that both open instances actually support all
+      '             of the OIDs that they claim to...
+      '             Also check that the value they both return is the same
+      '
+      '--------------------------------------------------------------
+      oLog.Variation("Check that listed OIDs really are supported")
+
+      '
+      ' some oids we cant currently test (or dont want to)
+      ' put them in a list that we scan before doing actual test
+      '
+
+      ' The optional oids in here would not get added to our testable list
+      OidsToSkip(0) = OID_GEN_PHYSICAL_MEDIUM           ' tricky for multifunction devices
+      OidsToSkip(1) = OID_GEN_MACHINE_NAME              ' set only
+      OidsToSkip(2) = OID_PNP_SET_POWER                 ' can change settings
+
+      OidsToSkipLength = 3
+
+      ' Temporarily adding the ones below, as the checks may be placed in
+      ' ndis.
+      OidsToSkip(3) = OID_PNP_ADD_WAKE_UP_PATTERN       ' set only
+      OidsToSkip(4) = OID_PNP_REMOVE_WAKE_UP_PATTERN    ' set only
+      OidsToSkip(5) = OID_PNP_ENABLE_WAKE_UP            ' set only
+      OidsToSkip(6) = OID_PNP_QUERY_POWER               ' driver has to return success
+
+'      OidsToSkip() = OID_GEN_SUPPORTED_LIST            ' already tested
+'      OidsToSkip() = OID_GEN_NETWORK_LAYER_ADDRESSES     ' can change settings
+'      OidsToSkip() = OID_GEN_PROTOCOL_OPTIONS            ' can change settings
+'      OidsToSkip() = OID_802_11_ADD_WEP			         ' set only
+'      OidsToSkip() = OID_802_11_REMOVE_WEP			      ' set only
+'      OidsToSkip() = OID_802_11_BSSID_LIST_SCAN	         ' set only
+'      OidsToSkip() = OID_802_11_DISASSOCIATE 		      ' set only
+'      OidsToSkip() = OID_802_11_RELOAD_DEFAULTS 		   ' set only
+
+      OidsToSkipLength = 7
+
+      nCount = CLng(0)
+      Do While (nCount < ListOneLength)
+         ThisOid = ListOne(nCount)
+
+         nCount = nCount + 1
+         oLog.Variation("Checking if OID must be queried")
+         '
+         ' if this oid is in our skip list, then skip it
+         '
+         Found = isItemInList(ThisOid, OidsToSkip, OidsToSkipLength)
+         If (Found) Then
+            oNDTCore.PrintOidName(ThisOid)
+            oLog.Write("OID skipped" )
+         Else
+            ' It is supported and not skipped, check if present in our optional oids list
+            nIndex = m_OptionalOids.GetIndex(ThisOid)
+            If (nIndex <> -1) Then
+               ' Add it to our testable oids list
+               m_TestableOids.Add ThisOid, m_OptionalOids.OidName(nIndex), m_OptionalOids.Length(nIndex), m_OptionalOids.DataType(nIndex), _
+                     m_OptionalOids.RequestType(nIndex), m_OptionalOids.FaultSeverity(nIndex)
+               oLog.Write ("Copying " & m_OptionalOids.OidName(nIndex) & " to testable oids list")
+               ' Since we just added it, we know where it is located
+               nIndex = m_TestableOids.Size - 1
+            Else
+               ' Check if it a private OID
+               If ((ThisOid And (&HFF000000&)) = &HFF000000&) Then
+                  ' Yes, a private OID
+                  If (ThisOid > m_lLastPrivateOid) Then
+                     ' So, this is the max private OID we have encountered
+                     m_lLastPrivateOid = ThisOid
+                  End If
+               End If
+
+               ' Find the position where (if at all it is present in the testable OIDs list)
+               nIndex = m_TestableOids.GetIndex(ThisOid)
+            End If
+
+            ' nIndex value comes from the if or else part above. No setonly oids allowed
+            If (nIndex <> -1 ) Then
+               ' store the kind of error we will log if a test fails
+               m_nFaultSeverity = m_TestableOids.FaultSeverity(nIndex)
+
+
+               If (m_TestableOids.RequestType(nIndex) <> SET_REQUEST) Then
+                  '
+                  ' We check for an OID returned by the supported list query, only
+                  ' if it is a recognized oid. Checking for unknown oids causes
+                  ' problems, as some of the unrecognized oids may be set only,
+                  ' and queries for them may result in incorrect failures
+                  '
+
+                  '
+                  ' if possible, compare return for this oid from the two open instances.
+                  '
+                  lExpectedSize =  m_TestableOids.Length(nIndex)
+                  lDataType = m_TestableOids.DataType(nIndex)
+
+                  If (lDataType = STATDATA) Then
+                     ' Since stat data is stored to have size -1, but can have size of either 4 or 8
+                     lExpectedSize = 8
+                  End If
+
+                  If (lExpectedSize <> -1) Then
+                     ' Known size
+                     oLog.Write ("Querying/Comparing return values")
+                     ' If we know the size we are expecting, we can query, get result and compare it too
+                     ReturnOne(0) = CByte(0)
+                     ReturnTwo(0) = CByte(0)
+
+                     ReturnSize = lExpectedSize
+                     BytesWritten = wsfSuccessfulNdisRequest(ThisOid, ReturnOne, ReturnSize, REQUEST_QUERY_INFO, "Unable to query open instance 1 for OID")
+                     If (lDataType = STATDATA) Then
+                        If (BytesWritten <> 4 And BytesWritten <> 8) Then
+                           Call LogFault ("Should have returned 4/8 bytes for the OID. Returned " & BytesWritten , 88888)
+                        End If
+                     Else
+                        If (BytesWritten <> lExpectedSize) Then
+                           Call LogFault ("Should have returned " & lExpectedSize & " bytes for the OID. Returned " & BytesWritten , 88888)
+                        End If
+                     End If
+
+                     ReturnSize = lExpectedSize
+                     BytesWritten = wsfSuccessfulNdisRequest(ThisOid, ReturnTwo, ReturnSize, REQUEST_QUERY_INFO, "Unable to query open instance 2 for OID")
+                     If (lDataType = STATDATA) Then
+                        If (BytesWritten <> 4 And BytesWritten <> 8) Then
+                           Call oLog.Failed ("Should have returned 4/8 bytes for the OID. Returned " & BytesWritten , 88888)
+                        End If
+                     ElseIf (ThisOid = OID_GEN_CURRENT_LOOKAHEAD) Then
+                         Call oLog.Write ("Current lookahead should return 4 bytes, returned " & BytesWritten)
+                     Else
+                        If (BytesWritten <> lExpectedSize) Then
+                           Call LogFault ("Should have returned " & lExpectedSize & " bytes for the OID. Returned " & BytesWritten , 88888)
+                        End If
+                     End If
+
+                     If (Not wsfCmpArrays(ReturnOne, ReturnTwo, BytesWritten)) Then
+                        If ((ThisOid And (&H00020000&)) = &H00020000&) Then
+                           ' For statistic oids, we do not fail if the values change
+                           call oLog.Warned ("NdisRequest returned different results from two open instance")
+                        Else
+                           call oLog.Failed ("NdisRequest returned different results from two open instance" , 21800)
+                        End If
+                     End If
+                  Else
+                     '
+                     ' cant compare, so just get values and let user compare
+                     '
+
+                     oLog.Write("Other OID: Querying for manual Compare" )
+                     oLog.Write("INFO: The oid return values need to be manually compared" )
+
+                     bResult = oOpenOne.vbPrintNdisRequest(ThisOid)
+                     If (Not bResult) Then
+                        call oLog.Failed ("Unable to query open instance 1 for OID" , 21804)
+                     Else
+                        bResult = oOpenTwo.vbPrintNdisRequest(ThisOid)
+                        If (Not bResult) Then
+                           call oLog.Failed ("Unable to query open instance 2 for OID" , 21805)
+                        End If
+                     End If
+                  End If
+
+                  ' If we have a test case, check that the value returned for this OID is correct
+                  Call TestOidValue(ThisOid)
+               Else
+                  oLog.Write("Set only oid " & m_TestableOids.OidName(nIndex) & " skipped" )
+               End If ' If (QUERY_REQUEST
+            Else
+               oLog.Write("Oid 0x" & Hex(ThisOid) & " not required, and hence not checked" )
+            End If ' If nIndex <> -1
+         End If
+      Loop
+
+   End Function	'SupportedOidsQuery ()
+
+   '============================================================================================='
+   '/**
+   ' Performs an NdisRequest and stores the results in the buffer. This functions has to be
+   ' successful in the request, if not, it fails with the error message passed to it in strErrStr
+   '*/
+   Function wsfSuccessfulNdisRequest(lOid, pData, lDataLen, lRequestType, strErrStr)
+      Dim bResult
+      Dim NdisStatus
+      Dim BytesRW, BytesNeeded
+
+      bResult = oOpenOne.vbNdisRequest(lOid, pData, lDataLen, lRequestType,  BytesRW, BytesNeeded, NdisStatus, FALSE)
+      If (Not bResult Or (Not (NdisStatus = 0))) Then
+         Call oLog.SafeFailed("Unable to " & strErrStr & ". NdisStatus = 0x" & Hex(NdisStatus), 88888)
+      End If
+
+      wsfSuccessfulNdisRequest = BytesRW
+   End Function
+
+
+   '============================================================================================='
+   '/**
+   ' This function checks that the value returned for a particular OID is as we expect it to be
+   '*/
+   Function TestOidValue(TestOid)
+      Dim lVal
+      Dim lTotalSize
+
+      ' This function should only use OIDs that are REQUIRED/SUPPORTED by the driver.
+      Select Case TestOid
+         Case OID_GEN_CURRENT_LOOKAHEAD
+            ' We will set the lookahead to the maximum and check it
+            Dim lMaxLookahead
+            oLog.Variation("Testing OID_GEN_CURRENT_LOOKAHEAD")
+
+            Call wsfSuccessfulNdisRequest(OID_GEN_MAXIMUM_LOOKAHEAD, lVal, 4, REQUEST_QUERY_INFO, "obtain maximum lookahead")
+            lMaxLookahead = lVal
+
+            Call wsfSuccessfulNdisRequest(OID_GEN_CURRENT_LOOKAHEAD, lVal, 4, REQUEST_SET_INFO, "set Lookahead to maximum")
+            Call wsfSuccessfulNdisRequest(OID_GEN_CURRENT_LOOKAHEAD, lVal, 4, REQUEST_QUERY_INFO, "obtain lookahead")
+
+            If (Not (lVal = lMaxLookahead)) Then
+               Call LogFault("Queried lookahead does not match the value it was set to", 88888)
+            End If
+
+         Case OID_GEN_CURRENT_PACKET_FILTER
+            oLog.Variation("Testing OID_GEN_CURRENT_PACKET_FILTER")
+            ' ALL_LOCAL filter would be set and queried to ensure it is set.
+            lVal = ALL_LOCAL
+            Call wsfSuccessfulNdisRequest(OID_GEN_CURRENT_PACKET_FILTER, lVal, 4, REQUEST_SET_INFO, "set filter to ALL_LOCAL")
+            Call wsfSuccessfulNdisRequest(OID_GEN_CURRENT_PACKET_FILTER, lVal, 4, REQUEST_QUERY_INFO, "obtain current filter")
+
+            If (Not (lVal = ALL_LOCAL)) Then
+               Call LogFault("Queried filter does not match the value it was set to", 88888)
+            End If
+
+         Case OID_GEN_MEDIA_CONNECT_STATUS
+            oLog.Variation("Testing OID_GEN_MEDIA_CONNECT_STATUS")
+
+            Call wsfSuccessfulNdisRequest(OID_GEN_MEDIA_CONNECT_STATUS, lVal, 4, REQUEST_QUERY_INFO, "obtain media connect status")
+            If (Not (lVal = 0 Or lVal = 1)) Then
+               Call LogFault("Media connect status other than Connected/Disconnected", 88888)
+            End If
+
+         Case OID_GEN_XMIT_OK
+            '         Case OID_GEN_XMIT_ERROR      ' Tested by the one above
+            '         Case OID_GEN_RCV_OK             ' above
+            '         Case OID_GEN_RCV_ERROR       ' above
+            Call CheckRequiredStatOid
+
+         Case OID_GEN_DIRECTED_BYTES_XMIT
+            OptDirectedB = OptDirectedB + 1
+         Case OID_GEN_DIRECTED_BYTES_RCV
+            OptDirectedB = OptDirectedB + 1
+
+         Case OID_GEN_DIRECTED_FRAMES_XMIT
+            OptDirectedF = OptDirectedF + 1
+         Case OID_GEN_DIRECTED_FRAMES_RCV
+            OptDirectedF = OptDirectedF + 1
+
+         Case OID_GEN_MULTICAST_BYTES_XMIT
+            OptMulticastB = OptMulticastB + 1
+         Case OID_GEN_MULTICAST_BYTES_RCV
+            OptMulticastB = OptMulticastB + 1
+
+         Case OID_GEN_MULTICAST_FRAMES_XMIT
+            OptMulticastF = OptMulticastF + 1
+         Case OID_GEN_MULTICAST_FRAMES_RCV
+            OptMulticastF = OptMulticastF + 1
+
+         Case OID_GEN_BROADCAST_BYTES_XMIT
+            OptBroadcastB = OptBroadcastB + 1
+         Case OID_GEN_BROADCAST_BYTES_RCV
+            OptBroadcastB = OptBroadcastB + 1
+
+         Case OID_GEN_BROADCAST_FRAMES_XMIT
+            OptBroadcastF = OptBroadcastF + 1
+         Case OID_GEN_BROADCAST_FRAMES_RCV
+            OptBroadcastF = OptBroadcastF + 1
+
+
+         Case OID_GEN_SUPPORTED_LIST
+            oLog.Variation("Testing OID_GEN_SUPPORTED_LIST")
+            CheckMultiple OID_GEN_SUPPORTED_LIST, 4
+
+         Case OID_GEN_MEDIA_SUPPORTED
+            oLog.Variation("Testing OID_GEN_MEDIA_SUPPORTED")
+            CheckMultiple OID_GEN_MEDIA_SUPPORTED, 4
+
+         Case OID_GEN_MEDIA_IN_USE
+            oLog.Variation("Testing OID_GEN_MEDIA_IN_USE")
+            CheckMultiple OID_GEN_MEDIA_IN_USE, 4
+
+         Case OID_802_3_MULTICAST_LIST
+            oLog.Variation("Testing OID_802_3_MULTICAST_LIST")
+            CheckMultiple OID_802_3_MULTICAST_LIST, 6
+
+         Case OID_IRDA_SUPPORTED_SPEEDS
+            oLog.Variation("Testing OID_IRDA_SUPPORTED_SPEEDS")
+            CheckMultiple OID_IRDA_SUPPORTED_SPEEDS, 4
+
+         Case OID_IRDA_MAX_RECEIVE_WINDOW_SIZE
+            oLog.Variation("Testing OID_IRDA_MAX_RECEIVE_WINDOW_SIZE")
+            Call wsfSuccessfulNdisRequest(OID_IRDA_MAX_RECEIVE_WINDOW_SIZE, lVal, 4, REQUEST_QUERY_INFO, "obtain maximum receive window size")
+            If (lVal < 1 Or lVal > 7) Then
+               Call LogFault ("Max receive window size must be between 1 & 7", 88888)
+            End If
+
+         Case OID_IRDA_MAX_SEND_WINDOW_SIZE
+            oLog.Variation("Testing OID_IRDA_MAX_SEND_WINDOW_SIZE")
+            Call wsfSuccessfulNdisRequest(OID_IRDA_MAX_SEND_WINDOW_SIZE, lVal, 4, REQUEST_QUERY_INFO, "obtain maximum send window size")
+            If (lVal < 1 Or lVal > 7) Then
+               Call LogFault ("Max send window size must be between 1 & 7", 88888)
+            End If
+
+         Case OID_GEN_MAXIMUM_LOOKAHEAD
+            oLog.Variation("Testing OID_GEN_MAXIMUM_LOOKAHEAD")
+            Call wsfSuccessfulNdisRequest(OID_GEN_MAXIMUM_TOTAL_SIZE, lTotalSize, 4, REQUEST_QUERY_INFO, "obtain maximum total size")
+            Call wsfSuccessfulNdisRequest(OID_GEN_MAXIMUM_LOOKAHEAD, lVal, 4, REQUEST_QUERY_INFO, "obtain maximum lookahead")
+
+            If (lTotalSize < lVal) Then
+               Call LogFault ("Maximum lookahead greater than maximum total size", 88888)
+            End If
+
+         Case OID_GEN_MAXIMUM_FRAME_SIZE
+            oLog.Variation("Testing OID_GEN_MAXIMUM_FRAME_SIZE")
+            Call wsfSuccessfulNdisRequest(OID_GEN_MAXIMUM_TOTAL_SIZE, lTotalSize, 4, REQUEST_QUERY_INFO, "obtain maximum total size")
+            Call wsfSuccessfulNdisRequest(OID_GEN_MAXIMUM_FRAME_SIZE, lVal, 4, REQUEST_QUERY_INFO, "obtain maximum frame size")
+
+            If (lTotalSize < lVal) Then
+               Call LogFault ("Maximum frame size greater than maximum total size", 88888)
+            End If
+
+         Case OID_GEN_VENDOR_DRIVER_VERSION
+            oLog.Variation("Testing OID_GEN_VENDOR_DRIVER_VERSION")
+            Dim DriverName,Size,TimeStamp,Version,Checked, bDriverInfoFound
+
+            DriverName = oNdtSession(m_lTestAdapterIndex & "DriverName")
+            bDriverInfoFound = oNDTSupp.DriverInfo(DriverName,Size,TimeStamp,Version,Checked)
+
+            If (bDriverInfoFound) Then
+               ' Fixed format A.B.C.D The whole thing is 64 bits, but OID version is 32 bits.
+               Dim HighWord, LowWord
+
+               Dim FirstPos, SecondPos, Temp1
+
+               FirstPos = InStr(Version, ".")
+               SecondPos = InStr(FirstPos+1, Version, ".")
+
+               HighWord = Left(Version, FirstPos-1)
+               Temp1 = Left(Version, SecondPos-1)
+
+               LowWord = Right(Temp1,SecondPos - FirstPos-1)
+
+               Dim SessionVersion
+
+               SessionVersion = (CLng(HighWord) * CLng(65536)) + (CLng(LowWord))
+               Call wsfSuccessfulNdisRequest(OID_GEN_VENDOR_DRIVER_VERSION, lVal, 4, REQUEST_QUERY_INFO, "obtain vendor driver version")
+
+               oLog.Write ("Version from GetFileVersionInfo = " & SessionVersion & " and from the oid = " & lVal)
+               If (SessionVersion <> lVal) Then
+                  Call LogFault ("Version number mismatch between file and OID", 88888)
+               End If
+            Else
+               oLog.Write("Driver version needs to be verified manually")
+            End If
+
+         Case Else
+            ' Any other OID
+      End Select
+
+      Dim SendAddr, ResendAddr
+
+      If (OptMulticastF = 2 And m_lMedium = NDISMEDIUM802_3) Then
+         oLog.Variation ("Testing Oids OID_GEN_MULTICAST_FRAMES_XMIT & OID_GEN_MULTICAST_FRAMES_RCV")
+         SendAddr = GoodMulticastAddr
+         ResendAddr = GoodMulticastAddr
+
+         Call oOpenOne.vbSetPacketFilter(MULTICAST)
+         Call oOpenOne.vbAddMulticastAddr(GoodMulticastAddr)
+         Call CheckFilterStatOid(OID_GEN_MULTICAST_FRAMES_XMIT, OID_GEN_MULTICAST_FRAMES_RCV, SendAddr, ResendAddr, FALSE)
+
+         Call oOpenOne.vbRemoveMulticastAddr(GoodMulticastAddr)
+         Call oOpenOne.vbSetPacketFilter(DIRECTED)
+
+         OptMulticastF = 3
+      End If
+
+      If (OptMulticastB = 2 And m_lMedium = NDISMEDIUM802_3) Then
+         oLog.Variation ("Testing Oids OID_GEN_MULTICAST_FRAMES_XMIT & OID_GEN_MULTICAST_BYTES_RCV")
+         SendAddr = GoodMulticastAddr
+         ResendAddr = GoodMulticastAddr
+
+         Call oOpenOne.vbSetPacketFilter(MULTICAST)
+         Call oOpenOne.vbAddMulticastAddr(GoodMulticastAddr)
+         Call CheckFilterStatOid(OID_GEN_MULTICAST_BYTES_XMIT, OID_GEN_MULTICAST_BYTES_RCV, SendAddr, ResendAddr, TRUE)
+
+         Call oOpenOne.vbRemoveMulticastAddr(GoodMulticastAddr)
+         Call oOpenOne.vbSetPacketFilter(DIRECTED)
+
+         OptMulticastB = 3
+      End If
+
+      If (OptBroadcastF = 2 And m_lMedium = NDISMEDIUM802_3) Then
+         oLog.Variation ("Testing Oids OID_GEN_BROADCAST_FRAMES_XMIT & OID_GEN_BROADCAST_FRAMES_RCV")
+         SendAddr =  oTestCard.vbGetBroadcastAddress()
+         ResendAddr = oTestCard.vbGetBroadcastAddress()
+
+         Call oOpenOne.vbSetPacketFilter(BROADCAST)
+         Call CheckFilterStatOid(OID_GEN_BROADCAST_FRAMES_XMIT, OID_GEN_BROADCAST_FRAMES_RCV, SendAddr, ResendAddr, FALSE)
+         Call oOpenOne.vbSetPacketFilter(DIRECTED)
+
+         OptBroadcastF = 0
+      End If
+
+      If (OptBroadcastB = 2 And m_lMedium = NDISMEDIUM802_3) Then
+         oLog.Variation ("Testing Oids OID_GEN_BROADCAST_BYTES_XMIT & OID_GEN_BROADCAST_BYTES_RCV")
+         SendAddr = oTestCard.vbGetBroadcastAddress()
+         ResendAddr = oTestCard.vbGetBroadcastAddress()
+
+         Call oOpenOne.vbSetPacketFilter(BROADCAST)
+         Call CheckFilterStatOid(OID_GEN_BROADCAST_BYTES_XMIT, OID_GEN_BROADCAST_BYTES_RCV, SendAddr, ResendAddr, TRUE)
+         Call oOpenOne.vbSetPacketFilter(DIRECTED)
+
+         OptBroadcastB = 0
+      End If
+
+      If (OptDirectedF = 2) Then
+         oLog.Variation ("Testing Oids OID_GEN_DIRECTED_FRAMES_XMIT & OID_GEN_DIRECTED_FRAMES_RCV")
+         SendAddr = oOpenOne.vbGetCardAddress
+         ResendAddr = oSuppOpen.vbGetCardAddress
+
+         Call oOpenOne.vbSetPacketFilter(DIRECTED)
+         Call CheckFilterStatOid(OID_GEN_DIRECTED_FRAMES_XMIT, OID_GEN_DIRECTED_FRAMES_RCV, SendAddr, ResendAddr, FALSE)
+
+         OptDirectedF = 0
+      End If
+
+      If (OptDirectedB = 2) Then
+         oLog.Variation ("Testing Oids OID_GEN_DIRECTED_BYTES_XMIT & OID_GEN_DIRECTED_BYTES_RCV")
+         SendAddr = oOpenOne.vbGetCardAddress
+         ResendAddr = oSuppOpen.vbGetCardAddress
+
+         Call oOpenOne.vbSetPacketFilter(DIRECTED)
+
+         Call CheckFilterStatOid(OID_GEN_DIRECTED_BYTES_XMIT, OID_GEN_DIRECTED_BYTES_RCV, SendAddr, ResendAddr, TRUE)
+         OptDirectedB = 0
+      End If
+
+   End Function
+
+   '============================================================================================='
+   '/**
+   'Subtracts two arrays that hold lLength elements and returns a long as a difference. lLength
+   'can only be 4 or 8, and the difference is expected to be close to 100, and the function flags a
+   'failure if the difference is large or negative.
+   '*/
+   Function wsfDiffStatValues(arrBytePreSend, arrBytePostSend, lLength)
+      Dim nCount
+      Dim byteResult
+      Dim byteCarry
+      Dim arrByteDiff(8)
+
+      If (lLength > 8) Then
+         wsfDiffStatValues = 0
+         Exit Function
+      End If
+
+      lLength = lLength - 1
+      '
+      ' 0123456789ABCDEF would be stored in array as
+      ' EF, CD, AB, 89, 67, 45, 23, 01
+      '
+      byteCarry = CByte(0)
+
+      For nCount = 0 To lLength
+         arrByteDiff(nCount) = CByte(0)
+         byteResult = arrBytePostSend(nCount)
+
+         ' First take care of subtraction in previous byte
+         If (byteCarry > byteResult) Then       ' ie, byteResult=0, byteCarry=1
+            byteResult = 255                             ' leave carry set at 1 and change byteResult
+         Else
+            byteResult = byteResult - byteCarry ' Subtract carry off from current byte
+            byteCarry = 0                                 ' Clear carry
+         End If
+
+         If (byteResult < arrBytePreSend(nCount)) Then
+            byteResult = byteResult + 256       ' Borrow and adjust this value
+            byteCarry = 1
+         End If
+
+         byteResult = byteResult - arrBytePreSend(nCount)
+         arrByteDiff(nCount) = byteResult
+      Next
+
+      If (byteCarry > 0) Then
+         oLog.Write ("Counter wrap around. Please run the test again.")
+         lRetVal = 0
+      End If
+
+      ' Check that the difference is not too much
+      For nCount = 3 To lLength
+         If (arrByteDiff(nCount) > 0) Then
+            Call LogFault ("The value changed by a huge number. Should not have happened", 88888)
+            lRetVal = &HFFFFFF&
+            Exit For
+         End If
+      Next
+
+      Dim lRetVal
+
+      ' Convert the array into a long
+      lRetVal = CLng(0)
+      For nCount = 0 To 3
+         lRetVal = lRetVal + arrByteDiff(nCount) * (2^(8*nCount))
+      Next
+
+      If (lRetVal < 0) Then
+         Call oLog.Failed ("Some failure occured when running the test. Please rerun", 88888)
+         lRetVal = 0
+      End If
+
+      oLog.Write ("Difference = " & lRetVal)
+      wsfDiffStatValues = lRetVal
+   End Function
+
+
+   '============================================================================================='
+   '/**
+   '*/
+   Function CheckRequiredStatOid
+      Dim lRcvOk(8)
+      Dim lXmitOk(8)
+      Dim lRcvErr(8)
+      Dim lXmitErr(8)
+      Dim lDataArr(8)
+      Dim lPktSize
+      Dim bResult
+      Dim SendAddr, ResendAddr
+      Dim BytesWritten
+      Dim XmitErrDiff, RcvErrDiff
+      Dim XmitOkDiff, RcvOkDiff
+      Dim nReceived, nResent
+
+      Dim lCnt
+
+      oLog.Variation ("Testing statistical OIDs")
+
+      For lCnt = 0 To 7
+         lRcvOk(lCnt) = CByte(0)
+         lXmitOk(lCnt) = CByte(0)
+         lRcvErr(lCnt) = CByte(0)
+         lXmitErr(lCnt) = CByte(0)
+      Next
+
+      ' obtain current statistics
+      Call wsfSuccessfulNdisRequest(OID_GEN_XMIT_OK, lXmitOk, 8, REQUEST_QUERY_INFO, "obtain transmit ok count")
+      Call wsfSuccessfulNdisRequest(OID_GEN_RCV_OK, lRcvOk, 8, REQUEST_QUERY_INFO, "obtain receive ok count")
+      Call wsfSuccessfulNdisRequest(OID_GEN_XMIT_ERROR, lXmitErr, 8, REQUEST_QUERY_INFO, "obtain transmit error count")
+      Call wsfSuccessfulNdisRequest(OID_GEN_RCV_ERROR, lRcvErr, 8, REQUEST_QUERY_INFO, "obtain receive error count")
+
+      ' obtain a packet size to use ' confirm
+      Call wsfSuccessfulNdisRequest(OID_GEN_MAXIMUM_TOTAL_SIZE, lPktSize, 4, REQUEST_QUERY_INFO, "obtain maximum packet size")
+
+      If (lPktSize > 50) Then
+         lPktSize = lPktSize - 50
+      End If
+
+      Dim nTestId
+
+      nTestId = oNdtSupp.Random(1, 32765)
+      ' Setup for sending/receiving
+      oSuppOpen.vbSetRemoteId(nTestId)
+      oOpenOne.vbSetLocalId(nTestId)
+
+      Dim nReceiveDelay
+      Dim lSentPackets
+
+      nReceiveDelay = oOpenOne.vbGetReceiveDelay()
+
+      SendAddr = oOpenOne.vbGetCardAddress
+      ResendAddr = oSuppOpen.vbGetCardAddress
+
+      Call oOpenOne.vbSetPacketFilter(DIRECTED)
+      Call oSuppOpen.vbSetPacketFilter(DIRECTED)
+
+      oOpenOne.vbSetReceiveOption(RECEIVE_DEFAULT Or RECEIVE_ALLOW_BUSY_NET)
+      oOpenOne.vbStartReceive
+
+      ' As there is loopback, we need to use a resend addr to see change in XMIT oid
+      lSentPackets = oSuppOpen.vbVerifiedSend(SendAddr, lPktSize, 100, 0, ResendAddr)
+      If (lSentPackets > 0) Then
+         WScript.Sleep nReceiveDelay                  ' wait for all packets to be received/resent & XMIT change
+
+         ' Lets check the number of packets received
+         bResult = oOpenOne.vbStopReceive
+         bResult = oOpenOne.vbGetReceiveResults(nReceived, nResent)
+
+         If (nReceived = 0) Then
+            oLog.Warned ("Did not receive any packets. Check connections.")
+         End If
+
+         ' Okay, now lets check the various variables. We cannot check for exact changes
+         ' in the values, as we do not know if fragmented, somebody else sending packets, etc
+
+         ' Testcard is receiving check the number of receives
+         BytesWritten =  wsfSuccessfulNdisRequest(OID_GEN_RCV_OK, lDataArr, 8, REQUEST_QUERY_INFO, "obtain receive ok count")
+         RcvOkDiff = wsfDiffStatValues(lRcvOk, lDataArr, BytesWritten)
+
+         BytesWritten =  wsfSuccessfulNdisRequest(OID_GEN_RCV_ERROR, lDataArr, 8, REQUEST_QUERY_INFO, "obtain receive error count")
+         RcvErrDiff = wsfDiffStatValues(lRcvErr, lDataArr, BytesWritten)
+
+         ' Since nReceived is actual number of packets indicated to us, we can check
+         If (RcvOkDiff < nReceived) Then
+            Call LogFault("Packets received ok stat != total number of packets received", 88888)
+         End If
+
+         If (RcvErrDiff > 0) Then
+            oLog.Warned ("Number of packets received in error increased during the test")
+         End If
+
+         ' It is also sending check number of sends
+         BytesWritten =  wsfSuccessfulNdisRequest(OID_GEN_XMIT_OK, lDataArr, 8, REQUEST_QUERY_INFO, "obtain transmit ok count")
+         XmitOkDiff = wsfDiffStatValues(lXmitOk, lDataArr, BytesWritten)
+
+         BytesWritten = wsfSuccessfulNdisRequest(OID_GEN_XMIT_ERROR, lDataArr, 8, REQUEST_QUERY_INFO, "obtain transmit error count")
+         XmitErrDiff = wsfDiffStatValues(lXmitErr, lDataArr, BytesWritten)
+
+         If (XmitOkDiff  < nResent) Then
+            ' so the increase is not as many as we thought we resent, that is not okay
+            Call LogFault ("Packets transmitted ok stat != total number of packets resent", 88888)
+         End If
+
+         If (XmitErrDiff > 0) Then
+            oLog.Warned ("Number of packet send errors increased during the test")
+         End If
+
+      End If
+
+   End Function
+
+
+   '============================================================================================='
+   '/**
+   '*/
+   Function CheckFilterStatOid(XmitOid, RcvOid, SendAddr, ResendAddr, bCheckBytes)
+      Dim lRcvOk(8)
+      Dim lXmitOk(8)
+      Dim lDataArr(8)
+      Dim lPktSize
+      Dim bResult
+      Dim BytesWritten
+      Dim XmitOkDiff, RcvOkDiff
+      Dim nReceived, nResent
+
+      Dim lCnt
+
+      For lCnt = 0 To 7
+         lRcvOk(lCnt) = CByte(0)
+         lXmitOk(lCnt) = CByte(0)
+      Next
+
+      ' obtain current statistics
+      Call wsfSuccessfulNdisRequest(XmitOid, lXmitOk, 8, REQUEST_QUERY_INFO, "obtain transmit count")
+      Call wsfSuccessfulNdisRequest(RcvOid, lRcvOk, 8, REQUEST_QUERY_INFO, "obtain receive count")
+
+      ' obtain a packet size to use ' confirm
+      Call wsfSuccessfulNdisRequest(OID_GEN_MAXIMUM_TOTAL_SIZE, lPktSize, 4, REQUEST_QUERY_INFO, "obtain maximum packet size")
+
+      If (lPktSize > 50) Then
+         lPktSize = lPktSize - 50
+      End If
+
+      Dim nReceiveDelay
+      Dim lSentPackets
+      Dim nTestId
+
+      nTestId = oNdtSupp.Random(1, 32765)
+      ' Setup for sending/receiving
+      oSuppOpen.vbSetRemoteId(nTestId)
+      oOpenOne.vbSetLocalId(nTestId)
+
+      nReceiveDelay = oOpenOne.vbGetReceiveDelay()
+
+      oOpenOne.vbSetReceiveOption(RECEIVE_DEFAULT Or RECEIVE_ALLOW_BUSY_NET)
+      oOpenOne.vbStartReceive
+
+      ' As there is loopback, we need to use a resend addr to see change in XMIT oid
+      lSentPackets = oSuppOpen.vbVerifiedSend(SendAddr, lPktSize, 100, 0, ResendAddr)
+      If (lSentPackets > 0) Then
+         WScript.Sleep nReceiveDelay                  ' wait for all packets to be received/resent & XMIT change
+
+         ' Lets check the number of packets received
+         bResult = oOpenOne.vbStopReceive
+         bResult = oOpenOne.vbGetReceiveResults(nReceived, nResent)
+
+         If (nReceived = 0) Then
+            oLog.Warned ("Did not receive any packets. Check connections.")
+         End If
+
+         If (bCheckBytes) Then
+            nReceived = lPktSize * nReceived
+            nResent = lPktSize * nResent
+            oLog.Write ("Should receive " & nReceived & " bytes and transmit " & nResent & " bytes")
+         Else
+            oLog.Write ("Should receive " & nReceived & " packets and transmit " & nResent & " packets")
+         End If
+
+         ' Okay, now lets check the various variables. We cannot check for exact changes
+         ' in the values, as we do not know if fragmented, somebody else sending packets, etc
+
+         ' Testcard is receiving check the number of receives
+         BytesWritten =  wsfSuccessfulNdisRequest(RcvOid, lDataArr, 8, REQUEST_QUERY_INFO, "obtain receive ok count")
+         RcvOkDiff = wsfDiffStatValues(lRcvOk, lDataArr, BytesWritten)
+
+         ' Since nReceived is actual number of packets indicated to us, we can check
+         If (RcvOkDiff < nReceived) Then
+            Call LogFault("Packets/bytes received statistics not as expected", 88888)
+         End If
+
+         ' It is also sending check number of sends
+         BytesWritten =  wsfSuccessfulNdisRequest(XmitOid, lDataArr, 8, REQUEST_QUERY_INFO, "obtain transmit ok count")
+         XmitOkDiff = wsfDiffStatValues(lXmitOk, lDataArr, BytesWritten)
+
+
+         If (XmitOkDiff  < nResent) Then
+            ' so the increase is not as many as we thought we resent, that is not okay
+            Call LogFault("Packets/bytes transmitted statistics not as expected", 88888)
+         End If
+
+      End If
+
+   End Function
+
+   Sub CheckMultiple (lOid, lMultipleOf)
+      Dim bResult
+      Dim NdisStatus
+      Dim BytesWritten, BytesNeeded
+      Dim arrLargeArray(128)
+
+      bResult = oOpenOne.vbNdisRequest(lOid, arrLargeArray, 128, REQUEST_QUERY_INFO,  BytesWritten, BytesNeeded, NdisStatus, FALSE)
+      If (Not bResult) Then
+         Call oLog.Failed("query OID", 88888)
+         Exit Sub
+      End If
+
+      If (NdisStatus = NDIS_STATUS_INVALID_LENGTH or NdisStatus = NDIS_STATUS_BUFFER_TOO_SHORT) Then
+         If (BytesNeeded Mod lMultipleOf <> 0) Then
+            Call LogFault ("BytesNeeded is not a multiple of " & lMultipleOf, 88888)
+         End If
+      ElseIf (NdisStatus = 0) Then
+         If (BytesWritten Mod lMultipleOf <> 0) Then
+            Call LogFault ("BytesWritten is not a multiple of " & lMultipleOf, 88888)
+         End If
+      Else
+         oLog.Write ("Failed with NdisStatus = 0x" & Hex(NdisStatus))
+      End If
+   End Sub
+
+   '============================================================================================='
+   '/**
+   ' A single function that works for both query and set of oids that we know the size of. Takes the oid,
+   ' the request type, the number of bytes required for the oid and the number of bytes of buffer to use.
+   ' For queries:
+   ' It checks that byteswritten/bytesneeded is as required for the oid.It checks that the buffer was
+   ' not modified more than byteswritten field. Checks that buffer is not modified more than required
+   ' size (only if the query was successful)
+   ' For set:
+   ' Check the bytesneeded/bytesread field. Also checks that the buffer is never modified.
+   '*/
+   Function RequestOid(TestOid, RequiredSize,  lRequest)
+      Dim ReturnVal(1024)
+      Dim bResult
+      Dim BytesRW, BytesNeeded, NdisStatus
+      Dim nIndex, lPadSize
+      Dim CurrentBufferSize
+      Dim lMaxSize
+
+
+
+      lMaxSize = RequiredSize + 5
+      RequestOid = TRUE
+
+      ' For each size, query result
+      For CurrentBufferSize = 0 To lMaxSize
+
+         oLog.Write ("Current Buffer Size = " & CurrentBufferSize & " and Required Buffer Size = " & RequiredSize)
+
+         If (RequiredSize < CurrentBufferSize) Then
+            ' Fill data part with 0s (used only for set)
+            ReturnVal (0) = CByte(1)
+            For nIndex = 1 To RequiredSize-1
+               ReturnVal(nIndex) = CByte(0)
+            Next
+
+            ' Know that we will not cross 1024 because always called for required size = 2/4/6/8
+            lPadSize = RequiredSize + 32
+
+            ' Place pattern in the buffer (0 to RequiredSize-1 are filled)
+            For nIndex = RequiredSize To lPadSize
+               ReturnVal(nIndex) = CByte(nIndex Mod 256)
+            Next
+         ElseIf (lRequest = SET_REQUEST) Then
+            ' Fill this with 0s even though we dont expect it to be used
+            For nIndex = 0 To CurrentBufferSize-1
+               ReturnVal(nIndex) = CByte(0)
+            Next
+         End If
+
+         ' Our query and set requests are 1 and 2, while those for NdisRequest are 0 and 1, hence the lRequest-1
+         bResult = oOpenOne.vbNdisRequest(TestOid, ReturnVal, CurrentBufferSize, (lRequest-1),  BytesRW, BytesNeeded, NdisStatus, FALSE)
+
+         If (lRequest = SET_REQUEST) Then
+            ' Check the buffer contents
+            ' Should never change the data for a set
+            If (RequiredSize < CurrentBufferSize) Then
+               If (ReturnVal(0) <> 1) Then
+                  Call oLog.Failed("Wrote on the data buffer for a set query", 88888)
+                  RequestOid = FALSE
+               End If
+
+               For nIndex = 1 To RequiredSize-1
+                  If (ReturnVal(nIndex) <> 0) Then
+                     Call oLog.Failed("Wrote on the data buffer for a set query", 88888)
+                     RequestOid = FALSE
+                     Exit For
+                  End If
+               Next
+
+               For nIndex = RequiredSize To lPadSize
+                  If (ReturnVal(nIndex) <> CByte(nIndex Mod 256)) Then
+                     Call oLog.Failed("Wrote on the data buffer for a set query", 88888)
+                     RequestOid = FALSE
+                     Exit For
+                  End If
+               Next
+            Else
+               For nIndex = 0 To CurrentBufferSize-1
+                  If (ReturnVal(nIndex) <> 0) Then
+                     Call oLog.Failed("Wrote on the data buffer for a set query", 88888)
+                     RequestOid = FALSE
+                     Exit For
+                  End If
+               Next
+            End If
+         End If
+
+         If (CurrentBufferSize < RequiredSize) Then
+            ' Used a small buffer size than required for this oid
+            If (NdisStatus = NDIS_STATUS_SUCCESS) Then
+               Call LogFault ("Call succeeded even when the buffer was small.", 88888)
+               RequestOid = FALSE
+            ElseIf (NdisStatus = NDIS_STATUS_BUFFER_TOO_SHORT Or NdisStatus = NDIS_STATUS_INVALID_LENGTH) Then
+               ' BytesNeeded is the size required.
+               If (BytesNeeded <> RequiredSize) Then
+                  If (TestOid <> OID_GEN_CURRENT_LOOKAHEAD) Then
+                     Call LogFault ("Incorrect BytesNeeded " & BytesNeeded & ". Expected " & RequiredSize, 88888)
+                  Else ' Special case for OID_GEN_CURRENT_LOOKAHEAD
+                     oLog.Write ("Incorrect BytesNeeded " & BytesNeeded & ". Expected " & RequiredSize)
+                  End If
+                  RequestOid = FALSE
+               End If
+            Else
+               oLog.Write ("Failed with NdisStatus = 0x" & Hex(NdisStatus))
+            End If
+         Else
+            If (NdisStatus = NDIS_STATUS_SUCCESS) Then
+               ' Special case for OID_GEN_CURRENT_LOOKAHEAD
+               If (BytesRW <> RequiredSize) Then
+                  If (TestOid <> OID_GEN_CURRENT_LOOKAHEAD) Then
+                     Call LogFault ("Incorrect BytesRead/Written " & BytesRW & ". Expected " & RequiredSize, 88888)
+                  Else
+                     oLog.Write ("Incorrect BytesRead/Written " & BytesRW & ". Expected " & RequiredSize)
+                  End If
+                  RequestOid = FALSE
+               End If
+
+               ' Check the pattern in the buffer
+               For nIndex = RequiredSize To lPadSize
+                  If (ReturnVal(nIndex) <> (nIndex Mod 256)) Then
+                     Call oLog.Failed("Overwritten data past that required for the OID", 88888)
+                     RequestOid = FALSE
+                     Exit For
+                  End If
+               Next
+            ElseIf ((lRequest And QUERY_REQUEST) <> 0) Then
+               ' We had a big enough buffer, query should not have failed
+               oLog.Warned ("Failed with NdisStatus = 0x" & Hex(NdisStatus))
+            Else
+               oLog.Write("Failed with NdisStatus = 0x" & Hex(NdisStatus))
+            End If
+         End If
+
+         If (Not RequestOid) Then
+            Exit For
+         End If
+      Next
+
+   End Function
+
+   '============================================================================================='
+   '/**
+   ' This is called for queries/set when we do not know the size of the array we are working
+   ' with. Hence, the checking is different. It performs checks similar to the previous function
+   '*/
+   Function RequestArrayOid(TestOid, lRequest)
+      Dim ReturnVal(1024)
+      Dim bResult
+      Dim BytesRW, BytesNeeded, NdisStatus
+      Dim nIndex
+      Dim lCurrentBufferSize
+      Dim lMaxSize
+      Dim bCanAdjustMaxSize
+      Dim nLoopCount
+
+      lCurrentBufferSize = 0
+      lMaxSize = 1000
+      bCanAdjustMaxSize = TRUE
+      RequestArrayOid = TRUE
+      nLoopCount = 0
+
+      Do
+         If (lRequest = QUERY_REQUEST) Then
+            ' Add padding
+            For nIndex = 0 To lCurrentBufferSize-1
+               ReturnVal(nIndex) = nIndex Mod 256
+            Next
+         Else
+            If (TestOid = OID_802_3_MULTICAST_LIST) Then
+               For nIndex = 0 To lCurrentBufferSize
+                  Call wsfMulticastAddressList(ReturnVal, lCurrentBufferSize, 0)
+               Next
+            Else
+               ' Set data buffer to 0s
+               For nIndex = 0 To lCurrentBufferSize-1
+                  ReturnVal(nIndex) = CByte(0)
+               Next
+            End If
+         End If
+         oLog.Write ("Current Buffer Size = " & lCurrentBufferSize)
+
+         ' Our query and set requests are 1 and 2, while those for NdisRequest are 0 and 1, hence the lRequest-1
+         bResult = oOpenOne.vbNdisRequest(TestOid, ReturnVal, lCurrentBufferSize, (lRequest-1),  BytesRW, BytesNeeded, NdisStatus, FALSE)
+
+         If (lRequest = SET_REQUEST) Then
+            If (TestOid = OID_802_3_MULTICAST_LIST) Then
+               If (Not wsfMulticastAddressList(ReturnVal, lCurrentBufferSize, 1)) Then
+                  Call oLog.Failed("Wrote on the multicast address buffer for a set query", 88888)
+                  RequestArrayOid = FALSE
+               End If
+            Else
+               ' Check data (no padding)
+               For nIndex = 0 To lCurrentBufferSize-1
+                  If (ReturnVal(nIndex) <> (0)) Then
+                     Call oLog.Failed("Wrote on the data buffer for a set query", 88888)
+                     RequestArrayOid = FALSE
+                     Exit For
+                  End If
+               Next
+            End If
+         End If
+
+         If (NdisStatus = NDIS_STATUS_SUCCESS) Then
+            ' Check that byteswritten is not too huge
+            If (BytesRW > lCurrentBufferSize) Then
+               Call oLog.Failed ("BytesRead/Written " & BytesRW & ". greater than buffer size.", 88888)
+               RequestArrayOid = FALSE
+            End If
+
+            If (lRequest = QUERY_REQUEST) Then
+               ' Check padding
+               For nIndex = BytesRW To lCurrentBufferSize-1
+                  If (ReturnVal(nIndex) <> (nIndex Mod 256)) Then
+                     Call oLog.Failed("Written data past the length claimed to have written", 88888)
+                     RequestArrayOid = FALSE
+                     Exit For
+                  End If
+               Next
+            End If
+
+            If (bCanAdjustMaxSize) Then
+               If (TestOid = OID_802_3_MULTICAST_LIST) Then
+                  Call wsfSuccessfulNdisRequest(TestOid, ReturnVal, 0, REQUEST_SET_INFO,  "clear multicast address list")
+                  lMaxSize = lCurrentBufferSize + 20 ' atleast 6 for address oids
+               Else
+                  ' Now only check for a few more buffer sizes
+                  lMaxSize = lCurrentBufferSize + 8 ' atleast 4 for statistics oids
+               End If
+               bCanAdjustMaxSize = FALSE
+            End If
+
+         ElseIf (NdisStatus = NDIS_STATUS_BUFFER_TOO_SHORT Or NdisStatus = NDIS_STATUS_INVALID_LENGTH) Then
+            If (BytesNeeded > lMaxSize) Then
+               ' If we are never going to have a big enough buffer, lets just forget trying to get a result
+               ' size and only try some more invalid buffer sizes
+               If (bCanAdjustMaxSize) Then
+                  lMaxSize = lCurrentBufferSize + 5 ' atleast cross one long value
+                  bCanAdjustMaxSize = FALSE
+               End If
+            ElseIf (BytesNeeded > (lCurrentBufferSize + 10)) Then
+               lCurrentBufferSize = lCurrentBufferSize + 9 ' jump faster than just by 1
+            End If
+         Else
+            oLog.Write("Failed with NdisStatus = 0x" & Hex(NdisStatus))
+
+            ' Failure other than short buffer, (invalid parameters, etc) so stop testing soon
+            If (bCanAdjustMaxSize) Then
+               ' Now only check for a few more buffer sizes
+               lMaxSize = lCurrentBufferSize + 8  ' atleast cross one long value
+               bCanAdjustMaxSize = FALSE
+            End If
+         End If
+
+         lCurrentBufferSize = lCurrentBufferSize + 1
+
+         nLoopCount = nLoopCount + 1
+         If (nLoopCount > 50) Then
+            oLog.Warned ("Test loop ran too long (50 times). Moving on")
+         End If
+      Loop While  (lCurrentBufferSize < lMaxSize)
+   End Function
+
+   '============================================================================================='
+   '/**
+   ' This is the function that performs the integrity checking for the fields of the ndisrequest structure.
+   '*/
+   Function wsfNdisRequestStructTest(lRequest)
+      Dim OidIndex
+      Dim TestOid
+      Dim lRequiredSize
+      Dim lCurrSize
+      Dim lMaxSize
+      Dim nCount, lLastIndex
+
+      lLastIndex = -1
+
+      ' Loops either nCount times or till exhausted
+      For nCount = 0 To 100
+         If (lRequest = QUERY_REQUEST) Then
+            ' Get a OID that we can query (any data type)
+            OidIndex = m_TestableOids.GetOidIndex(-1, &H3F&, QUERY_REQUEST, lLastIndex)
+         Else
+            ' Get a OID that we can set (data type other than OTHER)
+            OidIndex = m_TestableOids.GetOidIndex(-1, &H1F&, SET_REQUEST, lLastIndex)
+         End If
+         If (OidIndex <> -1) Then
+            m_nFaultSeverity = m_TestableOids.FaultSeverity (OidIndex)
+
+            If (m_TestableOids.Length(OidIndex) = -1 Or m_TestableOids.DataType(OidIndex) = OTHER) Then
+               ' Checking array/string data is different from the others as we do not know the max size to go to
+               TestOid = m_TestableOids.OidAt(OidIndex)
+
+               oLog.Variation ("Testing unknown length OID " & m_TestableOids.OidName (OidIndex))
+               oNDTCore.PrintOidName(TestOid)
+
+               Call RequestArrayOid(TestOid, lRequest)
+
+            Else
+               TestOid = m_TestableOids.OidAt(OidIndex)
+
+               oLog.Variation ("Testing known length OID " & m_TestableOids.OidName(OidIndex))
+               oNDTCore.PrintOidName(TestOid)
+
+               Call RequestOid(TestOid, m_TestableOids.Length(OidIndex), lRequest)
+
+            End If
+            lLastIndex = OidIndex
+         Else
+            Exit For
+         End If
+      Next
+
+   End Function
+
+   '============================================================================================='
+   '/**
+   ' Test behavior trying to set query only oids and query set only oids
+   '*/
+   Function wsfFailureTest
+      Dim nCount, lLastIndex
+      Dim OidIndex
+      Dim SetTestOid, QueryTestOid
+      Dim lIntVal
+      Dim BytesRW,BytesNeeded
+      Dim bResult, NdisStatus
+
+
+      oLog.Variation("Setting query-only oid")
+      nCount = 0
+      lLastIndex = -1
+      Do While (nCount < 4)
+         ' Get a 4 byte integer OID that we can query
+         OidIndex = m_TestableOids.GetOidIndex(0, LONGDATA, QUERY_REQUEST, lLastIndex)
+         If (OidIndex <> -1) Then
+            If (m_TestableOids.RequestType(OidIndex) = QUERY_REQUEST) Then
+               ' We can only use the oid if it is QUERY_REQUEST
+               SetTestOid = m_TestableOids.OidAt(OidIndex)
+               m_nFaultSeverity = m_TestableOids.FaultSeverity(OidIndex)
+
+               oLog.Variation("Testing Integer OID " & m_TestableOids.OidName (OidIndex))
+               oNDTCore.PrintOidName(SetTestOid)
+
+               ' The required size is exactly known
+               lIntVal = CLng(0)
+               bResult = oOpenOne.vbNdisRequest(SetTestOid, lIntVal, m_TestableOids.Length(OidIndex), REQUEST_SET_INFO,  BytesRW, BytesNeeded, NdisStatus, FALSE)
+               If (bResult And NdisStatus = 0) Then
+                  Call LogFault("Able to set query-only OID.", 88888)
+               End If
+
+               nCount = nCount + 1
+            End If
+
+            lLastIndex = OidIndex
+
+         Else
+            Exit Do
+         End If
+      Loop
+
+      oLog.Variation("Querying set-only OID")
+
+      nCount = 0
+      lLastIndex = -1
+      Do While (nCount < 4)
+         ' Get a 4 byte integer OID that we can query
+         OidIndex = m_TestableOids.GetOidIndex(0, LONGDATA, SET_REQUEST, lLastIndex)
+
+         If (OidIndex <> -1) Then
+            If (m_TestableOids.RequestType(OidIndex) = SET_REQUEST) Then
+               ' We can only use the oid if it is SET_REQUEST
+               QueryTestOid = m_TestableOids.OidAt(OidIndex)
+               m_nFaultSeverity = m_TestableOids.FaultSeverity(OidIndex)
+
+               oLog.Variation("Testing Integer OID " & m_TestableOids.OidName (OidIndex))
+               oNDTCore.PrintOidName(QueryTestOid)
+
+               ' The required size is exactly known
+               lIntVal = CLng(0)
+               bResult = oOpenOne.vbNdisRequest(QueryTestOid, lIntVal, m_TestableOids.Length(OidIndex), REQUEST_QUERY_INFO,  BytesRW, BytesNeeded, NdisStatus, FALSE)
+               If (bResult And NdisStatus = 0) Then
+                  Call LogFault("Able to query set-only OID.", 88888)
+               End If
+
+               nCount = nCount + 1
+            End If
+
+            lLastIndex = OidIndex
+
+         Else
+            Exit Do
+         End If
+      Loop
+
+      oLog.Variation("Querying/Setting undefined regular and private OIDs")
+      ' For this purpose, we would be using some made up (non private) OIDs
+      ' However, this might be a future problem if that OID gets
+      ' defined.
+
+      ' We will be using the following two OIDs
+      ' 0xAA0101DF (AA as yet undefined media. Mandatory, Operational Oid)
+      ' 0xAA0201DF (AA as yet undefined media. Mandatory, Statistic Oid )
+      ' These two have been added as undefined test oids into ndtcore, to avoid
+      ' warnings.
+
+      ' For private oids, oids, we know that m_lLastPrivateOid is the last (maximum) private
+      ' oid supported by the miniport. We will try a few other' private OIDs
+
+      For nCount = 0 To 4
+         If (nCount = 0) Then
+            SetTestOid = &HAA0101DF&
+            QueryTestOid = &HAA0201DF&
+         Else
+            SetTestOid = m_lLastPrivateOid+nCount
+            QueryTestOid = SetTestOid
+         End If
+
+         lIntVal = CLng(0)
+         bResult = oOpenOne.vbNdisRequest(SetTestOid, lIntVal, 4, REQUEST_SET_INFO,  BytesRW, BytesNeeded, NdisStatus, FALSE)
+         If (bResult And NdisStatus = 0) Then
+            Call oLog.Failed("Able to set unrecognized OID 0x" & Hex(SetTestOid), 88888)
+         End If
+
+         lIntVal = CLng(0)
+         bResult = oOpenOne.vbNdisRequest(QueryTestOid, lIntVal, 4, REQUEST_QUERY_INFO,  BytesRW, BytesNeeded, NdisStatus, FALSE)
+         If (bResult And NdisStatus = 0) Then
+            Call oLog.Failed("Able to query undefined OID 0x" & Hex(QueryTestOid), 88888)
+         End If
+      Next
+
+   End Function
+
+End Class   ' NdisRequestTest
+
+
+'============================================================================================='
+'/**
+' Class that holds list of information about all the OIDs
+'*/
+Class OidList
+   Private m_arrList
+   Private m_lNumElems
+   Private m_lAllocatedSize
+
+   Private Sub Class_Initialize
+      m_lNumElems = 0
+      m_lAllocatedSize = 40
+      ReDim m_arrList(m_lAllocatedSize)
+   End Sub
+
+   Private Sub Class_Terminate
+      Dim nIndex
+
+      For nIndex = 0 To m_lNumElems-1
+         Set m_arrList(nIndex) = Nothing
+      Next
+
+      Erase m_arrList
+      m_lNumElems = 0
+   End Sub
+
+   Public Function TagRegExp (KeyName)
+      TagRegExp = KeyName & "([=|!])=(\S+[^ ;\]])+"
+   End Function
+
+   Public Function EntryRegExp (NumEntries)
+      ' We are only concerned with these fields: Oid, strOid, Length, DataType,
+      ' Reqtype, FailureType
+      EntryRegExp = "^(&H[0-9A-F]{8}),\s?""([A-Z0-9_]+)"",\s?([-\d]+),\s?([A-Z0-9_]+),\s?([A-Z0-9_]+),\s?([A-Z0-9_]+)"
+      NumEntries = 6
+   End Function
+
+   Private Function ObtainDataType (strVal)
+      Select Case (strVal)
+         Case "STRINGDATA":
+            ObtainDataType = STRINGDATA
+         Case "ARRAYDATA":
+            ObtainDataType = ARRAYDATA
+         Case "STATDATA":
+            ObtainDataType = STATDATA
+         Case "ADDRESS":
+            ObtainDataType = ADDRESS
+         Case "LONGDATA":
+            ObtainDataType = LONGDATA
+         Case "OTHER":
+            ObtainDataType = OTHER
+         Case Else:
+            ObtainDataType = INVALID
+      End Select
+
+   End Function
+
+   Private Function ObtainRequestType (strVal)
+      Select Case (strVal)
+         Case "QUERY_REQUEST":
+            ObtainRequestType = QUERY_REQUEST
+         Case "SET_REQUEST":
+            ObtainRequestType = SET_REQUEST
+         Case "QUERYSET":
+            ObtainRequestType = QUERYSET
+         Case Else:
+            ObtainRequestType = INVALID
+      End Select
+   End Function
+
+   Private Function ObtainFaultSeverity (strVal)
+      Select Case (strVal)
+         Case "LOG_AS_FAIL":
+            ObtainFaultSeverity = LOG_AS_FAIL
+         Case "LOG_AS_WARN":
+            ObtainFaultSeverity = LOG_AS_WARN
+         Case "LOG_AS_WRITE":
+            ObtainFaultSeverity = LOG_AS_WRITE
+         Case Else:
+            ObtainFaultSeverity = INVALID
+      End Select
+
+   End Function
+
+   Public Function CreateEntry (ArrMatches, ArrLength)
+      Dim OidAdd, GuidAdd
+      Dim NewEntry
+
+      CreateEntry = False
+
+      OidAdd = False
+      GuidAdd = False
+
+      Set NewEntry = New OidStruct
+
+      ' Oid
+      NewEntry.Oid = CLng(ArrMatches(0))
+
+      ' OidStr
+      NewEntry.OidName = ArrMatches(1)
+
+      ' Length
+      NewEntry.Length = CInt(ArrMatches(2))
+
+      ' DataType
+      NewEntry.DataType = ObtainDataType (ArrMatches(3))
+
+      ' OIDReqType
+      NewEntry.RequestType = ObtainRequestType (ArrMatches(4))
+
+      If (NewEntry.RequestType <> INVALID) Then
+         ' OIDFailureType
+         NewEntry.FaultSeverity = ObtainFaultSeverity (ArrMatches(5))
+
+         OidAdd = True
+      End If
+
+      ' Do we want to add the oid
+      If (OidAdd) Then
+         If (m_lNumElems = m_lAllocatedSize) Then
+            m_lAllocatedSize = m_lAllocatedSize + 10
+            ReDim Preserve m_arrList(m_lAllocatedSize)
+         End If
+
+         Set m_arrList (m_lNumElems) = NewEntry
+
+         m_lNumElems = m_lNumElems + 1
+
+         CreateEntry = True
+      Else
+         Set NewEntry = Nothing
+      End If
+
+   End Function
+
+
+   ' Add the oid with these characteristics
+   Public Function Add(ulOid, strOidName, lLength, ulDataType, ulRequestType, lFaultSeverity)
+      If (m_lNumElems = m_lAllocatedSize) Then
+         m_lAllocatedSize = m_lAllocatedSize + 10
+         ReDim Preserve m_arrList(m_lAllocatedSize)
+      End If
+
+      Set m_arrList(m_lNumElems) = New OidStruct
+
+      m_arrList(m_lNumElems).Oid = ulOid
+      m_arrList(m_lNumElems).OidName = strOidName
+      m_arrList(m_lNumElems).DataType = ulDataType
+      m_arrList(m_lNumElems).RequestType = ulRequestType
+      m_arrList(m_lNumElems).Length = lLength
+      m_arrList(m_lNumElems).FaultSeverity = lFaultSeverity
+
+      Add = m_lNumElems
+
+      m_lNumElems = m_lNumElems + 1
+   End Function
+
+   ' No of oids
+   Property Get Size
+      Size = m_lNumElems
+   End Property
+
+   ' Oid at index
+   Function OidAt(ulIndex)
+      If (ulIndex >= m_lNumElems) Then
+         Call oLog.Failed ("Overflow in accessing elements of list", 88888)
+         OidAt = Null
+      Else
+         OidAt = m_arrList(ulIndex).Oid
+      End If
+   End Function
+
+   ' Get index of this oid
+   Function GetIndex(ulSearchOid)
+      Dim nIndex
+      Dim nFoundIndex
+
+      nFoundIndex = -1
+      nIndex = CLng(0)
+      Do While (nIndex < m_lNumElems)
+         If (m_arrList(nIndex).Oid = ulSearchOid) Then
+            nFoundIndex = nIndex
+            Exit Do
+         End If
+         nIndex = nIndex + 1
+      Loop
+      GetIndex = nFoundIndex
+   End Function
+
+   ' Find an oid that matches these criteria and return its index position
+   Function GetOidIndex(MinExpLength, ExpDataType, ExpRequestType, lLastFound)
+      Dim nIndex
+      Dim nFoundIndex
+
+      If (lLastFound < -1) Then
+         Call oLog.Failed  ("Internal Error: Cannot call with last index less than -1", 88888)
+         GetOidIndex = -1
+         Exit Function
+      End If
+
+      nFoundIndex = -1
+      nIndex = lLastFound + 1
+      Do While (nIndex < m_lNumElems)
+         If ((m_arrList(nIndex).Length >= MinExpLength) And _
+                  ((m_arrList(nIndex).DataType And ExpDataType) <> 0) And _
+                  ((m_arrList(nIndex).RequestType And ExpRequestType) <> 0)) Then
+            nFoundIndex = nIndex
+            Exit Do
+         End If
+         nIndex = nIndex + 1
+      Loop
+      GetOidIndex = nFoundIndex
+   End Function
+
+   ' Wrapper for obtaining characteristics of a particular oid
+   Function Length(nIndex)
+      If (nIndex >= m_lNumElems) Then
+         Call oLog.Failed  ("Overflow in accessing elements of list", 88888)
+         Length = Null
+      Else
+         Length = m_arrList(nIndex).Length
+      End If
+   End Function
+
+   Function DataType(nIndex)
+      If (nIndex >= m_lNumElems) Then
+         Call oLog.Failed  ("Overflow in accessing elements of list", 88888)
+         DataType = Null
+      Else
+         DataType = m_arrList(nIndex).DataType
+      End If
+   End Function
+
+   Function RequestType(nIndex)
+      If (nIndex >= m_lNumElems) Then
+         Call oLog.Failed  ("Overflow in accessing elements of list", 88888)
+         RequestType = Null
+      Else
+         RequestType = m_arrList(nIndex).RequestType
+      End If
+   End Function
+
+   Function FaultSeverity(nIndex)
+      If (nIndex >= m_lNumElems) Then
+         Call oLog.Failed  ("Overflow in accessing elements of list", 88888)
+         FaultSeverity = Null
+      Else
+         FaultSeverity = m_arrList(nIndex).FaultSeverity
+      End If
+   End Function
+
+   Function OidName(nIndex)
+      If (nIndex >= m_lNumElems) Then
+         Call oLog.Failed  ("Overflow in accessing elements of list", 88888)
+         OidName = Null
+      Else
+         OidName = m_arrList(nIndex).OidName
+      End If
+   End Function
+
+End Class
+
+'============================================================================================='
+'/**
+' Holds an oid and its related information
+'*/
+Class OidStruct
+   Private m_ulOid                  ' OID value
+   Private m_strOid                 ' Oid name string
+   Private m_nLength                ' Length of data associated with this oid
+   Private m_nDataType              ' The type of data needed to do a NdisRequest on this oid
+
+   Private m_nRequestType        ' OID Query/Set
+   Private m_nFaultSeverity      ' Fail/Warn, etc when error occurs
+
+   Private Sub Class_Initialize
+      m_ulOid = &H00000000
+      m_strOid = "UNDEFINED OID"
+      m_nLength = -1
+      m_nDataType = OTHER
+
+      m_nRequestType = INVALID
+      m_nFaultSeverity = LOG_AS_FAIL
+   End Sub
+   Property Get Oid
+      Oid = m_ulOid
+   End Property
+
+   Property Let Oid(p_Oid)
+      m_ulOid = p_Oid
+   End Property
+
+   Property Get OidName
+      OidName = m_strOid
+   End Property
+
+   Property Let OidName (p_strOid)
+      m_strOid = p_strOid
+   End Property
+
+   Property Get Length
+      Length= m_nLength
+   End Property
+
+   Property Let Length(p_nLength)
+      m_nLength = p_nLength
+   End Property
+
+   Property Get DataType
+      DataType = m_nDataType
+   End Property
+
+   Property Let DataType(p_nDataType)
+      m_nDataType = p_nDataType
+   End Property
+
+   Property Get RequestType
+      RequestType = m_nRequestType
+   End Property
+
+   Property Let RequestType(p_nRequestType)
+      m_nRequestType = p_nRequestType
+   End Property
+
+   Property Get FaultSeverity
+      FaultSeverity = m_nFaultSeverity
+   End Property
+
+   Property Let FaultSeverity(p_nFaultSeverity)
+      m_nFaultSeverity = p_nFaultSeverity
+   End Property
+
+End Class
+
+</script>
+</job>
+</package>
+
+
+
+
+
+<!--- CRC = 0xdc167220 --->

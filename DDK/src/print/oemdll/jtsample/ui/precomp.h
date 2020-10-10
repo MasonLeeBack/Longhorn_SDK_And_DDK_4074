@@ -1,0 +1,86 @@
+//    
+//
+//  PURPOSE:	Header files that should be in the precompiled header.
+
+
+#ifndef _PRECOMP_H
+#define _PRECOMP_H
+
+
+// Necessary for compiling under VC.
+#if(!defined(WINVER) || (WINVER < 0x0500))
+	#undef WINVER
+	#define WINVER          0x0500
+#endif
+#if(!defined(_WIN32_WINNT) || (_WIN32_WINNT < 0x0500))
+	#undef _WIN32_WINNT
+	#define _WIN32_WINNT    0x0500
+#endif
+
+
+// Required header files that shouldn't change often.
+
+
+
+#include <STDDEF.H>
+#include <STDLIB.H>
+#include <STDARG.H>
+#include <WINDEF.H>
+#include <WINERROR.H>
+#include <WINBASE.H>
+#include <WINGDI.H>
+#include <windows.h>
+#include <WINSPOOL.H>
+#include <STDIO.H>
+#include <INITGUID.H>
+#include <OBJBASE.H>
+#include <msxml6.h>
+#include <TCHAR.H>
+#include <strsafe.h>
+#include <string.h>
+#include <EXCPT.H>
+#include <ASSERT.H>
+#include <PRSHT.H>
+#include "COMPSTUI.H"
+#include <WINDDI.H>
+#include <WINDDIUI.H>
+
+
+#include <PRINTOEM.H>
+#include <prdrvcom.h>
+#include <prcomoem.h>
+
+
+#include "oemjtprovider.hxx"
+#include "jthandler.hxx"
+#include "devmode.h"
+#include "printschema.hxx"
+#include "gpd.hxx"
+#include "globals.h"
+#include "debug.h"
+#include "intrface.h"
+#include "oemui.h"
+
+
+
+
+// Define from ntdef.h in Win2K SDK.
+// NT 4 may not have this defined
+// in the public headers.
+#ifndef NOP_FUNCTION
+  #if (_MSC_VER >= 1210)
+    #define NOP_FUNCTION __noop
+  #else
+    #define NOP_FUNCTION (void)0
+  #endif
+#endif
+
+
+#define COUNTOF(p)  (sizeof(p)/sizeof(*(p)))
+
+
+#endif
+
+
+
+

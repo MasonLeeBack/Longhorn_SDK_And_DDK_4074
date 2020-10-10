@@ -1,0 +1,76 @@
+Test Assertion_A134220
+
+Var pWidth:Property , pHeight:Property , root:Item
+Var it, lCount
+{
+    PrintDescriptionFromXML('13.4.2.20')
+
+    StartWia()
+    GetRoot(root)
+    GetDeviceType(it)
+
+    If (it != StiDeviceTypeDigitalCamera)
+    Then Exit Passed
+
+    If (!GetProperty(root, pHeight, WIA_DPC_THUMB_HEIGHT))
+    Then Exit Passed
+
+    If (!CheckPropertyTypeFromXML(pHeight) )
+    Then
+    {
+        Writeln '\tIncorrect vartype'
+        Exit Failed
+    }
+
+    If (!CheckPropertyAccessFromXML(pHeight) )
+    Then
+    {
+        Writeln '\tIncorrect access'
+        Exit Failed
+    }
+
+    If (!GetProperty(root, pWidth, WIA_DPC_PICT_WIDTH))
+    Then
+    {
+        Writeln '\tProperty WIA_DPC_PICT_WIDTH must also be implemented'
+        Exit Failed
+    }
+
+    If( IsPropertyReadWrite(pHeight) )
+    Then
+    {
+        If ( SetPropertyInvalidValue(root, pHeight) )
+        Then 
+        {
+            Writeln '\tSetting invalid property value succeeded'
+            Exit Failed
+        }
+
+        If (!CheckSuppValues(root, pHeight))
+        Then 
+        {
+            Writeln '\tChecking supported property values failed'
+            Exit Failed
+        }
+
+        lCount = GetRangeMin(pHeight)
+
+        If (lCount != GetRangeMin(pWidth)) 
+        Then
+        {
+            Writeln '\tProperty WIA_DPC_PICT_WIDTH must have the same list size'
+            Exit Failed
+        }
+    }
+    Else
+    {
+        If ( SetPropertyValidValue(root, pHeight) Or SetPropertyInvalidValue(root, pHeight) )
+        Then 
+        {
+            Writeln '\tSetting a read-only property value succeeded'
+            Exit Failed
+        }
+    }
+
+    StopWia()
+}

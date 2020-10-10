@@ -1,0 +1,1351 @@
+<package>
+<SCRIPTDEF>
+<CARDMACH>
+2C,1M
+</CARDMACH>
+<RUNORDER>
+3070
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[
+This test tests the following NDIS 6.0 multicast oids:
+    OID_802_3_ADD_MULTICAST_ADDRESS
+    OID_802_3_DELETE_MULTICAST_ADDRESS
+    OID_802_5_ADD_CURRENT_FUNCTIONAL_ADDRESS
+    OID_802_5_DELETE_CURRENT_FUNCTIONAL_ADDRESS
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+    <job id="2c_Mini6Multicast" prompt="no">
+        <reference object="NDInfo.Info.1" version="1.0"/>
+        <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+        <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+        <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+        <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+        <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+        <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+        <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+
+        <!-- Begin Wireless Specific Includes -->
+        <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	     <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	     <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	     <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	     <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+        <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+        <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+        <!-- End Wireless Specific Includes -->
+
+        <script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+        <script language="VBScript" src="..\inc\clog.vbs"/>
+        <script language="VBScript" src="..\newinc\CCard.vbs"/>
+        <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+        <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+        <script language="VBScript" src="..\newinc\COpen.vbs"/>
+        <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+        <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+        <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+        <script language="VBScript" src="..\newinc\Setup.vbs"/>
+        <script language="VBScript" src="..\inc\Events.vbs"/>
+        <script language="VBScript" src="..\inc\Constants.vbs"/>
+        <script language="VBScript" src="..\inc\Random.vbs"/>
+        <script language="VBScript" src="..\inc\ConstLAN.vbs"/>
+        <script id="2c_Mini6Multicast" language="VBScript">
+'==========================================================================
+' Script Name:    2c_Mini6Multicast
+'
+
+'==========================================================================
+Option Explicit
+
+' These are used to tell a function if we expect success or failure
+Const SUCCESS = 0
+Const FAILURE = 1
+Const DONTCARE = 2
+
+
+Dim oTestObj, oRandGen
+
+Call Initialize ()
+
+Set oTestObj = New MulticastOidsTest
+
+Set oRandGen = New CRandomGenerator
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0), GetSupportAdapterIndex (oNDInfo.AdapterList, 0))
+Set oRandGen = Nothing
+
+Set oTestObj = Nothing
+Call Terminate ()
+
+
+Class MulticastOidsTest
+   Private oTestCard, oSuppCard
+   Private oTestOpenOne, oTestOpenTwo, oSuppOpen
+   Private oAddrMgr
+   Private m_bTypeAllFilter
+   Private m_lReceiveDelay, m_lMedium
+   Private m_lTestAdapterIndex, m_lSuppAdapterIndex
+
+   ' The following two variables are set based on the media type so that we can run all types 802_3, FDDI
+   ' and 802_5 tests from one script itself
+   Private m_lSingleFilter           ' FUNCTIONAL or MULTICAST
+   Private m_lAllFilter                ' ALL_FUNCTIONAL or ALL_MULTICAST
+
+   Private Sub Class_Initialize
+      Set oAddrMgr = new AddressManager
+      m_bTypeAllFilter = FALSE
+      m_lSingleFilter = DIRECTED
+      m_lAllFilter = DIRECTED
+   End Sub
+
+   Private Sub Class_Terminate
+      '
+      ' clean up
+      '
+      Set oAddrMgr = Nothing
+
+      Set oTestOpenOne = Nothing
+      Set oTestOpenTwo = Nothing
+      Set oTestCard = Nothing
+
+      Set oSuppOpen = Nothing
+      Set oSuppCard = Nothing
+   End Sub
+
+   '============================================================================================='
+   '/**
+   ' Creates the opens on the test and support devices for the send/receives
+   '*/
+   Private Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+
+      Set pAdapterList = oNDInfo.AdapterList
+
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+
+      Set oTestOpenOne = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpenOne is Nothing) Then
+         Exit Function
+      End If
+
+      Set oTestOpenTwo = oTestCard.vbOpenAdapter
+      If (oTestOpenTwo is Nothing) Then
+         Exit Function
+      End If
+
+      oLog.Variation ("Setting up Support Adapter")
+      Set oSuppCard = New CLanCard
+      If (oSuppCard is Nothing) Then
+         Exit Function
+      End If
+
+      Set oSuppOpen = oSuppCard.vbSetupBasicTest(pAdapterList (m_lSuppAdapterIndex))
+      If (oSuppOpen is Nothing) Then
+         Exit Function
+      End If
+
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then
+
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")
+         If(vbAssociateWep(oTestOpenOne, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If
+
+         oLog.Variation ("Associating support device with " & NDTESTAP2 & " ...")
+         If(vbAssociateWep(oSuppOpen, NDTESTAP2) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate support device with " & NDTESTAP2, 88888
+            Exit Function
+         End If
+
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+
+      oLog.Variation ("Preparing to run test")
+      m_lReceiveDelay = oTestOpenOne.vbGetReceiveDelay()
+
+   End Function
+
+    '--------------------------------------------------------------------------------------------------
+    ' Sets up instances and starts the execution of tests
+    Public Function RunTest(lTestAdapterIndex, lSupportAdapterIndex)
+      Dim NdisVersion
+      NdisVersion = WinFileVersion("\system32\drivers\ndis.sys")
+      If ((NdisVersion = "") Or (NdisVersion < "6.0")) Then
+         oLog.Write ("Ndis version " & NdisVersion & " below 6.0. Cannot test 6.0 multicast oids")
+         Exit Function
+      End If
+
+      m_lTestAdapterIndex = lTestAdapterIndex
+      m_lSuppAdapterIndex = lSupportAdapterIndex
+
+      If (DriverNDISVersion(lTestAdapterIndex) < &H600&) Then
+         oLog.Write("Driver version < 6.0. Only testing NDIS")
+      End If
+
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+
+      ExecuteTestCore
+   End Function
+
+   Private Function ExecuteTestCore
+      Dim lMedium
+      Dim lAvailFilters
+
+      lMedium = oTestCard.NdisMedium()
+
+      If (Not oAddrMgr.SetForDevice(lMedium, oTestOpenOne)) Then
+         Call oLog.Failed ("Unable to continue", 88888)
+         Exit Function
+      End If
+
+      lAvailFilters = oTestOpenOne.vbGetFilters()
+
+      If (lMedium = NDISMEDIUM802_3 Or lMedium = NDISMEDIUMFDDI) Then
+         m_lSingleFilter = MULTICAST
+
+         If ((lAvailFilters And MULTICAST) = 0) Then
+             Call oLog.Failed ("Multicasting is not supported by this driver" , 88888)
+             Exit Function
+         End If
+
+         If ((lAvailFilters And ALL_MULTICAST) <> 0) Then
+             Call oLog.Write ("Device supports ALL_MULTICAST filter, test enhanced")
+             m_lAllFilter = ALL_MULTICAST
+             m_bTypeAllFilter = TRUE
+         End If
+      Else  ' NDISMEDIUM802_5
+         m_lSingleFilter = FUNCTIONAL
+
+         If ((lAvailFilters And FUNCTIONAL) = 0) Then
+             Call oLog.Failed ("Functional filter is not supported by this driver" , 88888)
+             Exit Function
+         End If
+
+         If ((lAvailFilters And ALL_FUNCTIONAL) <> 0) Then
+             Call oLog.Write ("Device supports ALL_FUNCTIONAL filter, test enhanced")
+             m_lAllFilter = ALL_FUNCTIONAL
+             m_bTypeAllFilter = TRUE
+         End If
+      End If
+
+      If (TestAddDel) Then
+         'Ndis recognized the OID
+         If (lMedium <> NDISMEDIUM802_5) Then
+             Call OverFlowTest()
+         End If
+         Call MultipleAddrTest()
+         Call SpecTest(lMedium)
+      End If
+
+    End Function
+
+
+    '--------------------------------------------------------------------------------------------------
+    ' The function covers the following cases:
+    ' 1> Perform one of the following
+    ' - Add the same address into both open instances
+    ' - Add an address two times to the one instance
+    ' - Deleting an address an instance
+    ' - Deleting twice an address added two times
+    ' - Attempting to delete the address a third time
+    ' - Attempting to deleting a totally new address
+    ' - Deleting an address present in another open instance
+    ' 2> Set one or more of MULTICAST/FUNCTIONAL, DIRECTED
+    '   ALL_MULTICAST/ALL_FUNCTIONAL filters on the two open instances
+    ' 3> Send either directed or multicast (to an address that may be
+    '   present or one that has never been added) packets
+    '
+    ' Based on the current configuration of the above 3 options, we then
+    ' verify if packets are received or not, ie. if it does what we expect
+    ' it to do
+    '
+    ' NOTE: The options are randomly selected, so it may not cover
+    ' all the cases
+    '
+    Private Function TestAddDel()
+        Dim lNdisStatus
+        Dim bAddedOne, bAddedTwo
+        Dim lFilterOne, lFilterTwo
+        Dim bOneRecv, bTwoRecv
+
+        Dim PresentAddr
+        Dim BogusAddr
+        Dim SendAddr
+
+        Dim lRandomNum, iIndex
+        Dim lTestId
+
+        TestAddDel = TRUE
+        oLog.Variation ("Adding/Deleting/Sending/Receiving")
+        PresentAddr = oAddrMgr.FirstAddress()
+        BogusAddr = oAddrMgr.NextAddress(PresentAddr)
+
+        'oLog.Write (NetAddr2Str(PresentAddr))
+        'oLog.Write (NetAddr2Str(BogusAddr))
+
+        bAddedOne = FALSE
+        bAddedTwo = FALSE
+
+        ' Add an address for the first time. This is also to check that the oid is supported
+        If (Not oAddrMgr.AddAddress(oTestOpenOne, PresentAddr, SUCCESS, lNdisStatus)) Then
+            If (lNdisStatus = NDIS_STATUS_INVALID_OID) Then
+                Call oLog.Failed ("Did not recognize the new OIDs", 88888)
+                oLog.Write ("Quitting")
+                TestAddDel = FALSE
+                Exit Function
+            End If
+        Else
+            bAddedOne = TRUE
+        End If
+
+        'oLog.Write ("1 Add Present Success " & bAddedOne)
+
+        lTestId = oNDTSupp.Random(1, 32765)
+
+        oSuppOpen.vbSetChannelId(lTestId)
+        oTestOpenOne.vbSetChannelId(lTestId)
+        oTestOpenTwo.vbSetChannelId(lTestId)
+
+        Randomize lTestId
+
+        For iIndex = 1 To 50
+            oLog.Variation ("Configuration " & iIndex & " of 50")
+            lRandomNum = oRandGen.GetRandomNumber(1, 7)
+
+            Select Case lRandomNum
+                Case 1
+                    oLog.Variation("Delete Bogus One")
+                    Call oAddrMgr.DeleteAddress(oTestOpenOne, BogusAddr, FAILURE, lNdisStatus)
+                    'oLog.Write ("1 Delete Absent Failure " & bAddedOne)
+                Case 2
+                    oLog.Variation("Add Good Two")
+                    If (oAddrMgr.AddAddress (oTestOpenTwo, PresentAddr, SUCCESS, lNdisStatus)) Then
+                        bAddedTwo = TRUE
+                    End If
+                    'oLog.Write ("2 Add Present Success " & bAddedTwo)
+                Case 3
+                    oLog.Variation("Delete Good One " & bAddedOne)
+                    If (bAddedOne) Then
+                        If (oAddrMgr.DeleteAddress(oTestOpenOne, PresentAddr, SUCCESS, lNdisStatus)) Then
+                            bAddedOne = FALSE
+                        End If
+                        'oLog.Write ("1 Delete Present Success " & bAddedOne)
+                    Else
+                        ' Do not try to delete if not already present
+                        Call oAddrMgr.DeleteAddress(oTestOpenOne, PresentAddr, FAILURE, lNdisStatus)
+                        'oLog.Write ("1 Delete Present Failure " & bAddedOne)
+                    End If
+                Case 4
+                    oLog.Variation("Delete Good Two " & bAddedTwo)
+                    If (bAddedTwo) Then
+                        If (oAddrMgr.DeleteAddress(oTestOpenTwo, PresentAddr, SUCCESS, lNdisStatus)) Then
+                            bAddedTwo = FALSE
+                        End If
+                        'oLog.Write ("2 Delete Present Success " & bAddedTwo)
+                    Else
+                        ' Do not try to delete if not already present
+                        Call oAddrMgr.DeleteAddress(oTestOpenTwo, PresentAddr, FAILURE, lNdisStatus)
+                        'oLog.Write ("2 Delete Present Failure " & bAddedTwo)
+                    End If
+                Case 5
+                    oLog.Variation("Delete Bogus Two " & bAddedTwo)
+                    Call oAddrMgr.DeleteAddress(oTestOpenTwo, BogusAddr, FAILURE, lNdisStatus)
+                    'oLog.Write ("2 Delete Absent Failure " & bAddedTwo)
+                Case Else
+                    oLog.Variation("Add Good One " & bAddedOne)
+                    If (oAddrMgr.AddAddress (oTestOpenOne, PresentAddr, SUCCESS, lNdisStatus)) Then
+                        bAddedOne = TRUE
+                    End If
+                    'oLog.Write ("1 Add Present Success " & bAddedOne)
+            End Select
+
+'            oLog.Write (bAddedOne & " occurances of known address in open instance 1")
+'            oLog.Write (bAddedTwo & " occurances of known address in open instance 2")
+
+            oLog.Variation("Selecting filters to set")
+            ' Select filters
+            lFilterOne = DIRECTED
+            lFilterTwo = DIRECTED
+
+            lRandomNum = oRandGen.GetRandomNumber(1, 11)
+            Select Case lRandomNum
+                Case 1
+                    lFilterOne = m_lSingleFilter
+                    lFilterTwo = m_lAllFilter Or m_lSingleFilter
+                Case 2
+                    lFilterOne = m_lSingleFilter
+                    lFilterTwo = m_lSingleFilter
+                Case 3
+                    lFilterOne = m_lSingleFilter
+                    lFilterTwo = m_lAllFilter
+                Case 4
+                    lFilterOne = m_lAllFilter
+                    lFilterTwo = m_lSingleFilter
+                Case 5
+                    lFilterOne = m_lAllFilter
+                Case 6
+                    lFilterTwo = m_lAllFilter
+                Case 7
+                    lFilterOne = m_lSingleFilter
+                Case 8
+                    lFilterTwo = m_lSingleFilter
+                Case 9
+                    lFilterOne = m_lSingleFilter Or m_lAllFilter
+                Case 10
+                    lFilterTwo = m_lSingleFilter Or m_lAllFilter
+                Case Else
+                    lFilterOne = m_lAllFilter
+                    lFilterTwo = m_lAllFilter
+            End Select
+
+            ' Set the packet filters
+            If (Not oTestOpenOne.vbSetPacketFilter (lFilterOne)) Then
+                Call oLog.Failed ("SetPacketFilter failed. Expect this configuration to fail", 88888)
+            End If
+
+            If (Not oTestOpenTwo.vbSetPacketFilter (lFilterTwo)) Then
+                Call oLog.Failed ("SetPacketFilter failed. Expect this configuration to fail", 88888)
+            End If
+
+
+            oLog.Variation("Selecting address to send to")
+            ' Select which address to send to
+            lRandomNum = oRandGen.GetRandomNumber(1, 5)
+
+            bOneRecv = FALSE
+            bTwoRecv = FALSE
+
+            If (lRandomNum = 4 or lRandomNum = 2) Then
+                SendAddr = oAddrMgr.SendAddress(BogusAddr)
+                ' Only receive if we have ALL_MULTICAST/ALL_FUNCTIONAL set
+                If (m_bTypeAllFilter) Then
+                    If (lFilterOne And m_lAllFilter) Then
+                        bOneRecv = TRUE
+                    End If
+                    If (lFilterTwo And m_lAllFilter) Then
+                        bTwoRecv = TRUE
+                    End If
+                End If
+                oLog.Write ("Sending to a bogus address")
+            ElseIf (lRandomNum = 3) Then
+                SendAddr = oAddrMgr.DirectedAddress
+                ' Nobody should receive this packet
+                oLog.Write ("Sending to a (bogus) directed address")
+            Else
+                SendAddr = oAddrMgr.SendAddress(PresentAddr)
+                ' We will receive if we have either ALL_MULTICAST/ALL_FUNCTIONAL  filter is set
+                ' or MULTICAST/FUNCTIONAL set and we have the address in our list
+                If ((lFilterOne And m_lSingleFilter) And bAddedOne) Then
+                    bOneRecv = TRUE
+                End If
+
+                If ((lFilterTwo And m_lSingleFilter) And bAddedTwo) Then
+                    bTwoRecv = TRUE
+                End If
+
+                If (m_bTypeAllFilter) Then
+                    If (lFilterOne And m_lAllFilter) Then
+                        bOneRecv = TRUE
+                    End If
+                    If (lFilterTwo And m_lAllFilter) Then
+                        bTwoRecv = TRUE
+                    End If
+                End If
+
+                oLog.Write ("Sending to a known (one that maybe present) address")
+            End If
+
+
+            ' Note that inspite of loose hardware multicast masking, since there are two open instances
+            ' NDIS should perform the filtering properly, and if we do not have the address in the multicast
+            ' list, we should not receive the packets
+
+            If (Not SendRecvTwo(oSuppOpen, oTestOpenOne, oTestOpenTwo, SendAddr, bOneRecv, bTwoRecv)) Then
+                Call oLog.Failed("Send/Receive testing failed", 88888)
+            End If
+        Next
+
+        oLog.Variation("Clearing all addresses")
+        ' Remove all the addresses that we have ended up adding
+        If (bAddedOne) Then
+            Call oAddrMgr.DeleteAddress (oTestOpenOne, PresentAddr, SUCCESS, lNdisStatus)
+        End If
+
+        If (bAddedTwo) Then
+            Call oAddrMgr.DeleteAddress (oTestOpenTwo, PresentAddr, SUCCESS, lNdisStatus)
+        End If
+
+        oLog.Variation("Loopback test")
+        ' A quick test to see if loopback works
+        ' Set MULTICAST/FUNCTIONAL filters
+        If (Not oTestOpenOne.vbSetPacketFilter (m_lSingleFilter)) Then
+            Call oLog.Failed ("Instance 1: Unable to set packet filter", 88888)
+        End If
+
+        ' Get an address to use
+        PresentAddr = oAddrMgr.FirstAddress()
+
+        ' Add it
+        Call oAddrMgr.AddAddress (oTestOpenOne, PresentAddr, SUCCESS, lNdisStatus)
+
+        SendAddr = oAddrMgr.SendAddress(PresentAddr)
+        ' Check if receiving on that address
+        If (Not SendRecv(oTestOpenTwo, oTestOpenOne, SendAddr, TRUE)) Then
+            Call oLog.Failed("Loopback Send/Receive testing failed", 88888)
+        End If
+
+        ' Check if receiving on other address
+        BogusAddr = oAddrMgr.NextAddress(PresentAddr)
+
+        SendAddr = oAddrMgr.SendAddress(BogusAddr)
+        If (Not SendRecv(oTestOpenTwo, oTestOpenOne, SendAddr, FALSE)) Then
+            Call oLog.Failed("Loopback Send/Receive testing failed", 88888)
+        End If
+
+        ' Done, remove the address
+        Call oAddrMgr.DeleteAddress (oTestOpenOne, PresentAddr, SUCCESS, lNdisStatus)
+
+        'Clear the filters
+        If (Not oTestOpenOne.vbSetPacketFilter (DIRECTED)) Then
+            Call oLog.Failed ("Instance 1: Unable to clear packet filter", 88888)
+        End If
+        If (Not oTestOpenTwo.vbSetPacketFilter (DIRECTED)) Then
+            Call oLog.Failed ("Instance 2: Unable to clear packet filter", 88888)
+        End If
+
+    End Function
+
+    '--------------------------------------------------------------------------------------------------
+    ' Tests handling of attempts to overflow the maximum multicast address list on the hardware
+    ' Not called for NDISMEDIUM802_5
+    Private Function OverFlowTest()
+        Dim lMaxSize
+        Dim PrevAddr
+        Dim NewAddr
+        Dim OutAddr     ' An address which if added would overflow
+        Dim InAddr       ' Address that was allowed to be added
+
+        Dim lNdisStatus
+        Dim lAdded
+        Dim bResult
+        Dim lTestId
+        Dim lCounter
+
+        oLog.Variation("Setting up overflow test")
+        lTestId = oNDTSupp.Random(1, 32765)
+
+        oSuppOpen.vbSetChannelId(lTestId)
+        oTestOpenOne.vbSetChannelId(lTestId)
+        oTestOpenTwo.vbSetChannelId(lTestId)
+
+        Randomize lTestId
+
+        ' Set the packet filters
+        If (Not oTestOpenOne.vbSetPacketFilter (MULTICAST)) Then
+            Call oLog.Failed ("Instance 1: Unable to set multicast filter", 88888)
+        End If
+        ' Set the packet filters
+        If (Not oTestOpenTwo.vbSetPacketFilter (MULTICAST)) Then
+            Call oLog.Failed ("Instance 2: Unable to set multicast filter", 88888)
+        End If
+
+
+        oLog.Variation ("Add/Delete more than multicast address list size")
+        lMaxSize = oAddrMgr.MaxUnusedListSize(oTestCard)
+
+        NewAddr = oAddrMgr.FirstAddress()
+
+        lAdded = CLng(0)
+
+        Do While (lAdded < lMaxSize)
+            PrevAddr = NewAddr
+            Call oAddrMgr.AddAddress(oTestOpenOne, NewAddr, SUCCESS, lNdisStatus)
+            lAdded = lAdded + 1
+            NewAddr = oAddrMgr.NextAddress(PrevAddr)
+        Loop
+
+        'lAdded is the number of addresses we have added and PrevAddr was the last address we added
+        InAddr = oAddrMgr.RandomAddress(PrevAddr)
+        If (Not SendRecv(oSuppOpen, oTestOpenOne, InAddr, TRUE)) Then
+            Call oLog.Failed("Send/Receive testing failed", 88888)
+        End If
+
+        ' Now try and send to an address out of range
+        OutAddr = oAddrMgr.NextAddress(PrevAddr)
+        If (Not SendRecv(oSuppOpen, oTestOpenOne, OutAddr, FALSE)) Then
+            Call oLog.Failed("Send/Receive testing failed", 88888)
+        End If
+
+        ' Lets now try adding an extra addresses
+
+        oLog.Variation("Attempting overflow")
+        ' Adding a totally new address should give us a failure
+        bResult = oAddrMgr.AddAddress(oTestOpenOne, OutAddr, DONTCARE, lNdisStatus)
+        If (Not bResult) Then
+            Call oLog.Failed ("Unable to add multicast address" , 88888)
+        ElseIf (lNdisStatus = 0) Then
+            Call oLog.Failed ("Adding the new address should have failed with NDIS_STATUS_MULTICAST_FULL error", 88888)
+        End If
+
+        ' Adding an address already present in the list should be okay
+        If (Not oAddrMgr.AddAddress(oTestOpenOne, InAddr, SUCCESS, lNdisStatus)) Then
+            Call oLog.Failed("Unable to add an address a second time to an overflowing list", 88888)
+        End If
+
+        ' Lets try sending on both the previous two address and see if we receive
+
+        ' The outside address should still fail
+        If (Not SendRecv(oSuppOpen, oTestOpenOne, OutAddr, FALSE)) Then
+            Call oLog.Failed("Send/Receive testing failed", 88888)
+        End If
+
+        ' The address in the list should succeed
+        If (Not SendRecv(oSuppOpen, oTestOpenOne, InAddr, TRUE)) Then
+            Call oLog.Failed("Send/Receive testing failed", 88888)
+        End If
+
+        ' Lets try deleting the addresses
+        oLog.Variation("Deleting the addresses")
+        ' First the address that is out of range
+        If (Not oAddrMgr.DeleteAddress(oTestOpenOne, OutAddr, FAILURE, lNdisStatus)) Then
+            Call oLog.Failed("Unable to test deleting of absent multicast address", 88888)
+        End If
+
+        ' Now the address that is present twice. Delete it once, the other instance would be deleted in
+        ' the sequence later
+        If (Not oAddrMgr.DeleteAddress(oTestOpenOne, InAddr, SUCCESS, lNdisStatus)) Then
+            Call oLog.Failed("Unable to test deleting of present multicast address", 88888)
+        End If
+
+        ' Lets now clear all the address added into the instance
+        NewAddr = oAddrMgr.FirstAddress()
+        lCounter = CLng(0)
+        Do While (lCounter < lAdded)
+            PrevAddr = NewAddr
+            Call oAddrMgr.DeleteAddress(oTestOpenOne, NewAddr, SUCCESS, lNdisStatus)
+            lCounter = lCounter + 1
+            NewAddr = oAddrMgr.NextAddress(PrevAddr)
+        Loop
+
+        oLog.Variation("Overflowing with half of max in each instance")
+        ' Now lets add half of the max addresses to the two instances
+        NewAddr = oAddrMgr.FirstAddress()
+
+        lAdded = CLng(0)
+        Do While (lAdded < lMaxSize)
+            PrevAddr = NewAddr
+
+            If (lAdded Mod 2 = 0) Then
+                Call oAddrMgr.AddAddress(oTestOpenOne, NewAddr, SUCCESS, lNdisStatus)
+            Else
+                Call oAddrMgr.AddAddress(oTestOpenTwo, NewAddr, SUCCESS, lNdisStatus)
+            End If
+            lAdded = lAdded + 1
+            NewAddr = oAddrMgr.NextAddress(PrevAddr)
+        Loop
+
+        ' Okay, lets try to add a new address to both the two
+        OutAddr = oAddrMgr.NextAddress(PrevAddr)
+        bResult = oAddrMgr.AddAddress(oTestOpenOne, OutAddr, DONTCARE, lNdisStatus)
+        If (Not bResult) Then
+            Call oLog.Failed ("Unable to add multicast address" , 88888)
+        ElseIf (lNdisStatus = 0) Then
+            Call oLog.Failed ("Adding the new address should have failed with NDIS_STATUS_MULTICAST_FULL error", 88888)
+        End If
+
+        bResult = oAddrMgr.AddAddress(oTestOpenTwo, OutAddr, DONTCARE, lNdisStatus)
+        If (Not bResult) Then
+            Call oLog.Failed ("Unable to add multicast address" , 88888)
+        ElseIf (lNdisStatus = 0) Then
+            Call oLog.Failed ("Adding the new address should have failed with NDIS_STATUS_MULTICAST_FULL error", 88888)
+        End If
+
+        oLog.Variation("Clean up after overflow attempts")
+        ' Lets now clear all the address added into the instance
+        NewAddr = oAddrMgr.FirstAddress()
+        lCounter = CLng(0)
+
+        Do While (lCounter < lAdded)
+            PrevAddr = NewAddr
+
+            If (lCounter Mod 2 = 0) Then
+                Call oAddrMgr.DeleteAddress(oTestOpenOne, NewAddr, SUCCESS, lNdisStatus)
+            Else
+                Call oAddrMgr.DeleteAddress(oTestOpenTwo, NewAddr, SUCCESS, lNdisStatus)
+            End If
+
+            lCounter = lCounter + 1
+            NewAddr = oAddrMgr.NextAddress(PrevAddr)
+        Loop
+
+        'Clear the filters
+        If (Not oTestOpenOne.vbSetPacketFilter (DIRECTED)) Then
+            Call oLog.Failed ("Instance 1: Unable to clear packet filter", 88888)
+        End If
+        If (Not oTestOpenTwo.vbSetPacketFilter (DIRECTED)) Then
+            Call oLog.Failed ("Instance 2: Unable to clear packet filter", 88888)
+        End If
+
+    End Function
+
+    '--------------------------------------------------------------------------------------------------
+    ' Tests handling of attempts to test sending an receiving with more than one address
+    Private Function MultipleAddrTest()
+        Dim lTestId
+        Dim Open1Addr1, Open1Addr2
+        Dim Open2Addr1, Open2Addr2
+        Dim BogusAddr
+        Dim lNdisStatus
+
+        oLog.Variation("Setting up multiple address test")
+        lTestId = oNDTSupp.Random(1, 32765)
+
+        oSuppOpen.vbSetChannelId(lTestId)
+        oTestOpenOne.vbSetChannelId(lTestId)
+        oTestOpenTwo.vbSetChannelId(lTestId)
+
+        Randomize lTestId
+
+        ' Set the packet filters
+        If (Not oTestOpenOne.vbSetPacketFilter (m_lSingleFilter)) Then
+            Call oLog.Failed ("Instance 1: Unable to set filter", 88888)
+        End If
+        ' Set the packet filters
+        If (Not oTestOpenTwo.vbSetPacketFilter (m_lSingleFilter)) Then
+            Call oLog.Failed ("Instance 2: Unable to set filter", 88888)
+        End If
+
+        ' Get 5 addresses to use
+        BogusAddr = oAddrMgr.FirstAddress()
+        Open1Addr1 = oAddrMgr.NextAddress(BogusAddr)
+        Open2Addr1 = oAddrMgr.NextAddress(Open1Addr1)
+        Open1Addr2 = oAddrMgr.NextAddress(Open2Addr1)
+        Open2Addr2 = oAddrMgr.NextAddress(Open1Addr2)
+
+        Call oAddrMgr.AddAddress(oTestOpenOne, Open1Addr1, SUCCESS, lNdisStatus)
+        Call oAddrMgr.AddAddress(oTestOpenOne, Open1Addr2, SUCCESS, lNdisStatus)
+        Call oAddrMgr.AddAddress(oTestOpenTwo, Open2Addr1, SUCCESS, lNdisStatus)
+        Call oAddrMgr.AddAddress(oTestOpenTwo, Open2Addr2, SUCCESS, lNdisStatus)
+
+        If (Not SendRecv(oSuppOpen, oTestOpenOne, Open1Addr1, TRUE)) Then
+            Call oLog.Failed("Send/Receive testing failed", 88888)
+        End If
+
+        If (Not SendRecv(oSuppOpen, oTestOpenOne, Open2Addr1, FALSE)) Then
+            Call oLog.Failed("Send/Receive testing failed", 88888)
+        End If
+
+        If (Not SendRecv(oSuppOpen, oTestOpenTwo, BogusAddr, FALSE)) Then
+            Call oLog.Failed("Send/Receive testing failed", 88888)
+        End If
+
+        Call oAddrMgr.DeleteAddress(oTestOpenOne, Open1Addr1, SUCCESS, lNdisStatus)
+        Call oAddrMgr.DeleteAddress(oTestOpenOne, Open1Addr2, SUCCESS, lNdisStatus)
+        Call oAddrMgr.DeleteAddress(oTestOpenTwo, Open2Addr1, SUCCESS, lNdisStatus)
+        Call oAddrMgr.DeleteAddress(oTestOpenTwo, Open2Addr2, SUCCESS, lNdisStatus)
+
+       'Clear the filters
+        If (Not oTestOpenOne.vbSetPacketFilter (DIRECTED)) Then
+            Call oLog.Failed ("Instance 1: Unable to clear packet filter", 88888)
+        End If
+
+        If (Not oTestOpenTwo.vbSetPacketFilter (DIRECTED)) Then
+            Call oLog.Failed ("Instance 2: Unable to clear packet filter", 88888)
+        End If
+
+    End Function
+
+    '--------------------------------------------------------------------------------------------------
+    ' Tests the specifications. Specifically tests for the following
+    ' 1> Check if OID_####_ADD_* works after OID_####_*_LIST : Fail
+    ' 2> Check if OID_####_*_LIST works after OID_####_ADD_* : Fail
+    ' 3> Add and address and unbind (close). The unbind should block. (Not implemented)
+    ' 4> Add an address, unload the driver, load the driver and delete the address. It should fail, as
+    '    the address should be absent when unloaded (Not implemented)
+    ' 5> Check handling of failures from miniport to add/delete the addresses (Not implemented)
+    Private Function SpecTest(lMedium)
+        Dim AddrToUse , lNdisStatus
+
+        oLog.Variation("Close/Reopen instances")
+        ' First close all the test open instances as we want to start on a fresh slate
+        If (Not oTestOpenOne.vbNdisClose) Then
+            Call oLog.Failed ("Unable to close open instance 1", 88888)
+        End If
+        If (Not oTestOpenTwo.vbNdisClose) Then
+            Call oLog.Failed ("Unable to close open instance 2", 88888)
+        End If
+
+        ' Now reopen the two instances
+        If (Not oTestOpenOne.vbNdisOpen) Then
+            Exit Function
+        End If
+        If (Not oTestOpenTwo.vbNdisOpen) Then
+            Exit Function
+        End If
+
+        oLog.Variation("Use conflicting APIs on instances")
+        ' Use different APIs on the two instances
+        AddrToUse = oAddrMgr.FirstAddress()
+
+        ' The New API on instance 1
+        If (Not oAddrMgr.AddAddress(oTestOpenOne, AddrToUse, SUCCESS, lNdisStatus)) Then
+            If (lNdisStatus <> NDIS_STATUS_INVALID_OID) Then
+                Call oLog.Failed ("Unable to add address to instance 1", 88888)
+            End If
+        End If
+
+        ' The Old API on instance 2
+        If (Not oAddrMgr.TestOldAPI(oTestOpenTwo, lNdisStatus)) Then
+            Call oLog.Failed ("Unable to test the old API in instance 2", 88888)
+        Else
+            If (lNdisStatus <> 0) Then
+                Call oLog.Failed ("Using old API in instance 2 failed with error status = 0x" & Hex(lNdisStatus), 88888)
+            End If
+        End If
+
+        ' Okay, lets now try the reverse APIs
+        ' The Old API on instance 1
+        If (Not oAddrMgr.TestOldAPI(oTestOpenOne, lNdisStatus)) Then
+            Call oLog.Failed ("Unable to test the old API in instance 1", 88888)
+        Else
+            If (lNdisStatus = 0) Then
+                Call oLog.Failed ("Using old API in instance 1 should have failed", 88888)
+            Else
+                oLog.Write ("Old API failed on instance 1 as we expected. NdisStatus = 0x" & Hex(lNdisStatus))
+            End If
+        End If
+
+        ' New API on instance 2
+        If (oAddrMgr.AddAddress(oTestOpenTwo, AddrToUse, DONTCARE, lNdisStatus)) Then
+            If (lNdisStatus = 0) Then
+                Call oLog.Failed ("Should have failed trying to use the new API on instance 2", 88888)
+            Else
+                oLog.Write ("Old API failed on instance 2 as we expected. NdisStatus = 0x" & Hex(lNdisStatus))
+            End If
+        Else
+            Call oLog.Failed ("Unable to test new api on instance 2", 88888)
+        End If
+
+        Call oAddrMgr.DeleteAddress (oTestOpenOne, AddrToUse, SUCCESS, lNdisStatus)
+
+    End Function
+
+
+    '--------------------------------------------------------------------------------------------------
+    ' Obtains the NDIS Version of the driver
+    Private Function DriverNDISVersion(lAdapterIndex)
+        DriverNDISVersion = oNDTSession (lAdapterIndex & "OID_GEN_DRIVER_VERSION")
+        If IsEmpty (DriverNDISVersion) Then
+            ' If session does not have this info, assume driver is 5.0
+            DriverNDISVersion = &H500&
+        End If
+    End Function
+
+    '--------------------------------------------------------------------------------------------------
+    ' Sends packets from the Send instance and receives them at the receive instance
+    ' and verifies if the results are as we expected
+    Private Function SendRecv(oSendOpen, oRecvOpen, ToAddr, bExpResult)
+        Dim bResult, bResult1
+        Dim lReceived, lResent
+
+        oLog.Variation("Sending/Receiving")
+
+        oRecvOpen.vbStartReceive()
+
+        ' Can change this to use SendPackets if necessary
+        bResult = oSendOpen.vbVerifiedSend(ToAddr, glMinimumPacketSize, glPacketsToSend, 0, Null)
+
+        WScript.Sleep m_lReceiveDelay    ' wait for all packets to be received
+
+        bResult1 = oRecvOpen.vbStopReceive()
+        If(bResult1) Then
+            bResult1 = oRecvOpen.vbGetReceiveResults(lReceived, lResent)
+            If (bResult1) Then       'If test.Failed, bResult is FALSE
+
+                If (lResent <> 0) Then
+                    Call oLog.Failed ("No resends expected", 88888)
+                End If
+
+                If (bExpResult) Then
+                    If (lReceived <> glPacketsToSend) Then
+                        Call oLog.Failed ("Did not receive expected number of packets", 88888)
+                    End If
+                Else
+                    If (lReceived <> 0) Then
+                        ' This may be because of loose filtering on part of the device, which is not
+                        ' an error
+                        Call oLog.Warned ("Shouldn't have received any packets")
+                    End If
+                End If
+            End If
+        End If
+
+        SendRecv = bResult Or bResult1
+    End Function
+
+    '--------------------------------------------------------------------------------------------------
+    ' Sends packets from the Send instance and receives them at the receive instances
+    ' and verifies if the results are as we expected
+    Private Function SendRecvTwo(oSendOpen, oRecvOpen1, oRecvOpen2 , ToAddr, bExpResult1, bExpResult2)
+        Dim bResult, bResult1, bResult2
+        Dim lReceived, lResent
+
+        oLog.Variation("Sending/Receiving")
+
+        oRecvOpen1.vbStartReceive()
+        oRecvOpen2.vbStartReceive()
+
+        ' Can change this to use SendPackets if necessary
+        bResult = oSendOpen.vbVerifiedSend(ToAddr, glMinimumPacketSize, glPacketsToSend, 0, Null)
+
+        WScript.Sleep m_lReceiveDelay    ' wait for all packets to be received
+
+        bResult1 = oRecvOpen1.vbStopReceive()
+        If(bResult1) Then
+            bResult1 = oRecvOpen1.vbGetReceiveResults(lReceived, lResent)
+            If (bResult1) Then       'If test.Failed, bResult is FALSE
+
+                If (lResent <> 0) Then
+                    Call oLog.Failed ("Instance 1: No resends expected", 88888)
+                End If
+
+                If (bExpResult1) Then
+                    If (lReceived <> glPacketsToSend) Then
+                        Call oLog.Failed ("Instance 1: Did not receive expected number of packets", 88888)
+                    End If
+                Else
+                    If (lReceived <> 0) Then
+                        Call oLog.Failed ("Instance 1: Shouldn't have received any packets", 88888)
+                    End If
+                End If
+            End If
+        End If
+
+        bResult2 = oRecvOpen2.vbStopReceive()
+        If(bResult2) Then
+            bResult2 = oRecvOpen2.vbGetReceiveResults(lReceived, lResent)
+            If (bResult2) Then       'If test.Failed, bResult is FALSE
+
+                If (lResent <> 0) Then
+                    Call oLog.Failed ("Instance 2: No resends expected", 88888)
+                End If
+
+                If (bExpResult2) Then
+                    If (lReceived <> glPacketsToSend) Then
+                        Call oLog.Failed ("Instance 2: Did not receive expected number of packets", 88888)
+                    End If
+                Else
+                    If (lReceived <> 0) Then
+                        Call oLog.Failed ("Instance 2: Shouldn't have received any packets", 88888)
+                    End If
+                End If
+            End If
+        End If
+
+        SendRecvTwo = bResult Or bResult1 Or bResult2
+    End Function
+
+End Class
+
+'--------------------------------------------------------------------------
+' This class aids in adding and deleting the multicast addresses from an open instance
+' Depending on the media type we would decide on the OID to be use for adding or deleting
+' the address and also the length of the address that would be added or deleted
+'--------------------------------------------------------------------------
+Class AddressManager
+    Dim m_lAddOid
+    Dim m_lDelOid
+    Dim m_lOldOid
+    Dim m_lAddrLen
+    Dim m_lMaxSize      ' Maximum size of multicast address list
+
+    Private Sub Class_initialize
+        m_lAddOid = 0
+        m_lDelOid = 0
+        m_lOldOid = 0
+
+        m_lAddrLen = 0
+        m_lMaxSize = 0
+    End Sub
+
+
+    '--------------------------------------------------------------------------
+    ' A specific to this file Log to the base 2 function (802_5) specific
+    Private Function Log2(nVal)
+        nVal = CByte(nVal)
+        Select Case nVal
+            Case 1
+                Log2 = 0
+            Case 2
+                Log2 = 1
+            Case 4
+                Log2 = 2
+            Case 8
+                Log2 = 3
+            Case 16
+                Log2 = 4
+            Case 32
+                Log2 = 5
+            Case 64
+                Log2 = 6
+            Case 128
+                Log2 = 7
+            Case Else
+                Call oLog.Failed ("Internal NdisTest failure", 88888)
+                Log2 = -1 ' Error value
+        End Select
+    End Function
+
+    '--------------------------------------------------------------------------
+    ' Function used when running the 802_5 tests to get next and random addresses
+    Private Function GetAddrBit(ByVal InAddr)
+        Dim lBit, lByte
+        If (InAddr(0) > 0) Then
+            lByte = 3
+        ElseIf (InAddr(1) > 0) Then
+            lByte = 2
+        ElseIf (InAddr(2) > 0) Then
+            lByte = 1
+        Else
+            lByte = 0
+        End If
+
+        lBit = lByte * 8 + Log2(InAddr(3-lByte))
+
+        GetAddrBit = lBit
+    End Function
+
+    '--------------------------------------------------------------------------
+    ' Function used when running 802_5 tests to generate an address with a particular set bit
+    Private Function SetBitAddr(lPosition)
+        Dim OutAddr
+        Dim lByte, lBit, lNewByte
+
+        lByte =  lPosition \ 8
+        lBit = lPosition Mod 8
+
+        lNewByte = 2^lBit
+
+        Select Case lByte
+            Case 0
+                OutAddr = FunctAddr(0, 0, 0, lNewByte)
+            Case 1
+                OutAddr = FunctAddr(0, 0, lNewByte, 0)
+            Case 2
+                OutAddr = FunctAddr(0, lNewByte, 0, 0)
+            Case 3
+                OutAddr = FunctAddr(lNewByte, 0, 0, 0)
+            Case Else
+                Call oLog.Failed ("Internal NdisTest failure", 88888)
+        End Select
+
+        SetBitAddr = OutAddr
+    End Function
+
+
+    '--------------------------------------------------------------------------
+    ' Collect and store information relevant to addresses manipulations on the device
+    Public Function SetForDevice(lMedium, oTestOpen)
+        Dim lSizeOid
+        Dim BytesWritten, BytesNeeded
+        Dim NdisStatus, bResult
+
+        SetForDevice = TRUE
+
+        If(lMedium = NDISMEDIUM802_3) Then
+            m_lAddOid = OID_802_3_ADD_MULTICAST_ADDRESS
+            m_lDelOid = OID_802_3_DELETE_MULTICAST_ADDRESS
+            lSizeOid = OID_802_3_MAXIMUM_LIST_SIZE
+            m_lOldOid = OID_802_3_MULTICAST_LIST
+            m_lAddrLen = 6
+        ElseIf (lMedium = NDISMEDIUMFDDI) Then
+            ' Running test for long addresses, similar for short
+            If (TRUE) Then
+                m_lAddOid = OID_FDDI_ADD_LONG_MULTICAST_ADDRESS
+                m_lDelOid = OID_FDDI_DELETE_LONG_MULTICAST_ADDRESS
+                lSizeOid = OID_FDDI_LONG_MAX_LIST_SIZE
+                m_lOldOid = OID_FDDI_LONG_MULTICAST_LIST
+                m_lAddrLen = 6
+            Else
+                m_lAddOid = OID_FDDI_ADD_SHORT_MULTICAST_ADDRESS
+                m_lDelOid = OID_FDDI_DELETE_SHORT_MULTICAST_ADDRESS
+                lSizeOid = OID_FDDI_SHORT_MAX_LIST_SIZE
+                m_lOldOid = OID_FDDI_SHORT_MULTICAST_LIST
+                m_lAddrLen = 2
+            End If
+        ElseIf (lMedium = NDISMEDIUM802_5) Then
+                m_lAddOid = OID_802_5_ADD_CURRENT_FUNCTIONAL_ADDRESS
+                m_lDelOid = OID_802_5_DELETE_CURRENT_FUNCTIONAL_ADDRESS
+                m_lOldOid = OID_802_5_CURRENT_FUNCTIONAL
+                m_lAddrLen = 4
+        Else
+            Call oLog.Failed ("Media not valid for this script" , 88888)
+            SetForDevice = FALSE
+        End If
+
+        If (lMedium = NDISMEDIUM802_5) Then
+            ' This will be used only in the spec test. No overflow tests
+            m_lMaxSize = CLng(31)
+        Else
+            ' Get the maximum number of multicast addresses possible
+            m_lMaxSize = CLng(0)
+            BytesWritten = CLng(0)
+            BytesNeeded = CLng(0)
+            bResult = oTestOpen.vbNdisRequest( _
+                lSizeOid, _
+                m_lMaxSize, _
+                4, _
+                REQUEST_QUERY_INFO, _
+                BytesWritten, _
+                BytesNeeded, _
+                NdisStatus, _
+                FALSE)
+            If(Not bResult Or NdisStatus <> 0) Then
+                Call oLog.Failed ("Unable to get max multicast list size" , 88888)
+                SetForDevice = FALSE
+            ElseIf (m_lMaxSize = 0) Then
+                Call oLog.Failed ("List size may not equal zero" , 88888)
+                SetForDevice = FALSE
+            ElseIf (m_lMaxSize < 32) Then     ' requirement for PC99
+                Call oLog.Failed ("Driver must support at least 32 multicast addresses" , 88888)
+                SetForDevice = FALSE
+            End If
+        End If
+
+    End Function
+
+    '--------------------------------------------------------------------------
+    ' Returns a multicast address
+    ' If modified, also modify other Address function
+    Public Function FirstAddress()
+        If (m_lAddrLen = 6) Then
+            FirstAddress = NetAddr(&H01&, &H02&, &H03&, &H04&, &H06&, &H00&)
+        ElseIf (m_lAddrLen = 4) Then
+            FirstAddress = FunctAddr(&H00&, &H00&, &H00&, &H02&)
+        Else
+            FirstAddress = Array(CByte(&H01), CByte(&H00))
+        End If
+    End Function
+
+    '--------------------------------------------------------------------------
+    ' Returns a multicast address following the PrevAddress
+    ' If modified, also modify the other Address functions
+    Public Function NextAddress(PrevAddress)
+        ' Do not ask for more than 256, we would repeat addresses
+        If (m_lAddrLen = 6) Then
+            NextAddress = NetAddr(&H01&, &H02&, &H03&, &H04&, &H06&, PrevAddress(5)+1)
+        ElseIf (m_lAddrLen = 4) Then
+            ' Use simple case if not calling in a loop
+            ' NextAddress = FunctAddr(&H00&, &H00&, &H00&, &H04&)
+            NextAddress = SetBitAddr(GetAddrBit(PrevAddress)+1)
+        Else
+            NextAddress = Array(CByte(&H01), CByte(PrevAddress(1)+1))
+        End If
+    End Function
+
+    '--------------------------------------------------------------------------
+    ' Returns a directed address
+    Public Function DirectedAddress()
+        ' This may be a problem in that we are using a constant address as our directed
+        ' send addr
+        If (m_lAddrLen = 6) Then
+            DirectedAddress = NetAddr(&H00&, &H02&, &H04&, &H06&, &H08&, &H0B&)
+        ElseIf (m_lAddrLen = 4) Then
+            ' Here we send the actual address instead of a functional addr that needs to be transformed
+            DirectedAddress = NetAddr(&H00&, &H02&, &H04&, &H06&, &H08&, &H0B&)
+        Else
+            DirectedAddress = Array(CByte(&H00), CByte(&H02))
+        End If
+    End Function
+
+    '--------------------------------------------------------------------------
+    ' Returns a send address from the given address
+    Public Function SendAddress(BaseAddr)
+        If (m_lAddrLen = 6) Then
+            SendAddress = BaseAddr
+        ElseIf (m_lAddrLen = 4) Then
+            SendAddress = Funct2NetAddr(BaseAddr)
+        Else
+            Call oLog.Failed("Not yet implemented", 88888)
+            SendAddress = BaseAddr
+        End If
+    End Function
+
+    '--------------------------------------------------------------------------
+    ' This function finds an address starting from the address returned in the FirstAddress function
+    ' to and including the address just passed in
+    ' If modified, also modify the other Address functions
+    Public Function RandomAddress(LastAddress)
+        Dim nRandomNum
+
+        If (m_lAddrLen = 6) Then
+            nRandomNum = oRandGen.GetRandomNumber(0, LastAddress(5))
+            RandomAddress = NetAddr (&H01&, &H02&, &H03&, &H04&, &H06&, nRandomNum)
+        ElseIf (m_lAddrLen = 4) Then
+            Dim lMaxSet
+            lMaxSet = GetAddrBit(LastAddress)    ' The position of set bit in LastAddress
+            nRandomNum = oRandGen.GetRandomNumber(1, lMaxSet)     ' Position of set bit in random address (1<=SetBit<=lMaxSet)
+            RandomAddress = SetBitAddr(nRandomNum)
+        Else
+            nRandomNum = oRandGen.GetRandomNumber(0, LastAddress(1))
+            RandomAddress = Array(CByte(&H01), CByte(nRandomNum))
+        End If
+
+    End Function
+
+    Public Property Get AddOid
+        AddOid = m_lAddOid
+    End Property
+
+    Public Property Get DelOid
+        DelOid = m_lDelOid
+    End Property
+
+    Public Property Get MaxListSize
+        MaxListSize = m_lMaxSize
+    End Property
+
+    Public Property Get OldOid
+        OldOid = m_lOldOid
+    End Property
+
+    Public Property Get AddressLen
+        AddressLen = m_lAddrLen
+    End Property
+
+    '--------------------------------------------------------------------------
+    ' Adds the new multicast address using the new NDIS 6.0 multicast oids
+    Public Function AddAddress (oOpenInstance, ByVal NewAddr, lExpResult, ByRef lNdisStatus)
+        Dim BytesWritten, BytesNeeded
+
+        AddAddress = oOpenInstance.vbNdisRequest(m_lAddOid, NewAddr, m_lAddrLen, REQUEST_SET_INFO, _
+                              BytesWritten, BytesNeeded, lNdisStatus, FALSE)
+
+        If (lExpResult = SUCCESS) Then
+            ' Was expected to succeed, so investigate as to what went wrong
+            If (Not AddAddress) Then
+                Call oLog.Failed ("Unable to add address", 88888)
+            ElseIf (lNdisStatus = NDIS_STATUS_INVALID_OID) Then
+                Call oLog.Failed ("New OIDs not supported", 88888)
+                AddAddress = FALSE
+            ElseIf (lNdisStatus <> 0) Then
+                Call oLog.Failed ("Adding the address failed with NdisStatus 0x" & Hex(lNdisStatus), 88888)
+                AddAddress = FALSE
+            End If
+        ElseIf (lExpResult = FAILURE) Then
+            If (AddAddress And lNdisStatus <> NDIS_STATUS_INVALID_OID) Then
+                If (lNdisStatus = 0) Then
+                    Call oLog.Failed ("Should have failed in adding the address", 88888)
+                End If
+            End If
+        End If
+    End Function
+
+    '--------------------------------------------------------------------------
+    ' Deletes a multicast address using the new NDIS 6.0 multicast oids
+    Public Function DeleteAddress (oOpenInstance,ByVal OldAddr, lExpResult, ByRef lNdisStatus)
+        Dim BytesWritten, BytesNeeded
+
+        DeleteAddress = oOpenInstance.vbNdisRequest(m_lDelOid, OldAddr, m_lAddrLen, REQUEST_SET_INFO, _
+                                 BytesWritten, BytesNeeded, lNdisStatus, FALSE)
+
+        If (lExpResult = SUCCESS) Then
+            ' Was expected to succeed, so investigate as to what went wrong
+            If (Not DeleteAddress) Then
+                Call oLog.Failed ("Unable to delete address", 88888)
+            ElseIf (lNdisStatus = NDIS_STATUS_INVALID_OID) Then
+                Call oLog.Failed ("New OIDs not supported", 88888)
+                DeleteAddress = FALSE
+            ElseIf (lNdisStatus <> 0) Then
+                Call oLog.Failed ("Deleting the address failed with NdisStatus 0x" & Hex(lNdisStatus), 88888)
+                DeleteAddress = FALSE
+            End If
+        ElseIf (lExpResult = FAILURE) Then
+            If (DeleteAddress And lNdisStatus <> NDIS_STATUS_INVALID_OID) Then
+                If (lNdisStatus = 0) Then
+                    Call oLog.Failed ("Should have failed in deleting the address", 88888)
+                End If
+            End If
+        End If
+    End Function
+
+    '--------------------------------------------------------------------------
+    ' Attempts to obtain and set the multicast addresses using old multicast oids
+    Public Function TestOldAPI(oOpenInstance, lNdisStatus)
+        Dim BytesWritten, BytesNeeded
+        Dim AddrList()
+        Dim bResult
+        Dim lListLen
+
+        lListLen = 6 * m_lMaxSize
+
+        ReDim AddrList(lListLen)
+        bResult = oOpenInstance.vbNdisRequest(m_lOldOid, AddrList, lListLen, REQUEST_QUERY_INFO, _
+                           BytesWritten, BytesNeeded, lNdisStatus, FALSE)
+        If (bResult And lNdisStatus = 0) Then
+            lListLen = BytesWritten
+            bResult = oOpenInstance.vbNdisRequest(m_lOldOid, AddrList, lListLen, REQUEST_SET_INFO, _
+                           BytesWritten, BytesNeeded, lNdisStatus, FALSE)
+        End If
+
+        TestOldAPI = bResult
+    End Function
+
+    '--------------------------------------------------------------------------
+    ' Returns the number of unused entries in the multicast address list
+    Public Function MaxUnusedListSize (oCard)
+        Dim bResult
+        Dim BytesWritten, ErrStatus
+        Dim lListLength
+        Dim AddrList()
+        Dim lMaxList
+
+        If (m_lAddrLen = 4) Then
+            ' 802_5: Maximum number of functional addresses is 31
+            MaxUnusedListSize = 31
+            Exit Function
+        End If
+
+        bResult = oCard.vbNdisIOControl(m_lOldOid, AddrList, BytesWritten, ErrStatus, QUERY_GLOBAL_STATS)
+
+        ' The length of an array that holds, say 6 elements is allocated as 5 but uses
+        ' an extra 0th element, so to get the actual length, add 1 to the length returned.
+
+        If (bResult) Then
+            lListLength = UBound(AddrList) + 1
+            If ((lListLength \ 6) <> 0) Then
+                oLog.Write("INFO: Multicast addresses in use by other active bindings." )
+                oLog.Write("      Ndis Tester will adjust list size accordingly." )
+                MaxUnusedListSize = m_lMaxSize - (lListLength \ 6)
+            End If
+        Else
+            oLog.Write("Failed to get used list. Assuming none used.")
+            MaxUnusedListSize = m_lMaxSize
+        End If
+
+        If (MaxUnusedListSize > 256) Then
+                oLog.Write("List size greater than 256. ")
+                oLog.Write("Only 256 will be tested" )
+                MaxUnusedListSize = 256
+        End If
+    End Function
+End Class
+
+</script>
+</job>
+</package>
+
+
+<!--- CRC = 0x46ac58ad --->

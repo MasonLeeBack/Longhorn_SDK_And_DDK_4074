@@ -1,0 +1,480 @@
+<package>
+<SCRIPTDEF>
+<RUNORDER>
+1903
+</RUNORDER>
+<MEDIA>
+802_3
+</MEDIA>
+<PHYMEDIA>
+WIRELESSLAN
+</PHYMEDIA>
+<WHQL>
+802_3
+</WHQL>
+<CARDMACH>
+2C,1M,2M
+</CARDMACH>
+<DESCRIPTION>
+<![CDATA[]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+	<job id="Job" prompt="no">
+		<?job error="true" debug="true"?>
+		<reference guid="{97B1B574-D0D4-4896-93B6-A2679336A8E1}" version="1.0"/>
+		<reference object="NDInfo.Info.1" version="1.0"/>
+		<reference object="NDTCore.base.1" version="1.0"/>
+		<object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+		<object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+		<object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+		<object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+		<object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+		<!-- Begin Wireless Specific Includes -->
+		<script language="VBScript" src="..\inc\CNDTStructMngr.vbs"/>
+		<script language="VBScript" src="..\inc\WlanConstants.vbs"/>
+		<script language="VBScript" src="..\inc\WlanLibrary.vbs"/>
+		<script language="VBScript" src="..\inc\CNDT1XSupp.vbs"/>
+		<script language="VBScript" src="..\inc\CWlanOpen.vbs"/>
+		<script language="VBScript" src="..\inc\CWlanCard.vbs"/>
+		<!-- End Wireless Specific Includes -->
+		<script language="VBScript" src="..\inc\Events.vbs"/>
+		<script language="VBScript" src="..\inc\clog.vbs"/>
+		<script language="VBScript" src="..\inc\Constants.vbs"/>
+		<script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+		<script language="VBScript" src="..\inc\utilities.vbs"/>
+		<script language="VBScript" src="..\inc\devchars.vbs"/>
+		<script language="VBScript" src="..\inc\general.vbs"/>
+		<script language="VBScript">
+Option Explicit 
+Dim oTest : Set oTest = Nothing
+
+Initialize()
+
+Do
+
+   Set oTest = New CTest
+   If(oTest.SetupTest(GetTestAdapterIndex(oNDInfo.AdapterList, 0), GetSupportAdapterIndex(oNDInfo.AdapterList, 0)) = False) Then
+      Exit Do
+   End If
+   
+   oTest.RunTest()
+   
+Loop While(False)
+
+oTest.CleanupTest()
+Set oTest = Nothing
+
+Terminate()
+
+Class CTest
+   
+   Private m_testCard
+   Private m_testOpen
+   Private m_testIndex
+   Private m_testGUID
+   
+   Private m_suppCard
+   Private m_suppOpen
+   Private m_suppIndex
+   Private m_suppGUID
+   
+   Private m_adapterList
+      
+   '================================================================================================='
+   Private Sub Class_Initialize
+      
+      Set m_adapterList = oNDInfo.AdapterList
+     
+   End Sub
+   
+   '================================================================================================='
+   Private Sub Class_Terminate
+   
+      Set m_testCard       = Nothing
+      Set m_testOpen       = Nothing
+      
+      Set m_suppCard       = Nothing
+      Set m_suppOpen       = Nothing
+      
+   End Sub
+   
+   '================================================================================================='
+   Public Function SetupTest(byval testIndex, byval suppIndex)
+   Dim result        : result       = -1
+   Dim ndisStatus    : ndisStatus   = -1
+   
+      SetupTest = False
+
+      m_testIndex = testIndex
+      m_suppIndex = suppIndex
+      
+      m_testGUID  = m_adapterList(m_testIndex).GUID
+      m_suppGUID  = m_adapterList(m_suppIndex).GUID
+
+      '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+      oLog.VariationEx "Setup test", Null
+      Do
+      
+         Set m_testCard = New CWlanCard
+         If (m_testCard is Nothing) Then
+            oLog.FailedEx "Failed to create CWlanCard class", Null, 88888
+            Exit Do
+         End If
+                  
+         Set m_testOpen = m_testCard.vbSetupBasicTest(m_adapterList(m_testIndex))
+         If (m_testOpen is Nothing) Then
+            Exit Do
+         End If
+         
+         Set m_suppCard = New CWlanCard
+         If (m_suppCard is Nothing) Then
+            oLog.FailedEx "Failed to create CWlanCard class", Null, 88888
+            Exit Do
+         End If
+                  
+         Set m_suppOpen = m_suppCard.vbSetupBasicTest(m_adapterList(m_suppIndex))
+         If (m_suppOpen is Nothing) Then
+            Exit Do
+         End If
+                       
+      Loop While(False)
+                 
+      SetupTest = True
+      
+   End Function
+   
+   '================================================================================================='
+   Public Function CleanupTest()
+   Dim ndisStatus    : ndisStatus   = -1
+	   
+	   m_testOpen.vbWlanReset(True)
+	   m_suppOpen.vbWlanReset(True)
+	   
+      oLog.Write ""
+	   oLog.Write "<b>TEST DEVICE TYPE:    " & vbDeviceTypeToString(m_testOpen.vbDeviceType) & "</b>"
+	   oLog.Write "<b>SUPPORT DEVICE TYPE: " & vbDeviceTypeToString(m_suppOpen.vbDeviceType) & "</b>"  
+	   oLog.Write ""
+	   
+   End Function
+  
+   '================================================================================================='
+   Function RunTest()
+               
+      ' 802.11b Only
+      If(m_testOpen.vbDeviceType = WLAN_DEVICE_TYPE_802_11B) Then
+        
+         If(ExecuteTest(WLAN_WEP_AP1) = False) Then
+         End If
+        
+      End If
+      
+      ' 802.11g Only
+      If(m_testOpen.vbDeviceType = WLAN_DEVICE_TYPE_802_11G) Then
+        
+        If(ExecuteTest(WLAN_WEP_AP1) = False) Then
+        End If
+        
+        If(ExecuteTest(WLAN_WEP_AP2) = False) Then
+        End If
+        
+      End If
+      
+      ' 802.11a/b
+      If(m_testOpen.vbDeviceType = WLAN_DEVICE_TYPE_802_11AB) Then
+        
+        If(ExecuteTest(WLAN_WEP_AP1) = False) Then
+        End If
+        
+        If(ExecuteTest(WLAN_WEP_AP2) = False) Then
+        End If
+        
+      End If
+      
+      ' 802.11a/g
+      If(m_testOpen.vbDeviceType = WLAN_DEVICE_TYPE_802_11AG) Then
+        
+        If(ExecuteTest(WLAN_WEP_AP1) = False) Then
+        End If
+        
+        If(ExecuteTest(WLAN_WEP_AP2) = False) Then
+        End If
+        
+        If(ExecuteTest(WLAN_WEP_AP3) = False) Then
+        End If
+        
+      End If
+      
+   End Function
+   
+   '================================================================================================='
+   Function ExecuteTest(byval testSsid)
+   Dim wepKey              : Set wepKey            = Nothing
+   Dim index               : index                 = 0
+   Dim retval	            : retval	               = False
+   Dim ndisStatus          : ndisStatus            = -1
+   Dim connectStatus       : connectStatus         = 0
+   Dim packetsReceived     : packetsReceived       = 0
+   Dim packetsToSend       : packetsToSend         = 50
+   Dim packetsSent         : packetsSent           = 0
+   Dim minDirectedPass     : minDirectedPass       = (WLAN_PERCENT_TO_PASS_DIRECTED * packetsToSend) / 100
+   Dim minBroadcastPass    : minBroadcastPass      = (WLAN_PERCENT_TO_PASS_BROADCAST * packetsToSend) / 100
+   Dim authenticationMode  : authenticationMode    = -1
+   DIm encryptionStatus    : encryptionStatus      = -1
+   
+      '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'                   
+      oLog.VariationEx  "Verify setting OID_802_11_RELOAD_DEFAULTS does not cause disconnect", _
+                        "This test will set OID_802_11_RELOAD_DEFAULTS and verify it does not " & _
+                        "cause the device to disconnect"
+      Do
+         
+         If(m_testOpen.vbWlanReset(True) = False) Then
+            oLog.Failed "vbWlanReset() failed", 88888
+            Exit Do
+         End If 
+                           
+         ndisStatus = m_testOpen.vbAssociate(Ndis802_11Infrastructure,  _
+                                             Ndis802_11AuthModeOpen,    _
+                                             Ndis802_11WEPEnabled,      _
+                                             &H80000000&,               _
+                                             WLAN_KEY_WEP,              _
+                                             Null,                      _
+                                             testSsid,                  _
+                                             WLAN_ASSOCIATE_TIMEOUT)      
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.FailedEx "Failed to associate with " & testSsid, Null, 88888
+            Exit Do
+         End If	 
+                         
+         ndisStatus = m_testOpen.vbSetWlanReloadDefaults(Ndis802_11ReloadWEPKeys)
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.FailedEx  "Failed to set OID_802_11_RELOAD_DEFAULTS", _
+                           "Driver must support setting OID_802_11_RELOAD_DEFAULTS", 88888
+            Exit Do
+         End If   
+         
+         ndisStatus = m_testOpen.vbMediaConnectStatus(connectStatus)
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to get media connect status", 88888
+            Exit Do
+         End If
+                                       
+         If(connectStatus = WLAN_MEDIA_DISCONNECTED) Then
+            oLog.FailedEx  "Media connect status should not have been disconnected", _
+                           "Setting OID_802_11_RELOAD_DEFAULTS should not cause the device to disconnect", 88888
+            Exit Do
+         End If
+                                
+      Loop While(False)
+      
+      '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+      oLog.VariationEx  "Verify setting OID_802_11_RELOAD_DEFAULTS does not change the authentication mode", _
+                        "This test will set OID_802_11_RELOAD_DEFAULTS and verify the authentication mode does not change" 
+      Do
+         
+         If(m_testOpen.vbWlanReset(True) = False) Then
+            oLog.Failed "vbWlanReset() failed", 88888
+            Exit Do
+         End If 
+                           
+         ndisStatus = m_testOpen.vbAssociate(Ndis802_11Infrastructure,  _
+                                             Ndis802_11AuthModeOpen,    _
+                                             Ndis802_11WEPEnabled,      _
+                                             &H80000000&,               _
+                                             WLAN_KEY_WEP,              _
+                                             Null,                      _
+                                             testSsid,                  _
+                                             WLAN_ASSOCIATE_TIMEOUT)      
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.FailedEx "Failed to associate with " & testSsid, Null, 88888
+            Exit Do
+         End If	 
+                         
+         ndisStatus = m_testOpen.vbSetWlanReloadDefaults(Ndis802_11ReloadWEPKeys)
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to set OID_802_11_RELOAD_DEFAULTS", 88888
+            Exit Do
+         End If   
+                   
+         ndisStatus = m_testOpen.vbGetWlanAuthentication(authenticationMode)
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+             oLog.Failed "Failed to query OID_802_11_AUTHENTICATION_MODE", 88888
+             Exit Do
+         End If     
+         
+         If(authenticationMode <> Ndis802_11AuthModeOpen) Then
+            oLog.FailedEx  "OID_802_11_AUTHENTICATION_MODE should have returned Ndis802_11AuthModeOpen", _
+                           "Driver must not change the authentication mode after OID_802_11_RELOAD_DEFAULTS has been set", 88888
+         End If
+                                  
+      Loop While(False)
+      
+      '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+      oLog.VariationEx  "Verify setting OID_802_11_RELOAD_DEFAULTS changes encryption status", _
+                        "This test will set OID_802_11_RELOAD_DEFAULTS and verify the encription status is changed to Ndis802_11Encryption1KeyAbsent" 
+      Do
+         
+         If(m_testOpen.vbWlanReset(True) = False) Then
+            oLog.Failed "vbWlanReset() failed", 88888
+            Exit Do
+         End If 
+                           
+         ndisStatus = m_testOpen.vbAssociate(Ndis802_11Infrastructure,  _
+                                             Ndis802_11AuthModeOpen,    _
+                                             Ndis802_11WEPEnabled,      _
+                                             &H80000000&,               _
+                                             WLAN_KEY_WEP,              _
+                                             Null,                      _
+                                             testSsid,                  _
+                                             WLAN_ASSOCIATE_TIMEOUT)      
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.FailedEx "Failed to associate with " & testSsid, Null, 88888
+            Exit Do
+         End If	 
+                         
+         ndisStatus = m_testOpen.vbSetWlanReloadDefaults(Ndis802_11ReloadWEPKeys)
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to set OID_802_11_RELOAD_DEFAULTS", 88888
+            Exit Do
+         End If   
+                  
+         ndisStatus = m_testOpen.vbGetWlanEncryptionStatus(encryptionStatus)
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+             oLog.Failed "Failed to query OID_802_11_ENCRYPTION_STATUS", 88888
+             Exit Do
+         End If        
+     
+         If(encryptionStatus = Ndis802_11Encryption1KeyAbsent) Then
+            oLog.WarnedEx  "OID_802_11_ENCRYPTION_STATUS should have returned Ndis802_11Encryption1KeyAbsent", _
+                           "Driver should have changed the encryption status to Ndis802_11Encryption1KeyAbsent unless WEP keys were loaded from the card"
+         End If
+                                             
+      Loop While(False)
+      
+      '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'     
+      oLog.VariationEx  "Verify setting OID_802_11_RELOAD_DEFAULTS removes all default WEP keys", _
+                        "This test will send\recv using default WEP keys then set " & _ 
+                        "OID_802_11_RELOAD_DEFAULTS and verify packets can no longer be received" 
+      Do
+         
+         If(m_testOpen.vbWlanReset(True) = False) Then
+            oLog.Failed "vbWlanReset() failed", 88888
+            Exit Do
+         End If 
+         
+         If(m_suppOpen.vbWlanReset(True) = False) Then
+            oLog.Failed "vbWlanReset() failed", 88888
+            Exit Do
+         End If 
+         
+         ndisStatus = m_suppOpen.vbAssociate(Ndis802_11Infrastructure,  _
+                                             Ndis802_11AuthModeOpen,    _
+                                             Ndis802_11WEPEnabled,      _
+                                             &H80000000&,               _
+                                             WLAN_KEY_WEP,              _
+                                             Null,                      _
+                                             testSsid,                  _
+                                             WLAN_ASSOCIATE_TIMEOUT)      
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.FailedEx "Failed to associate with " & testSsid, Null, 88888
+            Exit Do
+         End If	 
+                       
+         ndisStatus = m_testOpen.vbAssociate(Ndis802_11Infrastructure,  _
+                                             Ndis802_11AuthModeOpen,    _
+                                             Ndis802_11WEPEnabled,      _
+                                             &H80000000&,               _
+                                             WLAN_KEY_WEP,              _
+                                             Null,                      _
+                                             testSsid,                  _
+                                             WLAN_ASSOCIATE_TIMEOUT)      
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.FailedEx "Failed to associate with " & testSsid, Null, 88888
+            Exit Do
+         End If	 
+         
+         If(m_testOpen.vbDirectedSend(m_suppOpen, packetsToSend, packetsSent, packetsReceived) = False) Then   
+            oLog.FailedEx "vbDirectedSend() failed", Null, 88888
+            Exit Do
+         End If
+                  
+         If(packetsReceived < minDirectedPass) Then
+            oLog.Failed "Received less than the required amount of directed packets (Received: " & packetsReceived & ", Expected: " & minDirectedPass & ")", 88888
+         End If
+           
+         ndisStatus = m_testOpen.vbSetWlanReloadDefaults(Ndis802_11ReloadWEPKeys)
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to set OID_802_11_RELOAD_DEFAULTS", 88888
+            Exit Do
+         End If   
+         
+         If(m_testOpen.vbDirectedSend(m_suppOpen, packetsToSend, packetsSent, packetsReceived) = False) Then   
+            oLog.FailedEx "vbDirectedSend() failed", Null, 88888
+            Exit Do
+         End If
+                  
+         If(packetsReceived <> 0) Then
+            oLog.FailedEx "No directed packets should have been received (Received: " & packetsReceived & ", Expected: 0)", _
+                          "Driver should have removed all default WEP keys and restored any keys from permanent storage, " & _
+                          "since the stored keys are not the same as the keys used to send in this test or there are no keys available " & _
+                          "the packets should not have been received", 88888
+         End If
+                   
+      Loop While(False)
+      
+      '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'     
+      oLog.VariationEx  "Verify setting OID_802_11_RELOAD_DEFAULTS does not disconnect the device", _
+                        "This test will set OID_802_11_RELOAD_DEFAULTS after the device is associated " & _ 
+                        "and then verify the device does not disassociate" 
+      Do
+         
+         If(m_testOpen.vbWlanReset(True) = False) Then
+            oLog.Failed "vbWlanReset() failed", 88888
+            Exit Do
+         End If 
+         
+         If(m_suppOpen.vbWlanReset(True) = False) Then
+            oLog.Failed "vbWlanReset() failed", 88888
+            Exit Do
+         End If 
+         
+         ndisStatus = m_suppOpen.vbAssociate(Ndis802_11Infrastructure,  _
+                                             Ndis802_11AuthModeOpen,    _
+                                             Ndis802_11WEPEnabled,      _
+                                             &H80000000&,               _
+                                             WLAN_KEY_WEP,              _
+                                             Null,                      _
+                                             testSsid,                  _
+                                             WLAN_ASSOCIATE_TIMEOUT)      
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.FailedEx "Failed to associate with " & testSsid, Null, 88888
+            Exit Do
+         End If	 
+                    
+         ndisStatus = m_testOpen.vbSetWlanReloadDefaults(Ndis802_11ReloadWEPKeys)
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to set OID_802_11_RELOAD_DEFAULTS", 88888
+            Exit Do
+         End If   
+         
+         ' Wait 10 seconds before checking for disconnect
+         WScript.Sleep(10000)
+         
+         If(m_testOpen.vbMediaConnectStatus(connectStatus) = False) Then
+            oLog.FailedEx  "Connect status should not be disconnected", _
+                           "Device should not disconnect after OID_802_11_RELOAD_DEFAULTS is set", 88888
+            Exit Do
+         End If
+         
+         
+                   
+      Loop While(False)
+      
+      
+   End Function
+       
+End Class
+
+	</script>
+</job>
+</package>
+<!--- CRC = 0x132afe8f --->

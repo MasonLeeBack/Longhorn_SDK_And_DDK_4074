@@ -1,0 +1,364 @@
+<HTML>
+<HEAD>
+   <META HTTP-EQUIV="Content-Type" CONTENT="text/html; charset=iso-8859-1">
+   <TITLE>Getting Started</TITLE></HEAD>
+<BODY LINK="#0000ff" VLINK="#800080" BGCOLOR="#ffffff">
+<!----------------------  TITLE  -------------------------->
+<FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>
+<B><FONT FACE="Verdana" SIZE=+3>Getting Started</FONT></B> 
+
+<!----------------------  Description  -------------------->
+<P><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>The Microsoft<SUP>®</SUP> Windows<SUP>®</SUP> codename "Longhorn" Driver Kit (LDK) provides a development environment for creating drivers for Windows Longhorn, Microsoft Windows Server&trade; 2003, Microsoft Windows XP, and Microsoft Windows 2000. The LDK provides additional driver-specific headers, libraries, sources, tools, test frameworks, and documentation that are used to develop drivers for Windows Longhorn. </FONT>
+
+<P><!-------------------- Legal Bits ---------------->
+<B><FONT FACE="Verdana" SIZE=+2>Legal Information</FONT></B>
+<P>
+
+<FONT FACE="Verdana, Arial, Times New Roman" SIZE=-1>This document is for informational purposes only. MICROSOFT
+MAKES NO WARRANTIES, EXPRESS OR IMPLIED, IN THIS DOCUMENT.</FONT>
+
+<P><FONT FACE="Verdana, Arial, Times New Roman" SIZE=-1>Microsoft may have
+patents, patent applications, trademarks, copyrights, or other intellectual
+property rights covering subject matter in this document. <span class=GramE>Except
+as expressly provided in any written license agreement from Microsoft, the
+furnishing of this document does not give you any license to these patents,
+trademarks, copyrights, or other intellectual property.</FONT>
+
+<P><FONT FACE="Verdana, Arial, Times New Roman" SIZE=-1>Information in this
+document is subject to change without notice and is provided for informational
+purposes only. The entire risk of the use or results of the use of this document
+remains with the user, and Microsoft Corporation makes no warranties, either
+express or implied. The names of companies, products, people, characters,
+and/or data mentioned herein are fictitious and are in no way intended to
+represent any real individual, company, product, or event, unless otherwise
+noted. Complying with all applicable copyright laws is the responsibility of
+the user. No part of this document may be reproduced or transmitted in any form
+or by any means, electronic or mechanical, for any purpose, without the express
+written permission of Microsoft Corporation.</FONT>
+
+<P><FONT FACE="Verdana, Arial, Times New Roman" SIZE=-1>Microsoft, MSDN, Windows, Windows NT, and Windows Server 2003  are either
+registered trademarks or trademarks of Microsoft Corporation in the United
+States and/or other countries. Other product and company names mentioned herein
+may be the trademarks of their respective owners.</FONT>
+
+<P><FONT FACE="Verdana, Arial, Times New Roman" SIZE=-1>©2004 Microsoft
+Corporation. All rights reserved. <br>
+&nbsp;<br></FONT>
+
+<!--------  Purpose ---------------->
+<B><FONT FACE="Verdana" SIZE=+2>Introduction</FONT></B>
+
+<P>
+<FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>This document presents an
+overview of the Microsoft Windows Longhorn Driver Kit (LDK) and provides essential installation information for this driver development kit. Before installing the LDK, read through this document
+to determine whether to install optional LDK components and to learn how to set
+up your systems for a trouble-free installation. This document contains the
+following topics:</FONT>
+
+
+<P><!------------- ToC -------------->
+<UL>
+<LI><A href="install.htm#INSTALL"><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>Installing the LDK</FONT></A>
+<LI><A href="install.htm#DBG"><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>Installing the Debuggers</FONT></A>
+<LI><A href="install.htm#VERIFY"><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>Verifying LDK Installation</FONT></A>
+<LI><A href="install.htm#INFO"><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>Information on the Microsoft Web Site</FONT></A>
+<LI><A href="install.htm#NEWS"><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>Late-Breaking News</FONT></A></LI>
+<LI><A href="install.htm#FEEDBACK"><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>Provide feedback on the Longhorn Driver Kit</FONT></A></LI>
+</UL>
+
+
+<FONT FACE="Verdana" SIZE=+2><B>Please Read The Release Notes</B></FONT> <FONT FACE="Verdana, Arial, Times New Roman" SIZE=2> (<A href="relnote.htm">Click here to read the Release Notes now!</A>)</FONT>
+
+<P>
+<FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>Some information in the LDK has changed and might affect driver compatibility among different 
+versions of Windows. After installing the LDK, it is essential that you read the release notes. For your convenience, you can do this by clicking 
+<B>Start</B> on the taskbar, pointing to <B>Development Kits</B>, and clicking <B>Windows Longhorn Driver Kit</B>. After the Windows Longhorn Driver Kit opens, on the <B>Help</B> menu, click <B>Release Notes</B>.
+</FONT>
+
+
+<P><!------ Installing --->
+<P>
+<A NAME="INSTALL"></A><B><FONT FACE="Verdana" SIZE=+2>Installing the LDK</FONT></B>
+
+<P><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>
+To install the Microsoft Windows Longhorn Driver Kit, you must be able to access the media from Windows, either locally or through a network.</FONT>
+
+<P><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>  
+A development machine running Microsoft Windows NT® 4.0, Microsoft Windows 95, Microsoft Windows 98, or Microsoft Windows ME is not supported when developing drivers for Windows 2000, Windows XP, Windows Server 2003, or Windows Longhorn.</FONT>
+
+<P><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>Developing 16-bit drivers, such as virtual device driver (VxD) and Windows ME, is not supported on a Windows 64-bit platform.</FONT>
+
+<P><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>The LDK Test Harness provides end-to-end support for automated testing of Windows-based drivers and hardware, and is directed at those who use the LDK to test, validate, and certify drivers.  The Test Harness provides an automated, deployable framework for managing tests for development teams that create hardware and drivers for Windows and validate Windows configurations.</FONT>
+ 
+
+<P><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>The LDK Test Harness is an initial preview that does not show full functionality.  It does show the basic structure of the tool and the user flow as it will be implemented in the Longhorn timeframe.
+</FONT>
+
+<P><B><FONT FACE="Verdana" SIZE=+1>System Requirements</FONT></B><P>
+
+
+<FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>The system requirements for using this LDK on a <B>driver-development</B> computer are:
+<P>
+<UL>
+<LI>Microsoft Windows Longhorn, Windows Server 2003, Windows XP, Windows XP Service Pack 1, or Windows 2000. 
+<LI>CD-ROM or DVD drive.
+<LI>At least 128MB RAM. (256MB of RAM or more is recommended).
+<LI>At least a 574MB hard-disk space for a full 
+  installation. Significantly more space may be required to compile all samples; 
+  up to 920MB.</LI>                        
+</UL></FONT>
+<P>
+
+<BR><FONT FACE="Verdana, Arial,Times New Roman" SIZE=2>The system requirements for using this LDK on a <B>driver-testing</B> computer are:
+<P>
+<UL>
+<LI>Windows Longhorn, Windows Server 2003, Windows XP, Windows XP Service Pack 1, or Windows 2000. Builds may be retail, free, or checked.
+<LI>At least 128MB of RAM.  For <i>checked</i> builds, 256 MB or more of RAM is recommended.
+<LI>A second computer that can run Windows 2000, Windows XP, or Windows Server 2003 for kernel debugging of your drivers under development.  If desired, this computer can be your driver-development system.</LI>                               
+</UL>
+</FONT>
+<P>
+
+<BR><FONT FACE="Verdana, Arial,Times New Roman" SIZE=2>The system requirements for using this LDK on a <B>Test Controller</B> computer are:
+<P>
+<UL>
+<LI>Windows Longhorn, Windows Server 2003, or Windows XP Service Pack 1.
+<LI>CD-ROM or DVD drive.
+<LI>At least 128MB RAM. (256MB of RAM or more is recommended).
+<LI>At least 59 MB of hard disk space for a full installation. Significantly more space may be required to load all test content.
+<LI>Microsoft SQL Server 2000 Desktop Engine (MSDE).  See “Microsoft SQL Server 2000 Desktop Engine (MSDE Installation)” below.
+<LI>Microsoft .NET Framework version 1.1. (You can download and execute this Web package from the Internet).
+</LI>                               
+</UL>
+</FONT>
+
+<!-------------- LDK Install ------------->
+<P><B><FONT FACE="Verdana" SIZE=+1>LDK Installation</FONT></B>
+<P>
+<P>
+
+<TABLE BORDER=0 CELLSPACING=0 CELLPADDING=0 WIDTH="90%">
+  <TBODY>
+<TR VALIGN=top><TD ALIGN=left><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2><B>Note:&nbsp;&nbsp;&nbsp;</B></FONT></TD>
+<TD ALIGN=left><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>To correctly install the LDK, you must have Administrator privileges.</TD></TR>
+<TR VALIGN=top><TD ALIGN=left><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2><B>Note:&nbsp;&nbsp;&nbsp;</B></FONT></TD>
+<TD ALIGN=left><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>If a type of installation (see step 6 below) is not available, this normally indicates that all system requirements have not been met.</TD></TR>
+<TR VALIGN=top><TD ALIGN=left><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2><B>Note:&nbsp;&nbsp;&nbsp;</B></FONT></TD>
+<TD ALIGN=left><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>Installation of the LDK Test Harness Controller includes the LDK Test Harness Studio by default.</TD></TR>
+<TR VALIGN=top><TD ALIGN=left><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2><B>Note:&nbsp;&nbsp;&nbsp;</B></FONT></TD>
+<TD ALIGN=left><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>Do <B>not</B> install this LDK over previous versions of this LDK or any other Driver Development Kit (DDK).  Improper installation of the LDK can cause the use of old and incorrect files, which leads to unreliable
+results in any drivers that you develop.</TD></TR>
+
+<TR VALIGN=top><TD ALIGN=left><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2><B>Note:&nbsp;</B></FONT></TD>
+<TD ALIGN=left><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>The installation path and icon placement have changed. The default
+installation path is now x:\WinDDK\Kit &lt;BldNum&gt;. The icons can be found at <I>Programs\Development Kits\Windows LDK &lt;BldNum&gt;</I>.
+</TD></TR></TBODY></TABLE>
+<P>
+<!-------------- Step by Step Installation ------------->
+<B>To install the LDK:</B>
+<p>
+<OL>
+<LI>From the media, run the <A href="setup.exe">setup.exe</A> file.
+<LI>If installing on a Windows 2000 computer, click <B>Run the program from it's current location</B>.  If installing on a Windows Longhorn, Windows Server 2003 or Windows XP computer, click <B>Open</B>.
+<LI>To install the LDK, click <b>Next</b>.
+<LI>Read and accept the <B>Software License Agreement</B>, and then click <B>Next</B>.
+<LI>Select the installation path (it is suggested to use the path that appears), and click <B>Next</B>.
+<LI>Choose the type of installation that you want, and then click <B>Next</B>:
+<UL>
+<LI><B>Development System</B> installs development tools and content.
+<LI><B>Test Server</B> installs LDK Test Harness Controller.
+<LI><B>System under Test</B> installs the LDK Test Harness Client.
+</UL>
+<TR VALIGN=top><TD ALIGN=left><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2><B>Note:&nbsp;&nbsp;&nbsp;</B></FONT></TD>
+<TD ALIGN=left><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>To select the <B>System Under Test</B> check box, you might have to clear the <B>Development System</B> check box.
+
+<LI>Select the components that you want to install, and then click <B>Next</B>.
+<LI>If you selected <B>Development System</B> in step 6, select one of the following under <B>Test Harness Controller Information</B>, and then click <B>Next</B>:
+<UL>
+<LI>If the Test Harness Controller is the local computer, select the <B>Local computer</B> check box.
+<LI>If the Test Harness Controller is on another computer, select the <B>Remote computer</B> check box and type the computer name. 
+<LI>If you selected <B>Test Server</B> in step 6, type the following <B>Test Server Information</B> in the text boxes, and then click <B>Next</B>:
+<LI><B>Account name</B>: Your domain or local user name.
+<LI><B>Password</B>: Your domain or local password that is associated with the user name above.
+<LI></B>Domain</B>: Your domain name. If your computer is on a workgroup, you must type the computer name.
+<LI><B>Database name</B>: Any user-defined name for the database (such as MYDATABASE).
+<LI><B>SA Password</B>: The sapwd (such as <b>"&lt;a secure password&gt;"</b>) that you supplied during MSDE setup.
+<LI>If you selected <B>System under Test</B> in step 6, select one of the following under <B>Test Harness Controller Information</B>, and then click <B>Next</B>:
+<LI>If the Test Harness Controller is the local computer, select <B>Local computer</B>.
+<LI>If the Test Harness Controller is on another computer, select <B>Remote computer</B> and type the computer name in the text box.
+</UL>
+<LI>To confirm that you want to install the LDK, verify that the installation path is correct. 
+<LI>To install the LDK, click <b>Next</b>.
+<LI>After the installation is complete, click <b>Finish</b>.
+</OL>
+<TR VALIGN=top><TD ALIGN=left><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2><B>Note:&nbsp;&nbsp;&nbsp;</B></FONT></TD>
+<TD ALIGN=left><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>Before installing the LDK Test Harness, you must download and install the most current version of MSDE to your computer. Because MSDE provides the required datastore for the Test Harness, you cannot install the Test Harness component of the LDK unless you install MSDE first. Currently, you cannot install MSDE and the LDK Test Harness on a computer that is running SQL Server.
+<P></FONT></P></TD></TR>
+</LI>
+
+<B>Microsoft SQL Server 2000 Desktop Engine (MSDE Installation) </B><p>
+
+<!-------------- MSDE Install ------------->
+<OL>
+<LI>From the computer where you want to install the Test Controller, download and execute the MSDE downloadable web package <A href="http://download.microsoft.com/download/8/7/5/875e38ea-e582-4ee2-9485-b459cd9c0082/sql2kdesksp3.exe">http://download.microsoft.com/download/8/7/5/875e38ea-e582-4ee2-9485-b459cd9c0082/sql2kdesksp3.exe</A> file from the Internet.
+<LI>To proceed, click <b>Open</b>. 
+<LI>In response to <B>Do you want to Run or Save sql2kdesksp3.exe from download.microsoft.com?</B>, click <b>Run</b>.
+<LI>Read and accept the Software License Agreement. 
+<LI>Select the default installation path.
+<LI>To extract the MSDE setup, click <b>Finish</b>, and wait for the extraction to complete.
+<LI>On the taskbar, Click <B>Start</B> and then click <B>Run</B>.  In the <B>Run</B> dialog box, type the path to which you saved the MSDE setup, followed by:
+<BR>
+<BR>
+\msde\setup securitymode=SQL disablenetworkprotocols=0 sapwd=<b>"&lt;a secure password&gt;"</b> instancename=MSLDK
+<BR>
+<BR>
+<B>Note:</B> Replace <b>"&lt;a secure password&gt;"</b> with your secure password.  When installing the Test Controller, you will need to supply this password.
+<BR>
+<BR>
+<LI>To launch the MSDE installation, press <B>ENTER</B> and wait for the installation to complete.
+</LI></OL>
+<P>
+
+<!-------------- Post Installation Initialization------------->
+
+<P>
+<b>LDK Test Harness Initialization</b>
+<p>
+<p>
+<b>NOTE:</b> Following installation of the LDK Test Harness Controller, Studio, and one or more Clients, perform the following steps to enable the user to schedule jobs against the client test systems.  
+<p>
+<OL>
+<LI>Click <B>Start</B>, point to <B>Programs</B>, and click <B>LDK Test Harness Studio</B>.
+<LI>On the <B>LDK Test Harness Studio</B> menu, point to <B>Asset</B>, then click <B>My Assets</B>.  The <B>Default Machine Pool</B> node and the <B>System</B> node should be visible.
+<LI>Select the <B>Default Machine Pool</B> node.
+<LI>To list the Controller and Client systems, click the <B>Search</B> button (Green Triangle).  These appear in the <B>Default Machine Pool</B> node after the Sysparse inventory is complete on each system, which may take up to 10 minutes to run following either Controller Setup or Client Setup.
+<LI>On the <B>Machine list</B> tab, select the machine name of the Controller and drag it to the <B>System</B> node.
+<LI>After the Controller is in the <B>System</B> node, right-click on the machine name and click <B>Edit Machine Details</B>.  In the <B>Machine Details</B> dialog box, add machine information to the required text boxes (those with the label in bold type).
+<UL>
+<LI>Change the <B>Machine Status</B> from <B>Manual</B> to <B>Ready</B>
+<LI>From the <B>Vendor Name</B> drop-down list, select an applicable vendor name, 
+<LI>From the <B>Vendor Division</B> drop-down list, select an applicable vendor division.
+<LI>From the <B>Model Name</B> drop-down list, select an applicable model name.
+<LI>From the <B>Series</B> drop-down list, select an applicable series.
+<LI>In the <B>Serial Number</B> text box, type a serial number.
+<LI>In the <B>Asset Tag</B> text box, type any six-digit number.
+<LI>From the <B>Machine Status</B> drop-down list, select <B>Ready</B>. 
+</UL>
+<LI>To save the machine details, click <B>Save</B>.
+<LI>Right-click the <B>$</B> node and select <B>Add Machine Pool</B>.
+<LI>Create a new machine pool, and select the <B>Controller</B> machine name as the job delivery agent.
+<LI>To list the Client systems, select the <B>Default Machine Pool</B> node, and click the <B>Search</B> button. 
+<LI>From the <B>Default Machine Pool</B>, select each of the Client systems and drag them to the newly created <B>Machine Pool</B>.
+<LI>To list the Client systems, select the new <B>Machine Pool</B> node, and click the <B>Search</B> button. 
+<LI>Right-click each Client machine name and <B>Edit Machine Details</B>.  For each Client system, set the <B>Machine Status</B> to <B>Ready</B>.
+<LI>The user is now able to schedule and run jobs on the Client machines.
+<P>
+</OL>
+<B>Note:</B> On systems with large hard disk sectors such as "FAT 16" file systems, the Setup program may miscalculate the amount of space that is needed to attempt an installation even though the space is unavailable.
+<br>
+<B>Note:</B> You can move multiple machines simultaneously by holding down CTRL, selecting the machines to be moved, and then right-clicking them to select the <B>Move Asset(s)</B> window.
+<P>
+
+<!-------------- Content Access (setting the Test Root) ------------->
+<P>
+<b>LDK Test Harness Job Content Access</b>
+<p>
+<p>
+<b>NOTE:</b> Following installation of the LDK Test Harness Controller and Studio, perform the following steps to enable the user to access the Test Harness Job Content provided as part of the LDK Test Harness.  
+<p>
+<OL>
+<LI>In the Test Studio, click on the <b>Admin</b> menu item, <span class=GramE>then</span> click on the <b>Parameters</b> menu item to launch the WTT Parameters dialog.
+<LI>Select your Test Controller in the <b>Show Parameters from the controller:</b> drop-down list box.
+<LI>Click on the TestRoot parameter, <span class=GramE>then</span> click the <b>Edit</b> button.
+<LI>In the <b>Value</b> field, type \\<b>&quot;Your Test Controller Name&quot;</b>\LDKTests. 
+<P>
+<b>Note:</b> the text <b>&quot;Your Test Controller Name&quot;</b> should be replaced by the name of the PC where you installed the test controller. For example, if you installed the Test Controller on a computer named MyController, you would type \\MyController\LDKTests. </p>
+
+
+<LI>Click on the <b>OK</b> button to close the <b>Edit Parameter</b> window.
+
+<LI>Click on the <b>Close</b> button to close the <b>WTT Parameters</b> window.
+</OL>
+<P>
+<P>
+
+<!-------------- Debugger Install ----------------------->
+<P><A NAME="DBG"></A><B><FONT FACE="Verdana" SIZE=+2>Installing the Debuggers</FONT></B></P>
+				
+<P><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>The Debugging Tools for Windows package features WinDbg, a powerful debugger with a graphical interface that can debug both user-mode and kernel-mode code. This package also includes the debuggers KD, NTSD, and CDB,
+and many additional tools. The documentation in this package describes the use of these debuggers and includes tips for user-mode and kernel-mode debugging.</FONT>
+
+<P><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>Debugging Tools for Windows is available in 32-bit and 64-bit
+versions. The 32-bit version is appropriate for most users. However, if you want to debug an application on a processor that is based on 64 bits, you should select the 64-bit version. The 64-bit version can be installed only on 64-bit versions of Windows.</FONT>
+
+<P><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>These debugging tools require approximately 21 MB of hard disk space.</FONT>
+
+<P><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>To obtain the most current version of Debugging Tools for Windows,
+see&nbsp; <a href="http://www.microsoft.com/whdc/ddk/debugging/default.mspx">Microsoft Debugging Tools</a>.</FONT>
+
+<P><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>If you cannot install Debugging Tools for Windows from this Internet
+site, then use one of the following links:</FONT>
+
+<p>
+<OL>
+<LI><A href="./Debuggers/setup_x86.exe">Install 32-bit Debugging Tools for Windows</a> (Required for most customers)
+<LI><A href="./Debuggers/setup_ia64.exe">Install 64-bit Debugging Tools for Windows</a></LI>
+</OL>
+
+
+<BR><!-------------- Verifying Your Installation ------------>
+<P><A NAME="VERIFY"></A>
+<B><FONT FACE="Verdana" SIZE=+2>Verifying Longhorn Driver Kit Installation</FONT></B>
+
+<P><FONT FACE="Verdana, Arial, Times New Roman" SIZE=2>To verify that you have properly installed the LDK, perform the following steps:</FONT>
+
+<p>
+<OL>
+<LI>Open a command window with environment variables set for a Windows Longhorn checked build environment, using the Programs/Development Kits/Windows LDK &lt;BldNum&gt;/Build Environments/Windows Longhorn/Windows Longhorn IA-32 Checked Build Environment menu item.
+
+<LI>In the command window, type the command <b>build</b> <b>-cZ</b>. This command compiles and links the complete set of installed sources. This can take more than 30 minutes to complete, depending on which LDK components are installed and the system on which the build is being performed.
+
+<LI>The build command should complete with no errors and 
+  no warnings displayed.</LI>           
+</OL>
+
+<p>
+<BR><!--- Information @ MicroSoft.com ------>
+<A NAME="INFO"><B><FONT FACE="Verdana" SIZE=+2>Microsoft® Web Sites containing additional LDK and DDK Information</FONT></B></A>
+<P>
+<B>Windows Hardware and Driver Central </B> <A HREF="http://www.microsoft.com/whdc/default.mspx">http://www.microsoft.com/whdc/default.mspx</A>
+<P>
+
+<P><B>Hardware and Driver Design </B> <A HREF="http://www.microsoft.com/whdc/hwdev/default.mspx">http://www.microsoft.com/whdc/hwdev/default.mspx</A>
+
+<P><B>Hardware and Driver Testing</B> <A HREF="http://www.microsoft.com/whdc/hwtest/default.mspx/">http://www.microsoft.com/whdc/hwtest/default.mspx/</A>
+
+<P><B>MSDN&trade;, Microsoft Developers Network</B> <A HREF="http://msdn.microsoft.com/">http://msdn.microsoft.com</A>
+
+<BR><!-------------------- Late Breaking News  -------------->
+
+<A NAME="NEWS"></A><P>
+
+<B><FONT FACE="Verdana"><FONT SIZE=+2>Late-Breaking News</B></FONT> (<A href="relnote.htm">Click here to read the Release Notes now!</A>)</FONT>
+<P>
+
+<FONT FACE="Verdana, Arial,Times New Roman" SIZE=2><P>For release notes and late-breaking news, see the 
+<A href="relnote.htm">Release Notes</A> file in the root directory. The <A href="setup.exe">setup.exe</A> file copies the release notes file from the 
+media to the root directory of the LDK installation.</A></FONT>
+
+<BR>&nbsp;<BR></FONT></P></SPAN></SPAN>
+
+<BR><!-------------------- Provide Feedback  -------------->
+
+<A NAME="FEEDBACK"></A><P>
+
+
+<B><FONT FACE="Verdana"><FONT SIZE=+2>Provide feedback on the Longhorn Driver Kit</B></FONT>
+<P>
+
+<FONT FACE="Verdana, Arial,Times New Roman" SIZE=2><P>To provide feedback on the kit, send mail to 
+<a href="mailto:ldkfb@microsoft.com">ldkfb@microsoft.com.</A></FONT>
+
+<BR>&nbsp;<BR></FONT></P></SPAN></SPAN>
+</BODY>
+</HTML>

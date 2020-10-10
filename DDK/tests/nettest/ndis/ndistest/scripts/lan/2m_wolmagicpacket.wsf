@@ -1,0 +1,389 @@
+<package>
+<SCRIPTDEF>
+<CARDMACH>
+2C,2M
+</CARDMACH>
+<RUNORDER>
+1800
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[This script verifies the ability to wake the machine from standby using magic packets.
+It contains two loops.  In each loop it instructs the server to send a magic packet in 60 seconds.
+It then goes into standby with a timer set to wake the machine in 130 seconds.  After the machine
+wakes the duration is checked to determine if it was woken by the magic packet or the timer.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="2m_WOLMagicPacket" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oPNPPower" progid="NDTSupp.PNPPowerMgmt.1" events="true"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+
+        <!-- Begin Wireless Specific Includes -->
+        <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	     <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	     <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	     <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	     <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+        <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+        <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+        <!-- End Wireless Specific Includes -->
+
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script id="2m_WOLMagicPacket" language="VBScript">
+'==========================================================================
+' Script Name:    2m_WOLMagicPacket
+'==========================================================================
+
+Option Explicit
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0), GetRemoteSupportAdapter (oNDInfo.AdapterList, 0))
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard, oTestOpen
+   Private oSuppCard, oSuppOpen
+   Private m_lTestAdapterIndex, m_lSuppAdapterIndex
+   Private bStandbyOptional
+
+   Private Sub Class_Initialize
+      bStandbyOptional = False
+   End Sub
+
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+      Set oTestOpen = Nothing
+
+      Set oSuppCard = Nothing
+      Set oSuppOpen = Nothing
+   End Sub
+
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+      Dim SystemSKU
+
+      If (IsIMDriver(m_lTestAdapterIndex)) Then
+         oLog.Write ("WOL is not required for IM drivers")
+         Exit Function
+      End If
+
+      SystemSKU = oNDTSession("SystemSKU")
+      If (not(IsEmpty (SystemSKU))) Then
+         if (SystemSKU And (VER_SUITE_DATACENTER Or VER_SUITE_ENTERPRISE)) Then
+            oLog.Write("Standby is optional on DataCenter and Advanced Server")
+            bStandbyOptional = True
+         End If
+      End If
+
+      If (UseIPHeaders) Then
+         Exit Function
+      End If
+
+      ' IA64 machines do not support hibernate or standby
+      If (IsIA64Machine ()) Then
+         oLog.Write ("Hibernate and standby not supported on IA64 machines")
+         Exit Function
+      End If
+
+      Set pAdapterList = oNDInfo.AdapterList
+
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+
+      Set oTestOpen = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpen is Nothing) Then
+         Exit Function
+      End If
+
+      oLog.Variation ("Setting up Support Adapter")
+      Set oSuppCard = New CLanCard
+      If (oSuppCard is Nothing) Then
+         Exit Function
+      End If
+
+      Set oSuppOpen = oSuppCard.vbSetupBasicTest(pAdapterList (m_lSuppAdapterIndex))
+      If (oSuppOpen is Nothing) Then
+         Exit Function
+      End If
+
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then
+
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")
+         If(vbAssociateWep(oTestOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If
+
+         oLog.Variation ("Associating support device with " & NDTESTAP2 & " ...")
+         If(vbAssociateWep(oSuppOpen, NDTESTAP2) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate support device with " & NDTESTAP2, 88888
+            Exit Function
+         End If
+
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+
+      Dim WakeOnLanSupport, SystemWakeOnLanSupport
+
+      WakeOnLanSupport = oTestOpen.vbWakeOnLanSupportInfo(SystemWakeOnLanSupport)
+      If ((WakeOnLanSupport And WAKE_UP_MAGIC_PACKET) = 0) Then
+         call oLog.Write ("WakeOnLan with MagicPacket is not supported by the adapter card.")
+         oLog.Write ("Not necessary for USB bus powered devices and laptops")
+         Exit Function
+      End If
+
+      If (SystemWakeOnLanSupport = 0) Then
+         ' USB bus powered adapter do not support hibernate or standby
+         ' However, it is not simple to identify if a device is bus/self powered, so not testing all USB devices
+         If (IsUSBDevice (m_lTestAdapterIndex)) Then
+            oLog.Write ("WakeOnLan with MagicPacket need not be tested for USB devices")
+         ElseIf (IsLaptop()) Then
+            oLog.Write ("WakeOnLan with MagicPacket need not be tested on laptops")
+         ElseIf (bStandbyOptional) Then
+            oLog.Write ("WakeOnLan with MagicPacket need not be tested on Advanced Server/Datacenter sku")
+         Else
+            call oLog.Failed ("WakeOnLan with MagicPacket cannot be tested on this platform!", 21318)
+         End If
+         Exit Function
+      End If
+
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+
+   Public Function RunTest (lTestAdapterIndex, lSuppAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      m_lSuppAdapterIndex = lSuppAdapterIndex
+
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+
+      ExecuteTestCore
+
+      oLog.Variation ("Clean Up")
+
+      Call oTestOpen.vbClearEvents()
+      Call oSuppOpen.vbClearEvents()
+
+      '
+      ' The closing of all the open handles is taken care of by the dll.
+      '
+      oTestOpen.vbNdisClose
+      oSuppOpen.vbNdisClose
+
+   End Function
+
+   Private Function ExecuteTestCore
+      Dim nMinimumPass
+      Dim nPacketSize
+      Dim nTotalPackets
+      Dim nMedium
+
+      Dim nTestId
+      Dim nCount
+
+      Dim nPacketsSent, nReceived, nResent
+
+      Dim TestAddr, SuppAddr
+      TestAddr = NullAddr()
+      SuppAddr = NullAddr()
+
+      Dim nResult, bResult
+
+      Dim TimeToPacket
+      Dim TimeToStandby
+      Dim WakeUpOverhead
+      Dim Duration
+      Dim Attempts
+      Dim BCastAddr
+      Dim MagicPacketBuffer
+
+      TimeToPacket = 60
+      TimeToStandby = 130
+      WakeUpOverhead = 30
+      Duration = 0
+      BCastAddr = NetAddr(&Hff&, &Hff&, &Hff&, &Hff&, &Hff&, &Hff&)
+
+      ' obtain addresses of the test and support cards
+      TestAddr = oTestOpen.vbGetCardAddress()
+      SuppAddr = oSuppOpen.vbGetCardAddress()
+
+      nCount = 5
+
+      oLog.Variation ("Testing Magic Packet Wake-on-lan")
+      Attempts = 0
+
+      Do
+         Attempts = Attempts + 1
+         '
+         ' Set the packet filters for the test card and support card
+         '
+         oLog.Variation ("Standby")
+
+         If(Not oTestOpen.vbSetPacketFilter(BROADCAST)) Then
+            Exit Do
+         End If
+
+         bResult = oTestOpen.vbSetWakeupType(WAKE_UP_MAGIC_PACKET)
+         If(Not bResult) Then
+            Exit Do
+         End If
+
+         MagicPacketBuffer = Array(CByte(0), BCastAddr, _
+               TestAddr, TestAddr, TestAddr, TestAddr, TestAddr, TestAddr, TestAddr, TestAddr, _
+               TestAddr, TestAddr, TestAddr, TestAddr, TestAddr, TestAddr, TestAddr, TestAddr)
+
+'         bResult = oSuppOpen.vbDelayedSendBuffer(TimeToPacket, BCastAddr, CByte(0), BCastAddr, _
+'               TestAddr, TestAddr, TestAddr, TestAddr, TestAddr, TestAddr, TestAddr, TestAddr, _
+'               TestAddr, TestAddr, TestAddr, TestAddr, TestAddr, TestAddr, TestAddr, TestAddr)
+         ' The above is called by using a small trick
+         bResult = oSuppOpen.vbDelayedSendBuffer (TimeToPacket, BCastAddr, MagicPacketBuffer)
+
+         Duration = oPNPPower.Standby2(TimeToStandby, nResult)
+         If (nResult = 0) Then
+            If (Duration < TimeToPacket) Then
+               oLog.Warned("woke up too soon" )
+            ElseIf (Duration > (TimeToPacket + WakeUpOverhead)) Then
+               If (Duration > TimeToStandby) Then
+                  call oLog.Failed ("MagicPacket did not wake up machine" , 21327)
+               Else
+                  oLog.Warned("possible wakeup problem" )
+               End If
+            End If
+         Else
+            If (Not bStandbyOptional) Then
+               call oLog.Failed ("Could not put the machine to standby", 88888)
+            Else
+               oLog.Write ("Could not put the machine to standby")
+            End If
+            Exit Do
+         End If
+
+         '
+         ' check the media status after wakeup
+         '
+         bResult = oTestCard.vbWaitForLinkWithDelay(90, glWaitForLinkExtraDelay)     ' wait for link to be established
+
+         oLog.Variation("Communication Test")
+         If (oSuppOpen.vbSimpleSendReceive(oTestOpen) <> 0) Then
+            Call oLog.Failed ("Test-Support card communication failed", 88888)
+         End If
+
+      Loop While(Attempts < nCount)
+
+      '
+      ' Now test Wake-on-lan with fake magic packets being sent
+      '
+
+      oLog.Variation ("Testing FAKE Magic Packet Wake-on-lan")
+      Attempts = 0
+
+      '
+      ' PUT IN TEMPORARILY
+      '
+      nCount = 10
+      '
+      ' PUT IN TEMPORARILY
+      '
+
+
+      Do
+         Attempts = Attempts + 1
+         '
+         ' Set the packet filters for the test card and support card
+         '
+         oLog.Variation ("Standby")
+         If(Not oTestOpen.vbSetPacketFilter(BROADCAST)) Then
+            Exit Do
+         End If
+
+         '
+         ' This is a fake magic packet! Should have 16 consecutive MAC of the destination
+         ' but contains mix of bcast and testcard addresses instead
+         '
+
+         ' oLog.Write ("Abs Time when sending fake packet = " & FormatDateTime (Now, vbLongTime))
+         MagicPacketBuffer = Array(CByte(0), BCastAddr, _
+               TestAddr, TestAddr, TestAddr, TestAddr, BCastAddr, BCastAddr, BCastAddr, BCastAddr, _
+               TestAddr, TestAddr, TestAddr, TestAddr, BCastAddr, BCastAddr, BCastAddr, BCastAddr)
+
+         ' Call DelayedSendBuffer with the above MagicPacketBuffer
+         bResult = oSuppOpen.vbDelayedSendBuffer(TimeToPacket, BCastAddr, MagicPacketBuffer)
+
+         oLog.Write ("Fake Magic packet will reach in " & TimeToPacket & " seconds")
+
+         ' goto standby mode
+         Duration = oPNPPower.Standby2(TimeToStandby, nResult)
+
+         if (nResult = 0) Then
+            '      oLog.Write ("Abs Time when machine woke up = " & FormatDateTime (Now, vbLongTime))
+            oLog.Write ("The machine slept for " & Duration & " seconds")
+            If (Duration < TimeToStandby) Then
+               call oLog.Failed("Woke up too soon! Machine could have responded to a fake magic packet", 21336)
+            ElseIf (Duration > (TimeToStandby + WakeUpOverhead)) Then
+               call oLog.Warned("possible wakeup problem" & vblf)
+            End If
+         Else
+            Exit Do
+         End If
+
+         '
+         ' check the media status after wakeup
+         '
+         bResult = oTestCard.vbWaitForLinkWithDelay(90, glWaitForLinkExtraDelay)     ' wait for link to be established
+
+         oLog.Variation("Communication Test")
+         If (oSuppOpen.vbSimpleSendReceive(oTestOpen) <> 0) Then
+            Call oLog.Failed ("Test-Support card communication failed", 88888)
+         End If
+
+      Loop While(Attempts < nCount)
+
+   End Function
+
+End Class
+
+</script>
+</job>
+</package>
+
+
+
+
+<!--- CRC = 0x11d2a171 --->

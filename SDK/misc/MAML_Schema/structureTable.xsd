@@ -1,0 +1,157 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<schema xmlns="http://www.w3.org/2001/XMLSchema" 
+		xmlns:maml="http://schemas.microsoft.com/maml/2003/5" 
+		xmlns:doc="http://schemas.microsoft.com/maml/internal"
+		targetNamespace="http://schemas.microsoft.com/maml/2003/5" 
+		elementFormDefault="qualified"
+        attributeFormDefault="unqualified"
+        >
+
+	<!-- Schema documentation -->
+	<annotation>
+		<documentation>
+			This schema definition defines common hierarchy types for the CS Schema.
+			This schema is part of the base layer.			
+		</documentation>
+	</annotation>
+
+	<!-- include and import declarations -->
+	<include schemaLocation="block.xsd"/>
+	
+	<!-- element declarations -->
+	<element name="table">
+		<annotation>
+			<documentation>
+				The table element describes a table model that is conformant to the CALS
+				table model.
+			</documentation>
+		</annotation>
+		<complexType>
+			<sequence>
+				<element ref="maml:title" minOccurs="0"/>
+				<element ref="maml:summary" minOccurs="0"/>
+				<element ref="maml:tableHeader" minOccurs="0"/>
+			    <element ref="maml:row" minOccurs="1" maxOccurs="unbounded"/>
+				<element ref="maml:tableFooter" minOccurs="0"/>
+				<element ref="maml:alertSet" minOccurs="0"/>
+			</sequence>
+			<attributeGroup ref="maml:contentIdentificationSharingAndConditionGroup"/>
+		</complexType>
+	</element>
+	
+	<element name="tableHeader" type="maml:tableBodyType">
+		<annotation>
+			<documentation>
+				The tableHeader element describes a table header.
+			</documentation>
+		</annotation>
+	</element>
+
+	<element name="tableFooter"  type="maml:tableBodyType">
+		<annotation>
+			<documentation>
+				The tableFooter element describes a table footer.
+			</documentation>
+		</annotation>
+	</element>
+
+	<element name="row">
+		<annotation>
+			<documentation>
+				The row element describes a row within a table.
+			</documentation>
+		</annotation>
+		<complexType>
+			<sequence>
+				<element ref="maml:entry" maxOccurs="unbounded"/>
+			</sequence>
+		</complexType>
+	</element>
+	
+	<element name="entry">
+		<annotation>
+			<documentation>
+				The entry element describes an entry within a table.
+			</documentation>
+		</annotation>
+		<complexType>
+			<choice minOccurs="0">
+				<group ref="maml:structureGroup" maxOccurs="unbounded"/>
+			</choice>
+			<attributeGroup ref="maml:agTableEntryGroup"/>
+		</complexType>
+	</element>
+	
+	
+	
+	<!-- complexType declarations -->
+	<complexType name="tableBodyType">
+		<annotation>
+			<documentation>
+				This type is intended for use as the children of table elements.
+			</documentation>
+		</annotation>
+		<sequence>
+			<element ref="maml:row" maxOccurs="unbounded"/>
+		</sequence>
+	</complexType>
+	
+	<!-- attribute declarations -->
+	<attributeGroup name="agTableEntryGroup">
+		<annotation>
+			<documentation>
+				This type describes the attributes for table Entry.
+			</documentation>
+			<documentation>
+				The attributes used are not from docbook, but are modeled
+				off of XHTML v1.1.
+			</documentation>
+		</annotation>
+		
+		<attribute name="rowSpan" type="positiveInteger">
+			<annotation>
+				<documentation>
+					The rowSpan attribute describes the requirement that the current row
+					should occupy a particular number of more rows.
+				</documentation>
+			</annotation>
+		</attribute>
+		
+		<attribute name="columnSpan" type="positiveInteger">
+			<annotation>
+				<documentation>
+					The columnSpan attribute describes the requirement that the current row
+					should occupy a particular number of more columns.
+				</documentation>
+			</annotation>
+		</attribute>
+		
+	</attributeGroup>
+	
+	<!-- Definition Table -->
+
+    <complexType name="twoColumnRowType" mixed="false">
+        <sequence>
+            <element ref="maml:entry" minOccurs="2" maxOccurs="2"/>
+        </sequence>
+    </complexType>
+    
+    <complexType name="definitionTableType" mixed="false">
+        <sequence>
+            <element name="row" type="maml:twoColumnRowType" maxOccurs="unbounded"/>
+        </sequence>
+		<attributeGroup ref="maml:contentIdentificationSharingAndConditionGroup"/>
+    </complexType>
+    
+    <element name="definitionTable" type="maml:definitionTableType">
+        <annotation>
+            <documentation>
+            This element is a two column table without a header or footer.
+            The first column contains the item being defined, the second column
+            contains the definition of the item.
+            </documentation>
+            <appinfo><doc:localizable>n/a</doc:localizable></appinfo>
+        </annotation>
+    </element>
+	
+</schema>

@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<schema xmlns="http://www.w3.org/2001/XMLSchema" 
+		xmlns:maml="http://schemas.microsoft.com/maml/2003/5" 
+		xmlns:doc="http://schemas.microsoft.com/maml/internal"
+		targetNamespace="http://schemas.microsoft.com/maml/2003/5" 
+		elementFormDefault="qualified"
+        attributeFormDefault="unqualified"
+        >
+		
+	<!-- Schema documentation -->
+	<annotation>
+		<documentation>
+			This schema describes the end user content types of MAML.
+			These content types represent schema structures that are
+			used to create documentation for end-users. End user structures
+			are pervasive in Windows XP and Office XP documentation. 
+		</documentation>
+	</annotation>
+	
+	<!-- end user content types are:
+		- conceptual
+		- procedural
+		- faq
+		- troubleshootingCt
+	 -->
+		
+	<!-- include and import declarations -->
+	<include schemaLocation="hierarchy.xsd"/>	
+	<include schemaLocation="faq.xsd"/>	
+	<include schemaLocation="troubleshooting.xsd"/>	
+	<include schemaLocation="task.xsd"/>	
+	<include schemaLocation="shellExecute.xsd"/>
+	
+	<!-- element declarations -->
+	<element name="conceptual" type="maml:contentTypeType">
+		<annotation>
+			<documentation>
+				The conceptual element describes the content model for the conceptual content type.
+				conceptuals describe high-level explanations of particular technology areas.
+			</documentation>
+		</annotation>
+	</element>
+
+	<element name="tutorial" type="maml:contentTypeType">
+		<annotation>
+			<documentation>
+				The tutorial element describes the content model for the 
+				tutorial content type.
+			</documentation>
+		</annotation>
+	</element>		
+
+	<element name="procedural" type="maml:contentTypeType">
+		<annotation>
+			<documentation>
+				The procedure element specifies the content model for the procedure content type.
+				Procedures describe some process or set of processes that users are intended to 
+				follow to accomplish some task, such as installing a printer.
+			</documentation>
+		</annotation>
+	</element>		
+
+	<element name="reference" type="maml:contentTypeType">
+		<annotation>
+			<documentation>
+				The reference element specifies the content model for the reference content type.
+				used for reference documentation that MSXUA produces.
+			</documentation>
+		</annotation>
+	</element>		
+
+</schema>

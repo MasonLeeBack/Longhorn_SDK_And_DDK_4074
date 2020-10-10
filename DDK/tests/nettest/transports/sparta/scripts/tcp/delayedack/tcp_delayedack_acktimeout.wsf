@@ -1,0 +1,159 @@
+'************************************* TCP_DelayedAck_AckTimeout.wsf ***********************
+'*                                                                              *
+'* Author            :    Sandeep Prabhu                                        *
+'* Revision history  :                                                          *
+'*    10/23/2000     sandeep        Created                                     *
+'*                                                                              *
+'* This script will test the TCP delayed ACK frequency and timeout              *
+'*                                                                              *
+'************************************* TCP_DelayedAck_AckTimeout.wsf ***********************
+
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\TCPLib.vbs"/>
+      <script id="TCP_DelayedAck_AckTimeout" language="VBScript">
+
+
+option explicit
+
+Dim Core, Sparta, Autosrv, MediaType, AutoArpObject, IFace, pControllerObj
+Const usMSS = 1460
+
+'
+' Start the script
+'
+StartScript "TCP_DelayedAck_AckTimeout", g_szLogDirectory, "Tests for delayed ACK behavior"
+
+
+
+' ==================================================================================================
+' Main routine
+' ==================================================================================================
+Sub Main
+   Dim ulStatus, ulDelayedAckFrequency
+
+   Core.SetAssertionTracking "40100"
+   '/**
+   ' @area name="Offload Compliance Test Assertions"
+   ' @group name="TCP Delayed ACK Test Assertions"
+   ' @group name="ACK Timeout Assertions" 
+   ' @define name="Offload" Offload Compliance Test Assertions
+   ' @define name="TCPDA" TCP Delayed ACK Test Assertions
+   ' @define name="ATO" ACK Timeout Assertions
+   ' @hierarchy Offload TCPDA ATO
+   ' @key Reference="WLP# - x.x.x.x; RFC-813, RFC-1122 Section 4.2.3.2"
+   ' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+   ' @key TestName="TCP DelayedAck; ACK Timeout Tests"
+   ' @key TestLog="TCP_DelayedAck_AckTimeout.log"
+   '*/
+
+   '/**
+   ' @test name="Stack must ignore ACK frequency if the ACK timer expires."
+   ' Verify send a single packet and ensure that the stack will send an ACK after the ack timout period.
+   '*/
+   
+   IFace.StartListening
+   Core.StartTest "Delayed ACK frequency ignored on ack timeout"
+   AckTimeoutOverridesDelayedAck
+   Core.EndTest
+   Core.Sleep(2500)
+   IFace.StopListening
+
+End Sub
+
+
+'
+' Routine to test that if the ACK timer expires, delayed ACK frequency is ignored
+'
+Sub AckTimeoutOverridesDelayedAck
+   Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim ulDataLength, pTCPPacket, ulBytesRcvd, ulValue, ulTcpAckFrequency, fConnectType
+
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 5000
+   usDestPort = 5001
+   ulDataLength = 100
+   ulTcpAckFrequency = DefaultTcpAckFrequency
+   ulDataLength = 100
+
+   Core.StartVariation
+
+   '
+   ' Obtain the value of TcpAckFrequency
+   '
+   ulStatus = pControllerObj.GetRegistryValueByIp(HKEY_LOCAL_MACHINE, g_szRemoteIpAddress, "TCPAckFrequency", ulValue)
+   if ((ulStatus <> 0) AND (ulStatus <> 2)) then
+      Core.BlockVariation "AckTimeoutOverridesDelayedAck: Failed to get the registry value - " & ulStatus
+      exit sub
+   end if
+
+   '
+   ' Set the registry value if required
+   '
+   if (((ulStatus = 0) AND (ulValue <> ulTcpAckFrequency)) OR (ulStatus <> 2)) then
+      '
+      ' Modify the TcpAckFrequency registry key and reboot the box
+      '
+      ulStatus = pControllerObj.SetRegistryValueByIp(HKEY_LOCAL_MACHINE, g_szRemoteIpAddress, "TCPAckFrequency", ulTcpAckFrequency)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "AckTimeoutOverridesDelayedAck: Failed to set the registry key - " & ulStatus
+         exit sub
+      end if
+      ulStatus = Reboot(TRUE)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "AckTimeoutOverridesDelayedAck: Failed to reboot the box - " & ulStatus
+         exit sub
+      end if
+   end if
+
+   for each fConnectType in Array(true, false)
+      Core.StartVariation
+
+      '
+      ' Esatablish a TCP connection
+      '
+      ulStatus = ConnectTo(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, NULL, usMSS, fConnectType)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "AckTimeoutOverridesDelayedAck: ConnectTo - " & ulStatus
+         exit sub
+      end if
+
+      '
+      ' Ask Autosrv to post a receive
+      '
+      ulStatus = pControllerObj.Receive(ulSessionId, 100, 0, 65535, ulTID)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "AckTimeoutOverridesDelayedAck: Receive - " & ulStatus
+         ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+         exit sub
+      end if
+
+      '
+      ' Send a regular packet
+      '
+      Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, (TCP_ACK or TCP_PUSH), ulDataLength)
+      IFace.Send(pTCPPacket)
+
+      '
+      ' Check that an ACK is received after 200 msecs
+      '
+      set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 300)
+      if (pTCPPacket is Nothing) then
+         Core.FailSev1Variation "AckTimeoutOverridesDelayedAck: Didn't receive an ACK"
+         ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+         exit sub
+      end if
+
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+   next
+End Sub
+
+      </script>
+   </job>
+</package>

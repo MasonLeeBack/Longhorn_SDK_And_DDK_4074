@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<schema xmlns="http://www.w3.org/2001/XMLSchema" 
+		xmlns:maml="http://schemas.microsoft.com/maml/2003/5" 
+		xmlns:doc="http://schemas.microsoft.com/maml/internal"
+		targetNamespace="http://schemas.microsoft.com/maml/2003/5" 
+		elementFormDefault="qualified"
+        attributeFormDefault="unqualified"
+        >
+
+	<!-- Schema documentation -->
+	<annotation>
+		<documentation>
+			This schema definition defines the troubleshooting base type within
+			the Content Studio schema.
+		</documentation>
+	</annotation>
+
+	<!-- include and import declarations -->
+	<include schemaLocation="hierarchy.xsd"/>
+	<include schemaLocation="base.xsd"/>
+		
+	<!-- element declarations -->
+	<element name="troubleshooting">
+		<annotation>
+			<documentation>
+				The troubleshooting element describes a conventional troubleshooting.
+				A troubleshooting contains problems and one or multiple solutions to
+				those problems.
+			</documentation>
+		</annotation>
+		<complexType>
+			<sequence>
+				<element ref="maml:title"/>
+				<element ref="maml:subTitle" minOccurs="0"/>
+				<element ref="maml:summary" minOccurs="0"/>
+				<group ref="maml:structureSimpleGroup" minOccurs="0" maxOccurs="unbounded"/>
+				<element ref="maml:problem" maxOccurs="unbounded"/>
+				<choice minOccurs="0">
+					<element ref="maml:alertSet"/>
+					<element ref="maml:alert"/>
+				</choice>
+				<element ref="maml:relatedTopics" minOccurs="0"/>
+				<element ref="maml:reusableContent" minOccurs="0"/>
+				<element ref="maml:copyright" minOccurs="0"/>
+			</sequence>
+			<attribute name="contentType" type="token"/>
+		</complexType>
+	</element>
+	
+	<element name="problem">
+		<annotation>
+			<documentation>
+				The problem element is used to describe a particular problem in a troubleshooting list.
+			</documentation>
+		</annotation>
+		<complexType>
+			<sequence>
+				<element ref="maml:symptom" />
+				<sequence minOccurs="1" maxOccurs="unbounded">
+					<element ref="maml:cause" minOccurs="0" maxOccurs="1"/>
+					<element ref="maml:solution" minOccurs="1" maxOccurs="1"/>
+				</sequence>
+			</sequence>
+		</complexType>
+	</element>
+
+	<element name="symptom" type="maml:textType">
+		<annotation>
+			<documentation>
+				The symptom element is used to describe a particular symptom that a user might be experiencing.
+			</documentation>
+		</annotation>
+	</element>
+
+	<element name="cause" type="maml:textType">
+		<annotation>
+			<documentation>
+				The cause element describes a cause of a symptom.
+			</documentation>
+		</annotation>
+	</element>
+	
+	<element name = "solution">
+		<annotation>
+			<documentation>The solution element contains the solution for a problem.</documentation>
+		</annotation>
+		<complexType>
+			<choice maxOccurs="unbounded">
+				<group ref="maml:structureSimpleGroup" />
+				<element ref="maml:procedure"/>
+			</choice>
+		</complexType>
+		
+	</element>	
+
+</schema>

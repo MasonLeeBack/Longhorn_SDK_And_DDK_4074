@@ -1,0 +1,115 @@
+Test Assertion_A13486
+
+Assertion '13.4.8.6 drvAcquireItemData' 
+[
+This method shall acquire data from the device using the current property settings.  
+If the item' s WIA_IPA_TYMED property value is TYMED_CALLBACK the transfer shall be transferred as a memory callback.
+If the item' s WIA_IPA_TYMED property value is TYMED_FILE the transfer shall be a file buffered transfer.
+Each and every item will be transferred using all formats supported by this item.
+]
+
+Var root:Item, p:Property
+Var fmt:Format, guid:GUID
+Var fmtSize, j, dt, tymed, lVal, intent
+{   
+    StartWia()
+
+    GetRoot(root)
+    
+    GetDeviceType(dt)
+
+    lVal = GetItemsCount()
+
+    If ( (lVal < 2) And (dt == StiDeviceTypeDigitalCamera) )
+    Then
+    {
+        If ( !DeviceCommand(WIA_CMD_TAKE_PICTURE) ) 
+        Then 
+        {
+            Writeln '\tNo pictures available and command WIA_CMD_TAKE_PICTURE failed: Take some pictures before testing.'
+            Exit Failed
+        }
+    }
+
+    If ( dt == StiDeviceTypeScanner)
+    Then
+    {
+        If ( GetProperty(root, p, WIA_DPS_PAGES) )
+        Then 
+        {
+            SetPropertyLong(root, WIA_DPS_PAGES, 1)
+        }
+    }
+
+    GetNextItem(root)
+
+    While ( root ) Do
+    {
+        If ( !CheckItemType(root, WiaItemTypeImage) And 
+             !CheckItemType(root, WiaItemTypeAudio) And
+             !CheckItemType(root, WiaItemTypeVideo) )
+        Then Goto label
+
+        If ( dt == StiDeviceTypeScanner)
+        Then
+        {
+            If ( CheckItemType(root, WiaItemTypeImage) )     
+            Then 
+            {
+            # Set an intent value before scanning
+                If ( !SetPropertyLong(root, WIA_IPS_CUR_INTENT, WIA_INTENT_IMAGE_TYPE_COLOR) )
+                Then 
+                {
+                    If ( !SetPropertyLong(root, WIA_IPS_CUR_INTENT, WIA_INTENT_IMAGE_TYPE_GRAYSCALE) )
+                    Then 
+                    {
+                        If ( !SetPropertyLong(root, WIA_IPS_CUR_INTENT, WIA_INTENT_IMAGE_TYPE_TEXT) )
+                        Then 
+                        {
+                            If ( !SetPropertyLong(root, WIA_IPS_CUR_INTENT, WIA_INTENT_NONE) )
+                            Then 
+                            {
+                                Writeln '\tCannot set WIA_IPS_CUR_INTENT property to any valid flags'
+                                Exit Failed
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        GetFormatInfo(root, fmt)
+        fmtSize  = GetFormatSize(fmt)
+
+        For j = 0 To fmtSize-1
+        {
+            GetFormatAt(fmt, j, guid)
+
+            tymed = GetTymedAt(fmt, j)
+
+            If ( (tymed == TYMED_FILE) Or (tymed == TYMED_MULTIPAGE_FILE) )
+            Then
+            {
+                GetImageFile(root, guid, tymed)
+            }
+            Else
+            {
+                If ( (tymed == TYMED_CALLBACK) Or (tymed == TYMED_MULTIPAGE_CALLBACK) )
+                Then
+                {
+                    GetImageMemory(root, guid, tymed)
+                }
+                Else
+                {
+                    Writeln '\tUnknown TYMED_XXX: Do not know how to handle.'
+                    Exit Failed
+                }
+            }
+        }
+
+:label:
+        GetNextItem(root)
+    }
+
+    StopWia()
+}

@@ -1,0 +1,282 @@
+'
+' File          : TCP_PendingRecvsOnClose.wsf
+' Author        : Sandeep Prabhu 
+'
+' A script to test that pending receives indicate error when a TCB closes
+'
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\common\Common.Lib"/>
+      <script language="VBScript" src="..\common\TCPHelper.Lib"/>
+      <script id="TCP_PendingRecvsOnClose" language="VBScript">
+
+
+option explicit
+    
+                                                                            
+dim Core, Sparta, Autosrv, pController, MediaType, IFace, ExceptionStatus
+
+const WSAECONNABORTED   = 10053
+const WSAECONNRESET     = 10054
+
+'
+' Start the script
+'
+StartScript "TCP_PendingRecvsOnClose", g_szLogDirectory, "Tests for pending receives when TCB closes (~1 min)"
+
+sub Main
+   Core.SetAssertionTracking "30100"
+   dim ValueArray
+   ValueArray = Array(false)
+   ParseArguments array("-v6"), array(vbBoolean), ValueArray
+
+   '/**
+   ' @area name="Offload Compliance Test Assertions"
+   ' @group name="TCP Miscellaneous Test Assertions"
+   ' @group name="Pending Receives On Close Test Assertions" 
+   ' @define name="Offload" Offload Compliance Test Assertions
+   ' @define name="TCPMisc" TCP Miscellaneous Test Assertions
+   ' @define name="PRT" Pending Receives On Close Test Assertions
+   ' @hierarchy Offload TCPMisc PRT
+   ' @key Reference="WLP# - x.x.x.x; RFC-793 Section 3.5; RFC-1122 Section 4.2.2.13"
+   ' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+   ' @key TestName="TCP Pending Receives On Close Tests"
+   ' @key TestParam="-v6: uses IPv6 [Default: IPv4]"   
+   ' @key TestLog="Security_TCP_PendingRecvsOnClose.log"
+   '*/
+
+    '/**
+   ' @test name="The stack must ensure that pending receives timeout after send and disconnect"
+   ' Verify close connection in different ways: close,shutdown,reset,send and disconnect,recv RST,recv FIN. 
+   ' Stack ensure that pending receives timeout.
+   '*/
+                                                                    
+   StartTest "Pending receives indicate error when TCB closes"
+   PendingReceivesStatus ValueArray(0)
+   EndTest
+   Core.Sleep(1500)
+
+end sub
+
+'
+' Routine to ensure that pending receives timeout after send and disconnect
+'
+sub PendingReceivesStatus(fVersion6)
+   dim szSrcAddress, szDestAddress, pAutoDisc, pIFace, ulCounter, ulCounter1, CloseType
+   dim usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, bResponse
+   dim ulBytesRcvd, pPacket, ulRecvTID, ulStatus, ulRecvStatus, ulSendSize, bPacket
+   dim ulExpectStatus
+
+   randomize
+   usSrcPort = clng(60534*rnd)+5000
+   CloseType = array("close", "shutdown", "reset", "send and disconnect", "recv RST", "recv FIN")
+
+   g_fCheckOffloadConnection = false
+
+   StartVariation
+   
+   '
+   ' Start off auto discovery and create the interfaces
+   '   
+   if (fVersion6) then
+      szSrcAddress = g_szLocalSpoofIp6Address
+      szDestAddress = g_szRemoteIp6Address
+      set pAutoDisc = sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, szSrcAddress, FALSE)
+   else
+      szSrcAddress = g_szLocalSpoofIp
+      szDestAddress = g_szRemoteIpAddress
+      set pAutoDisc = sparta.AutoArp(g_szLocalMacAddress, g_szLocalMacAddress, szSrcAddress)
+   end if
+   set pIFace = CreateInterface(fVersion6, TRUE, g_szRemoteMacAddress, g_szLocalMacAddress, szDestAddress, szSrcAddress)
+   pIFace.StartListening
+   
+   '
+   ' Close the connection in different ways
+   '
+   for ulCounter = lBound(CloseType) to uBound(CloseType)
+      if (ulCounter > lBound(CloseType)) then
+         StartVariation
+      end if     
+      
+      ' 
+      ' do loop used to get around using goto
+      ' 
+      do
+         '
+         ' Establish a TCP session
+         '
+         usDestPort = null
+         ulStatus = ActiveConnect(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+         if (ulStatus <> 0) then
+            Block "PendingReceivesStatus (" & CloseType(ulCounter) & "): ActiveConnect - " & ulStatus
+            exit do
+         end if
+         
+         '
+         ' Issue a receive
+         '
+         ulStatus = pController.Receive(ulSessionId, 1, 100, 100, ulRecvTID)
+         if (ulStatus <> 0) then
+            Block "PendingReceivesStatus (" & CloseType(ulCounter) & "): Receive - " & ulStatus
+            exit do
+         end if
+         
+         '
+         ' Wait for the receive to be posted
+         '
+         for ulCounter1 = 1 to 10
+            core.sleep 200
+            ulStatus = pController.GetCurrentStatus(ulSessionId, ulRecvTID, ulRecvStatus)
+            if (ulRecvStatus = ERROR_SIGNAL_PENDING) then
+               exit for
+            end if
+         next         
+         if (ulRecvStatus <> ERROR_SIGNAL_PENDING) then
+            Block "PendingReceivesStatus (" & CloseType(ulCounter) & "): GetCurrentStatus of receive - " & ulRecvStatus
+            exit do
+         end if
+               
+         '
+         ' Close the connection
+         '
+         ulSendSize = -1
+         bResponse = null
+         ulExpectStatus = 6   ' This is the status we get on graceful close
+         if (CloseType(ulCounter) = "send and disconnect") then
+            ulSendSize = 100
+            ulStatus = pController.SendAndDisconnect(ulSessionId, ulSendSize, ulTID)
+            bPacket = TCP_FIN or TCP_ACK
+            bResponse = TCP_FIN or TCP_ACK
+            
+            '
+            ' Send and disconnect is not implemented in v6 stack
+            '            
+            if (fVersion6) then
+               bPacket = TCP_ACK
+               ulSendSize = ulSendSize - 1
+            end if
+         elseif (CloseType(ulCounter) = "shutdown") then
+            ulSendSize = 0
+            ulStatus = pController.Shutdown(ulSessionId, ulTID)
+            bPacket = TCP_FIN or TCP_ACK
+            bResponse = TCP_FIN or TCP_ACK
+         elseif (CloseType(ulCounter) = "recv FIN") then
+            set pPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_FIN or TCP_ACK, 0)
+            pIFace.Send(pPacket)
+            bPacket = TCP_ACK
+            bResponse = TCP_FIN or TCP_ACK
+         elseif (CloseType(ulCounter) = "recv RST") then   
+            '
+            'IsConnectionOffload
+            '
+            If not IsConnectionOffloaded(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSessionId) and g_fTestOffload And g_fTOENic Then
+              Sev1 "PendingReceivesStatus : Failed to offload the connection"
+              Exit do
+            End If
+            
+            set pPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_RST, 0)
+            pIFace.Send(pPacket)
+            bPacket = null
+            ulExpectStatus = WSAECONNRESET
+         elseif (CloseType(ulCounter) = "close") then            
+            '
+            'IsConnectionOffload
+            '
+            If not IsConnectionOffloaded(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSessionId) and g_fTestOffload And g_fTOENic Then
+              Sev1 "PendingReceivesStatus : Failed to offload the connection"
+              Exit do
+            End If
+
+            ulStatus = pController.Close(ulSessionId, ulTID)
+            bPacket = TCP_RST
+            ulExpectStatus = WSAECONNABORTED
+         elseif (CloseType(ulCounter) = "reset") then       
+            '
+            'IsConnectionOffload
+            '
+            If not IsConnectionOffloaded(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSessionId) and g_fTestOffload And g_fTOENic Then
+              Sev1 "PendingReceivesStatus : Failed to offload the connection"
+              Exit do
+            End If
+
+            ulStatus = pController.Reset(ulSessionId, ulTID)     
+            bPacket = TCP_RST
+            ulExpectStatus = WSAECONNABORTED
+         end if
+         if (ulStatus <> 0) then
+            Block "PendingReceivesStatus (" & CloseType(ulCounter) & "): Close TCB - " & ulStatus
+            exit do
+         end if
+                           
+         '
+         ' Grab the packet
+         '
+         if not(isnull(bPacket)) then
+            set pPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, bPacket, 250, pIFace)
+            if (pPacket is Nothing) then
+               Sev1 "PendingReceivesStatus (" & CloseType(ulCounter) & "): Failed to receive packet"
+               exit do
+            elseif (ulBytesRcvd <> (ulSendSize+1)) then
+               Sev1 "PendingReceivesStatus (" & CloseType(ulCounter) & "): Incorrect byte count " & ulBytesRcvd & " <> " & (ulSendSize+1)
+               exit do      
+            end if
+            
+            '
+            ' Send and disconnect is not implemented in v6 stack. So this call will
+            ' end up in FIN being sent separately after all the data
+            '
+            if (fVersion6 and (CloseType(ulCounter) = "send and disconnect")) then
+               set pPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_FIN or TCP_ACK, 250, pIFace)
+               if (pPacket is Nothing) then
+                  Sev1 "PendingReceivesStatus (" & CloseType(ulCounter) & "): Failed to receive packet"
+                  exit do
+               elseif (ulBytesRcvd <> 1) then
+                  Sev1 "PendingReceivesStatus (" & CloseType(ulCounter) & "): Incorrect byte count " & ulBytesRcvd & " <> 1"
+                  exit do      
+               end if
+            end if         
+         end if         
+         
+         '
+         ' Send a response
+         '
+         if not(isnull(bResponse)) then
+            '
+            'IsConnectionOffload
+            '
+            If not IsConnectionOffloaded(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSessionId) and g_fTestOffload And g_fTOENic Then
+              Sev1 "PendingReceivesStatus : Failed to offload the connection"
+              Exit do
+            End If
+            set pPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, bResponse, 0)
+            pIFace.Send(pPacket)
+         end if
+         core.sleep 200
+         
+         '
+         ' Check the status of receive
+         '
+         ulStatus = pController.GetCurrentStatus(ulSessionId, ulRecvTID, ulRecvStatus)
+         if (ulStatus <> 0) then
+            Block "PendingReceivesStatus (" & CloseType(ulCounter) & "): GetCurrentStatus - " & ulStatus
+         elseif (ulRecvStatus <> ulExpectStatus) then
+            Sev1 "PendingReceivesStatus (" & CloseType(ulCounter) & "): Incorrect receive status - " & ulRecvStatus & " <> 1460"
+         end if
+      loop while (false)
+      
+      '
+      ' Reset the connection
+      '   
+      ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace  
+   next
+
+end sub
+
+      </script>
+   </job>
+</package>

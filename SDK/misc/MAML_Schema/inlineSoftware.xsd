@@ -1,0 +1,218 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<schema xmlns="http://www.w3.org/2001/XMLSchema" 
+		xmlns:maml="http://schemas.microsoft.com/maml/2003/5" 
+		xmlns:doc="http://schemas.microsoft.com/maml/internal"
+		targetNamespace="http://schemas.microsoft.com/maml/2003/5" 
+		elementFormDefault="qualified"
+        attributeFormDefault="unqualified"
+        >
+
+	<!-- Schema documentation -->
+	<annotation>
+		<documentation>
+			This schema definition defines the common reference types within
+			the Content Studio schema.
+		</documentation>
+	</annotation>
+
+	<!-- include and import declarations -->
+	<include schemaLocation="base.xsd"/>
+
+	<!-- element declarations -->
+	<element name="application" type="maml:textType">
+		<annotation>
+			<documentation>
+				The application element describes the name of an application,
+				such as Microsoft Windows or Notepad.
+			</documentation>
+		</annotation>
+	</element>
+
+	<element name="database" type="maml:textType">
+		<annotation>
+			<documentation>
+				The database element describes a database.
+			</documentation>
+		</annotation>
+	</element>
+	
+	<element name="internetUri">
+		<annotation>
+			<documentation>
+				The internetUri element describes an internet address, 
+				such as a web or email address.
+			</documentation>
+		</annotation>
+		<complexType>
+			<simpleContent>
+				<extension base="maml:textType">
+					<attribute name="type">
+						<simpleType>
+							<restriction base="token">
+								<enumeration value="email"/>
+								<enumeration value="web"/>
+								<enumeration value="ftp"/>
+							</restriction>
+						</simpleType>
+					</attribute>
+				</extension>
+			</simpleContent>
+		</complexType>
+	</element>
+	
+	<element name="localUri">
+		<annotation>
+			<documentation>
+				The localUri element describes the path of some local resource.
+			</documentation>
+		</annotation>
+		<complexType mixed="true">
+					<sequence minOccurs="0">
+						<element ref="maml:replaceable"/>
+					</sequence>
+					<attributeGroup ref="maml:contentIdentificationSharingAndConditionGroup"/>
+					<attribute name="type">
+						<simpleType>
+							<restriction base="token">
+								<enumeration value="absolutePath"/>
+								<enumeration value="relativePath"/>
+								<enumeration value="registryKey"/>
+								<enumeration value="allUsersDocAndSettings"/>
+								<enumeration value="currentUserDocAndSettings"/>
+								<enumeration value="programFiles"/>
+								<enumeration value="Windows"/>
+								<enumeration value="mshelp"/>
+							</restriction>
+						</simpleType>
+					</attribute>
+		</complexType>
+	</element>
+	
+	<element name="environmentVariable" type="maml:textType">
+		<annotation>
+			<documentation>
+				The environmentVariable element describes an environment variable in an operating system.
+			</documentation>
+		</annotation>
+	</element>
+	
+	<element name="errorInline" type="maml:textType">
+		<annotation>
+			<documentation>
+				The errorInline element describes an error.
+			</documentation>
+		</annotation>
+	</element>
+	
+	<element name="hardware" type="maml:textType">
+		<annotation>
+			<documentation>
+				The hardware element describes a physical part of a computer system.
+			</documentation>
+		</annotation>
+	</element>
+
+	<element name="literal" type="maml:textType">
+		<annotation>
+			<documentation>
+				The literal element describes a literal value.
+			</documentation>
+		</annotation>
+	</element>
+	
+	<element name="markup" type="maml:textType">
+		<annotation>
+			<documentation>
+				The markup element describes a string of markup, such as TeX or XML.
+			</documentation>
+		</annotation>
+	</element>
+		
+	<element name="command">
+		<annotation>
+			<documentation>
+				The command element describes the name of an executable or other software 
+				application than can be run.
+			</documentation>
+		</annotation>
+		<complexType mixed="true">
+			<choice minOccurs="0" maxOccurs="unbounded">
+				<element ref="maml:replaceable"/>
+			</choice>		
+		</complexType>
+	</element>
+
+	<element name="replaceable" type="maml:textType">
+		<annotation>
+			<documentation>
+				The replaceable element describes a part of a command or of a
+				function that must be replaced by the user.
+			</documentation>
+		</annotation>
+	</element>
+
+	<element name="token" type="maml:textType">
+		<annotation>
+			<documentation>
+				The token element describes a symbol that represents a grammatical construct
+				or is merely a link to something else. Tokens are particularly important 
+				in lexical parsing.
+			</documentation>
+		</annotation>
+	</element>
+
+	<element name="codeInline" type="maml:textType">
+		<annotation>
+			<documentation>
+				The codeInline element describes a string of code of a particular computer language.
+			</documentation>
+		</annotation>
+	</element>
+	
+	<element name="computerOutputInline" type="maml:textType">
+		<annotation>
+			<documentation>
+				The computerOutputInline element describes output from either a console prompt
+				or from a UI form.
+			</documentation>
+		</annotation>
+	</element>
+
+	<element name="prompt" type="maml:textType">
+		<annotation>
+			<documentation>
+				The prompt element describes a string marking a command prompt or input field.
+			</documentation>
+		</annotation>
+	</element>
+
+	<element name="ui" type="maml:textType">
+		<annotation>
+			<documentation>
+				The ui element describes a user interface component.
+			</documentation>
+		</annotation>
+	</element>
+
+	<!-- group declarations -->
+	<group name="inlineSoftwareGroup">
+		<choice>
+			<element ref="maml:application"/>
+			<element ref="maml:database"/>
+			<element ref="maml:internetUri"/>
+			<element ref="maml:localUri"/>
+			<element ref="maml:environmentVariable"/>
+			<element ref="maml:errorInline"/>
+			<element ref="maml:hardware"/>
+			<element ref="maml:literal"/>
+			<element ref="maml:markup"/>
+			<element ref="maml:command"/>
+			<element ref="maml:token"/>
+			<element ref="maml:codeInline"/>
+			<element ref="maml:computerOutputInline"/>
+			<element ref="maml:prompt"/>
+			<element ref="maml:ui"/>
+		</choice>		
+	</group>
+	
+</schema>

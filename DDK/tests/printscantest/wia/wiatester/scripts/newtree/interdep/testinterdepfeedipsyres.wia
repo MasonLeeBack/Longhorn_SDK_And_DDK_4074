@@ -1,0 +1,140 @@
+Test Assertion_A13475
+
+Assertion '13.4.7.5 WIA_IPS_YRES' 
+[
+If the device is a scanner, when the current value of this property is changed, the current and valid values of the following properties 
+shall be proportionally changed: WIA_IPS_YPOS, WIA_IPS_YEXTENT, WIA_IPA_NUMBER_OF_LINES, WIA_IPA_ITEM_SIZE.
+]
+
+Var root:Item
+Var p:Property
+Var dt, temp, lVal, YPOS, YEXTENT, YRES
+Var maxYPOS, minYPOS, maxYEXTENT, minYEXTENT
+Var BedHeight, minYRES, maxYRES, ddd:Real
+{
+    StartWia()
+    GetRoot(root)
+    GetDeviceType(dt)
+
+    If (dt != StiDeviceTypeScanner)
+    Then Exit Passed
+
+    #Check For New Item Tree 
+    If(!IsNewTree(root))
+    Then
+    {
+        Writeln '\tThe device does not support New Item Tree'
+        Exit Failed 
+    }
+
+    GetNextItem(root)
+
+    While ( root ) Do
+    {
+        If ( !CheckItemType(root, WiaItemTypeImage))
+        Then Goto label
+
+        If (!GetProperty(root, p, WIA_IPS_YRES))
+        Then 
+        {
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+
+        If (!IsPropertyReadWrite(p))
+        Then Goto label
+
+        YRES = GetLongValue(p)
+
+        minYRES  = GetPropertyMinValue(p)
+        maxYRES  = GetPropertyMaxValue(p)
+        
+        If (!GetProperty(root, p, WIA_IPS_YPOS))
+        Then
+        {
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+
+        YPOS = GetLongValue(p)
+
+        minYPOS  = GetPropertyMinValue(p)
+        maxYPOS  = GetPropertyMaxValue(p)
+
+        #
+        # Now change Y-resolution to minYRES
+        #
+        ddd = minYRES / YRES
+        YRES = minYRES
+
+        If ( !SetPropertyLong(root, WIA_IPS_YRES, YRES))
+        Then
+        {
+            Writeln '\tSetting property value failed'
+            Exit Failed
+        }
+
+        If (!GetProperty(root, p, WIA_IPS_YPOS))
+        Then
+        {
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+
+        lVal = GetLongValue(p)
+        temp = ddd * YPOS
+
+        If ( lVal != temp )
+        Then
+        {
+            Writeln '\tIncorrect current value of WIA_IPA_YPOS property after YRES set to minYRES: '
+            Writeln lVal
+            Write '\t Expected:' Writeln temp
+            Exit Failed
+        }
+
+        #
+        #  Now change Y-resolution from minYRES to maxYRES
+        #
+        If (YRES == 0) 
+        Then
+        {
+             Writeln '\tIncorrect minimum value of WIA_IPS_YRES property'
+             Exit Failed
+        }
+
+        ddd = maxYRES / YRES
+        YRES = maxYRES
+
+        If ( !SetPropertyLong(root, WIA_IPS_YRES, YRES))
+        Then
+        {
+            Writeln '\tSetting property value failed'
+            Exit Failed
+        }
+
+        If (!GetProperty(root, p, WIA_IPS_YPOS))
+        Then 
+        {
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+
+        lVal = GetLongValue(p)
+        temp = ddd * YPOS
+
+        If ( lVal != temp )
+        Then 
+        {
+            Writeln '\tIncorrect current value of WIA_IPS_YPOS property after YRES was set to maxYRES: '
+            Writeln lVal
+            Write '\t Expected:' Writeln temp
+            Exit Failed
+        }
+
+:label:
+        GetNextItem(root)
+    }
+
+    StopWia()
+}

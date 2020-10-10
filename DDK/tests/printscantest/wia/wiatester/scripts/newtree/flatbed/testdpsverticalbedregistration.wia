@@ -1,0 +1,84 @@
+Test Assertion_A13437
+
+Var p:Property, root:Item
+Var dt, lVal
+{
+    PrintDescriptionFromXML('13.4.3.7')
+    StartWia()
+    GetRoot(root)
+    GetDeviceType(dt)
+
+    If ( dt != StiDeviceTypeScanner )
+    Then Exit Passed
+
+    If(!IsNewTree(root))
+    Then
+    {
+        Writeln '\tThe device does not support New Item Tree'
+        Exit Failed 
+    }
+
+    GetNextItem(root)
+
+    While( root ) Do
+    {
+        If(!IsCategoryRoot(root, 'Flatbed') And !IsCategoryRoot(root, 'Film'))
+        Then Goto NextItem
+
+        If ( !GetProperty(root, p, WIA_DPS_VERTICAL_BED_REGISTRATION) )
+        Then Exit Passed
+
+        If (!CheckPropertyAccessFromXML(p) )
+        Then
+        {
+            Writeln '\tIncorrect access'
+            Exit Failed
+        }
+
+        If (!CheckPropertyTypeFromXML(p) )
+        Then
+        {
+            Writeln '\tIncorrect vartype'
+            Exit Failed
+        }
+
+        If(!CheckValueLongFromXML(p) )
+        Then
+        {
+            Write '\tInvalid property value:'
+            Exit Failed
+        }
+
+        If( IsPropertyReadWrite(p) )
+        Then
+        {
+            If ( SetPropertyInvalidValue(root, p) )
+            Then 
+            {
+                Writeln '\tSetting invalid property value succeeded'
+                Exit Failed
+            }
+
+            If (!CheckSuppValues(root, p))
+            Then 
+            {
+                Writeln '\tChecking supported property values failed'
+                Exit Failed
+            }
+        }
+        Else
+        {
+            If (SetPropertyValidValue(root,p) Or SetPropertyInvalidValue(root,p) )
+            Then 
+            {
+                    Writeln '\tSetting a read-only property value succeeded'
+                    Exit Failed
+            }
+        }
+
+:NextItem:
+        GetNextItem(root) 
+    }
+
+    StopWia()
+}

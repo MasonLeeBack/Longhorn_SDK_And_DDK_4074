@@ -1,0 +1,192 @@
+'************************************* TCP_ZeroWindow_ActiveProbe.wsf ****************
+'*                                                                                   *
+'* Author            :    Sandeep Prabhu                                             *
+'* Revision history  :                                                               *
+'*    09/20/2000     sandeep        Created                                          *
+'*    04/24/2003     karolys        added HCT-style comments for tst plan generation *
+'*                                                                                   *
+'* Make the stack do zero window probing                                             *
+'*                                                                                   *
+'************************************* TCP_ZeroWindow_ActiveProbe.wsf ****************
+
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\TCPLib.vbs"/>
+      <script language="VBScript" src="TCPZeroWindowLib.vbs"/>                  
+      <script id="TCP_ZeroWindow_ActiveProbe" language="VBScript">
+
+
+'/**
+' @area name="Offload Compliance Test Assertions"
+' @group name="TCP Zero Window Probing Assertions"
+' @group name="Active Zero Window Probing Assertions" 
+' @define name="Offload" Offload Compliance Test Assertions
+' @define name="TCPZW" TCP Zero Window Probing Assertions
+' @define name="ActZW" Active Zero Window Probing Assertions
+' @hierarchy Offload TCPZW ActZW
+' @key Reference="WLP# - x.x.x.x; RFC-793 Section 3.7, RFC-1122 Section 4.2.2.17"
+' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+' @key TestName="TCPv4 Active Zero Window Probing Functionality Tests"
+' @key TestLog="TCP_ZeroWindow_ActiveProbe.log"
+'*/
+
+
+option explicit
+    
+Dim Core, Sparta, Autosrv, MediaType, AutoArpObject, IFace, pControllerObj
+Const usMSS = 1460
+ 
+'
+' Start the script
+'           
+StartScript "TCP_ZeroWindow_ActiveProbe", g_szLogDirectory, "Active zero window probing" 
+
+
+
+' ==================================================================================================
+' Main routine
+' ==================================================================================================
+Sub Main
+   Core.SetAssertionTracking "60100"
+   Dim ulStatus, ulWindowSize
+   g_fCheckOffloadConnection = false   
+ 
+   IFace.StartListening
+   Core.StartTest "Active zero window probing"
+
+   '/**
+   ' @test name="The stack must actively probe when a zero window is advertised by the receiver in the SYN-ACK." 
+   ' Autosrv issues a connect back to the script machine. Script machine accepts the connection and advertises a zero receive window in the SYN-ACK. 
+   ' Verify that the stack sends 2 zero window probes (ACKs) with the right timing.
+   ' After the second probe the receive window is opened, the data consumed and the connection is terminated.<br/>
+   '*/
+   
+   ActiveZeroWindowProbing
+   Core.EndTest
+   Core.Sleep(2500)
+   IFace.StopListening
+   
+End Sub
+
+
+
+'
+' Routine to test the basic functionality when stack does the zero window probing
+'
+Sub ActiveZeroWindowProbing
+   Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim ulLastAck, ulBytesRcvd, ulDataLength, pTCPPacket
+   
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 5000
+   usDestPort = 5001
+   
+   Core.StartVariation
+   
+   '
+   ' Esatablish a TCP connection with nagleing enabled/disabled
+   '
+   ulStatus = Connect(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, 0, usMSS)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "ActiveZeroWindowProbing: Connect - " & ulStatus
+      exit sub
+   end if
+   
+   '
+   ' Ask Autosrv to start sending data
+   '
+   ulStatus = pControllerObj.Send(ulSessionId, 1, 0, 4*usMSS, ulTID)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "ActiveZeroWindowProbing: Send - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+
+   '
+   ' Get to the point where the first window probe packet is received
+   '
+   ulStatus = GetToWindowProbeState(usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)
+   if (ulStatus <> 0) then
+      Core.FailSev1Variation "ActiveZeroWindowProbing: GetToWindowProbeState - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+
+   '
+   ' Do window probing for 2 times
+   '
+   ulStatus = DoZeroWindowProbe(2, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "ActiveZeroWindowProbing: DoZeroWindowProbe - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+
+   '
+   ' Complete the data exchange
+   '
+   ulStatus = DoDataExchange(4*usMSS, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)   
+   if (ulStatus <> 0) then
+      Core.BlockVariation "ActiveZeroWindowProbing: DoDataExchange - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+
+   '
+   ' Shutdown the connection
+   '
+   ulStatus = pControllerObj.Shutdown(ulSessionId, ulTID)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "ActiveZeroWindowProbing: Shutdown - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+   
+   '
+   ' Receive the FIN-ACK
+   '
+   set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulDataLength, (TCP_FIN or TCP_ACK), 5000)
+   if (pTCPPacket is Nothing) then
+      Core.FailSev1Variation "ActiveZeroWindowProbing: FIN-ACK not rcvd"
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if 
+   
+   If not IsConnectionOffloaded(usSrcPort, usDestPort, ulSessionId) and g_fTestOffload And g_fTOENic Then
+      Core.FailSev1Variation "ActiveZeroWindowProbing : Failed to offload the connection"
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   End If
+   '
+   ' Send a FIN-ACK with a zero window
+   '
+   Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, (TCP_FIN or TCP_ACK), 0)
+   IFace.Send(pTCPPacket)
+   
+   '
+   ' Receive the ACK
+   '
+   set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulDataLength, TCP_ACK, 200)
+   if (pTCPPacket is Nothing) then
+      Core.FailSev1Variation "ActiveZeroWindowProbing: ACK not rcvd"
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if 
+
+   '
+   ' Reset the connection
+   '
+   ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+
+End Sub
+
+
+      </script>
+   </job>
+</package>

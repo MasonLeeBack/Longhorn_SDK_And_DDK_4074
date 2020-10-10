@@ -1,0 +1,56 @@
+Test Assertion_A13482
+Assertion '13.4.8.2 drvDeleteItem' 
+[
+If an item has the WIA_ITEM_CAN_BE_DELETED flag set in the WIA_IPA_ACCESS_RIGHTS property, this method shall delete the item.
+]
+
+Var p:Property, root:Item
+Var dt, lVal
+{
+    StartWia()
+    GetRoot(root)
+
+    # Get the tail of the item array built from the item tree
+    GetTailItem(root)
+
+    While ( root) Do
+    {
+        If ( CheckItemType(root, WiaItemTypeRoot) ) 
+        Then Exit Passed
+
+        If ( !GetProperty(root, p, WIA_IPA_ACCESS_RIGHTS) )
+        Then 
+        {
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+
+        If (!CheckPropertyTypeFromXML(p) )
+        Then
+        {
+            Writeln '\tIncorrect vartype'
+            Exit Failed
+        }
+
+        lVal = GetLongValue(p)
+
+        If ( lVal & WIA_ITEM_CAN_BE_DELETED )
+        Then 
+        {
+            If ( !DeleteItem(root) )
+            Then 
+            {
+                Writeln '\tDelete item failed'
+                Exit Failed
+            }
+
+        GetTailItem(root)
+        Continue
+        }
+
+:label:
+        GetLastItem(root)
+    }
+
+    StopWia()
+}

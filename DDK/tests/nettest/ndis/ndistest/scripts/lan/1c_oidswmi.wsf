@@ -1,0 +1,323 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, 802_5, FDDI, Irda
+</MEDIA>
+<CARDMACH>
+1C,1M
+</CARDMACH>
+<RUNORDER>
+1240
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[This script tests the querying of driver information using WMI. This test
+only has meaning for Win98 and NT5.0 In general, this script is testing 
+ndis.sys and WMI rather than your driver. If your driver exports any private 
+GUIDs to WMI, then you need to look at the last few variations to make sure 
+your driver is handling these correctly. The test uses a QueryGlobalStatistics 
+call with OID_GEN_SUPPORTED_GUIDS to get the list of private GUIDs exported 
+by your driver. It then attempts to query these GUIDs using WMI. 
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="1c_OidsWMI" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      
+      <!-- Begin Wireless Specific Includes -->
+      <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	   <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	   <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	   <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	   <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+      <!-- End Wireless Specific Includes -->
+      
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/> 
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CIrdaCard.vbs"/>      
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CIrdaOpen.vbs"/>      
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script id="1c_OidsWMI" language="VBScript">
+'==========================================================================
+' Script Name:    1c_OidsWMI
+'==========================================================================
+Option Explicit 
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0)) 
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard
+   Private m_lTestAdapterIndex
+   Private RequiredOidsLength, RequiredOids()
+   
+   Private Sub Class_Initialize
+      ReDim RequiredOids(50)
+   End Sub
+   
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+   End Sub
+   
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+      
+      Set pAdapterList = oNDInfo.AdapterList
+      
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = CreateCardObject(pAdapterList (m_lTestAdapterIndex))
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+      
+      If (Not oTestCard.vbCreateAdapter(pAdapterList(m_lTestAdapterIndex))) Then
+         Exit Function
+      End If
+      
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+         
+         Dim oOpen : Set oOpen = oTestCard.vbOpenAdapter()
+         
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")           
+         If(vbAssociateWep(oOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If	
+         
+         Set oOpen = Nothing
+                                    
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+      
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+   
+   Public Function RunTest (lTestAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+      
+      wsfPrepareOidList
+      
+      wsfCheckSupportedOids
+      
+   End Function
+   
+   Private Sub wsfPrepareOidList
+      Dim nMedium
+      
+      nMedium = oTestCard.NdisMedium
+
+      '
+      ' set up an array containing the OIDs that must be supported by
+      ' the current media type
+      '
+      RequiredOids(0)  = OID_GEN_HARDWARE_STATUS
+      RequiredOids(1)  = OID_GEN_MEDIA_SUPPORTED
+      RequiredOids(2)  = OID_GEN_MEDIA_IN_USE
+      RequiredOids(3)  = OID_GEN_MAXIMUM_LOOKAHEAD
+      RequiredOids(4)  = OID_GEN_MAXIMUM_FRAME_SIZE
+      RequiredOids(5)  = OID_GEN_LINK_SPEED
+      RequiredOids(6)  = OID_GEN_TRANSMIT_BUFFER_SPACE
+      RequiredOids(7)  = OID_GEN_RECEIVE_BUFFER_SPACE
+      RequiredOids(8)  = OID_GEN_TRANSMIT_BLOCK_SIZE
+      RequiredOids(9)  = OID_GEN_RECEIVE_BLOCK_SIZE
+      RequiredOids(10) = OID_GEN_VENDOR_DESCRIPTION
+      RequiredOids(11) = OID_GEN_CURRENT_LOOKAHEAD
+      RequiredOids(12) = OID_GEN_DRIVER_VERSION
+      RequiredOids(13) = OID_GEN_MAXIMUM_TOTAL_SIZE
+      RequiredOids(14) = OID_GEN_MAC_OPTIONS
+      RequiredOids(15) = OID_GEN_MAXIMUM_SEND_PACKETS
+      RequiredOids(16) = OID_GEN_VENDOR_DRIVER_VERSION
+
+      RequiredOidsLength = 17
+
+      If (nMedium <> NDISMEDIUMIRDA) Then
+         ' All ethernet media
+         RequiredOids(17) = OID_GEN_VENDOR_ID
+         RequiredOids(18) = OID_GEN_CURRENT_PACKET_FILTER
+         RequiredOids(19) = OID_GEN_MEDIA_CONNECT_STATUS
+         RequiredOids(20) = OID_GEN_XMIT_OK
+         RequiredOids(21) = OID_GEN_RCV_OK
+         RequiredOids(22) = OID_GEN_XMIT_ERROR
+         RequiredOids(23) = OID_GEN_RCV_ERROR
+         RequiredOids(24) = OID_GEN_RCV_NO_BUFFER
+
+         If (nMedium = NDISMEDIUM802_3) Then
+            RequiredOids(25) = OID_802_3_PERMANENT_ADDRESS
+            RequiredOids(26) = OID_802_3_CURRENT_ADDRESS
+            RequiredOids(27) = OID_802_3_MULTICAST_LIST
+            RequiredOids(28) = OID_802_3_MAXIMUM_LIST_SIZE
+            RequiredOids(29) = OID_802_3_MAC_OPTIONS
+            RequiredOids(30) = OID_802_3_RCV_ERROR_ALIGNMENT
+            RequiredOids(31) = OID_802_3_XMIT_ONE_COLLISION
+            RequiredOids(32) = OID_802_3_XMIT_MORE_COLLISIONS
+            RequiredOidsLength = 33
+         ElseIf (nMedium = NDISMEDIUM802_5) Then
+            RequiredOids(25) = OID_802_5_PERMANENT_ADDRESS
+            RequiredOids(26) = OID_802_5_CURRENT_ADDRESS
+            RequiredOids(27) = OID_802_5_CURRENT_FUNCTIONAL
+            RequiredOids(28) = OID_802_5_CURRENT_GROUP
+            RequiredOids(29) = OID_802_5_LAST_OPEN_STATUS
+            RequiredOids(30) = OID_802_5_CURRENT_RING_STATUS
+            RequiredOids(31) = OID_802_5_CURRENT_RING_STATE
+            RequiredOids(32) = OID_802_5_LINE_ERRORS
+            RequiredOids(33) = OID_802_5_LOST_FRAMES
+            RequiredOidsLength = 34
+         ElseIf (nMedium = NDISMEDIUMFDDI) Then
+            RequiredOids(25) = OID_FDDI_LONG_PERMANENT_ADDR
+            RequiredOids(26) = OID_FDDI_LONG_CURRENT_ADDR
+            RequiredOids(27) = OID_FDDI_LONG_MULTICAST_LIST
+            RequiredOids(28) = OID_FDDI_LONG_MAX_LIST_SIZE
+            RequiredOids(29) = OID_FDDI_SHORT_PERMANENT_ADDR
+            RequiredOids(30) = OID_FDDI_SHORT_CURRENT_ADDR
+            RequiredOids(31) = OID_FDDI_SHORT_MULTICAST_LIST
+            RequiredOids(32) = OID_FDDI_SHORT_MAX_LIST_SIZE
+            RequiredOids(33) = OID_FDDI_ATTACHMENT_TYPE
+            RequiredOids(34) = OID_FDDI_UPSTREAM_NODE_LONG
+            RequiredOids(35) = OID_FDDI_DOWNSTREAM_NODE_LONG
+            RequiredOids(36) = OID_FDDI_FRAME_ERRORS
+            RequiredOids(37) = OID_FDDI_FRAMES_LOST
+            RequiredOids(38) = OID_FDDI_RING_MGT_STATE
+            RequiredOids(39) = OID_FDDI_LCT_FAILURES
+            RequiredOids(40) = OID_FDDI_LEM_REJECTS
+            RequiredOids(41) = OID_FDDI_LCONNECTION_STATE
+            RequiredOidsLength = 42
+         End If   
+
+      End If
+
+   End Sub
+   
+   Private Function wsfCheckSupportedOids
+      Dim nCount, iIndex
+      Dim bResult
+      Dim ThisOid
+      Dim arrGuidData
+      
+      '--------------------------------------------------------------
+      ' variation:  check to see that all oids that driver claims to support
+      '             are actually supported....
+      '
+      '--------------------------------------------------------------
+      
+      nCount = CLng(0)
+      Do While (nCount < RequiredOidsLength)
+         ThisOid = RequiredOids(nCount)
+         nCount = nCount + 1
+         
+         oLog.Variation("Check if listed OID is really supported")
+         '
+         ' first get the info to compare it with...
+         '
+         
+         bResult = oTestCard.vbFastNdisIOControl(ThisOid, arrGuidData, QUERY_GLOBAL_STATS)
+         If (Not bResult) Then
+            oNDTCore.PrintOidName(ThisOid)
+            oLog.Write("OID not supported for NdisIOConrol.  Will skip queryguid tests" )
+         Else
+            oLog.Variation("Querying GUID for this adapter")
+            bResult = oTestCard.vbQueryGuid(ThisOid, arrGuidData)
+            If (Not bResult) Then
+               oNDTCore.PrintOidName(ThisOid)
+               call oLog.Failed ("Call to WmiQuerySingleInstance failed for the OID" , 21540)
+            End If
+            
+            oLog.Variation("Querying GUID for all adapters")
+            bResult = oNDTCore.QueryGuidAll(ThisOid)
+            If (Not bResult) Then
+               oNDTCore.PrintOidName(ThisOid)
+               call oLog.Failed ("Call to WmiQueryAllData failed for the OID" , 21541)
+            End If
+         End If
+      Loop
+      
+      Dim GuidArrLen, arrGuids()
+      Dim GuidOne(4)
+      '
+      ' get the list of private GUIDs, if any, supported by the driver.
+      ' and test them out...
+      '
+      GuidArrLen = CLng(0)
+      
+      oLog.Variation("Obtaining all supported GUIDs")
+      bResult = oTestCard.vbFastNdisIOControl(OID_GEN_SUPPORTED_GUIDS, arrGuids, QUERY_GLOBAL_STATS)
+      If (Not bResult) Then
+         oLog.Write("No private GUIDs registered." )
+      Else
+         ' The length of an array that holds, say 6 elements is allocated as 5 but uses 
+         ' an extra 0th element, so to get the actual length, add 1 to the length returned.
+         
+         GuidArrLen = UBound(arrGuids) + 1
+         
+         iIndex = CLng(0)
+         Do While (iIndex < GuidArrLen)
+            
+            oLog.Variation("Querying GUID for all adapters")
+            GuidOne(0) = arrGuids(iIndex + 0)
+            GuidOne(1) = arrGuids(iIndex + 1)
+            GuidOne(2) = arrGuids(iIndex + 2)
+            GuidOne(3) = arrGuids(iIndex + 3)
+            
+            iIndex = iIndex + 7
+            
+            ' Guid would be printed by the Query functions
+            
+            bResult = oNDTCore.QueryGuidAll(GuidOne)
+            If (Not bResult) Then
+               call oLog.Failed ("Call to WmiQueryAllData failed" , 21542)
+            End If
+            
+            oLog.Variation("Querying GUID for this adapter")
+            bResult = oTestCard.vbQueryGuid(GuidOne, arrGuidData)
+            If (Not bResult) Then
+               call oLog.Failed ("Call to WmiQuerySingleInstance failed" , 21543)
+            End If
+         Loop
+      End If   
+      
+   End Function
+   
+End Class
+
+</script>
+</job>
+</package>
+
+
+<!--- CRC = 0x0856ef70 --->

@@ -1,0 +1,849 @@
+<HTML>
+<HEAD>
+<META http-equiv="Content-Type" content="text/html; charset=iso-8859-1">
+<TITLE>Windows&nbsp;Longhorn Driver Kit Release Notes</TITLE>
+</HEAD>
+<BODY link="#0000ff" vlink="#800080" bgcolor="#ffffff">
+
+
+<!---------------------------Title----------------------------------->
+<FONT FACE="Verdana, Arial, Helvetica" SIZE=2>
+<B><FONT FACE="Verdana" SIZE=+2>Microsoft&reg; Windows&reg; codename "Longhorn" Driver Kit (LDK) Release Notes</FONT></B>
+
+</UL>
+
+<!----------------------Table of Contents---------------------------->
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1">Table of Contents</FONT></B>
+<UL>
+
+<P>
+<b><FONT face="Verdana, Arial, Helvetica" size="2">LDK Development Installation News</FONT></b><br>
+<ul>
+<A href="relnote.htm#devinstall"><FONT face="Verdana, Arial, Helvetica" size="2">Development Install Issues</FONT><br></a>
+<A href="relnote.htm#environments"><FONT face="Verdana, Arial, Helvetica" size="2">The LDK Build Environment</FONT><br></a>
+<A href="relnote.htm#samples"><FONT face="Verdana, Arial, Helvetica" size="2">Building LDK Samples</FONT><br></a>
+<A href="relnote.htm#other"><FONT face="Verdana, Arial, Helvetica" size="2">Other Sample Issues</FONT><br></a>
+<A href="relnote.htm#compiling"><FONT face="Verdana, Arial, Helvetica" size="2">Compiling and Linking</FONT><br></a>
+<A href="relnote.htm#print"><FONT face="Verdana, Arial, Helvetica" size="2">Printing Drivers</FONT><br></a>
+<A href="relnote.htm#WDM"><FONT face="Verdana, Arial, Helvetica" size="2">Windows Driver Model (WDM) Audio Drivers</FONT><br></a>
+<A href="relnote.htm#display"><FONT face="Verdana, Arial, Helvetica" size="2">Display Drivers</FONT><br></a>
+<A href="relnote.htm#compatibility"><FONT face="Verdana, Arial, Helvetica" size="2">Windows Compatibility</FONT><br></a>
+<A href="relnote.htm#tools"><FONT face="Verdana, Arial, Helvetica" size="2">Tools</FONT><br></a>
+<A href="relnote.htm#miscellaneous"><FONT face="Verdana, Arial, Helvetica" size="2">Miscellaneous</FONT><br></a>
+</ul>
+<br>
+<b><FONT face="Verdana, Arial, Helvetica" size="2">LDK Test Harness News</FONT></b><br>
+<ul>
+<A href="relnote.htm#INSTALL"><FONT face="Verdana, Arial, Helvetica" size="2">Installing the LDK Test Harness</FONT><br></a>
+	<ul><A href="relnote.htm#security"><FONT face="Verdana, Arial, Helvetica" size="2">Security Issues</FONT><br></a>
+<A href="relnote.htm#scenarios"><FONT face="Verdana, Arial, Helvetica" size="2">Tested Scenarios</FONT><br></a>
+<A href="relnote.htm#issues"><FONT face="Verdana, Arial, Helvetica" size="2">Installation Issues</FONT><br></a>
+
+<A href="relnote.htm#uninstall"><FONT face="Verdana, Arial, Helvetica" size="2">Uninstall Issues</FONT><br></a>
+
+<A href="relnote.htm#xpsp2"><FONT face="Verdana, Arial, Helvetica" size="2">XPSP2 and ICF</FONT><br></a></ul>
+<A href="relnote.htm#job"><FONT face="Verdana, Arial, Helvetica" size="2">Job Creation</FONT><br></a>
+<A href="relnote.htm#run"><FONT face="Verdana, Arial, Helvetica" size="2">Run Time</FONT><br></a>
+<A href="relnote.htm#notes"><FONT face="Verdana, Arial, Helvetica" size="2">Job Notes</FONT><br></a>
+</ul>
+
+
+<!----------------------LDK Development Installation News---------------------------->
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+2">LDK Development Installation News</FONT></B>
+<UL>
+<A name=devinstall></A>
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1">Development Install Issues</FONT></B>
+
+<P><B><FONT face="Verdana, Arial, Helvetica"><h4>LDK Directory Structure</h4></FONT></B>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">The LDK is a combination and expansion of the Windows DDK (Driver Development Kit) and the Windows HCT (Hardware Compatibility Kit).  The structure of the LDK directories is similar to that of the Windows&reg; XP and Windows Server<SUP>TM</SUP> 2003 releases of the Windows DDK.  This differs significantly from the directory structure used in the Windows&reg; 2000 release of the Windows DDK.
+</FONT></P>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Drivers should continue to reference ntddk.h or wdm.h by specifying &quot;#include <wdm.h>&quot;. The build environment automatically sets the appropriate include and library file paths. Drivers may find that some header files have been moved from their technology-specific directories (such as \network\inc) to a higher-level LDK directory (such as \inc\wxp). Moving these files to the higher-level include path makes it unnecessary to specify the specific include path for these files.
+</FONT></P>
+
+
+
+<P><B><FONT face="Verdana, Arial, Helvetica"><H4>Removal of Windows 9x Content</H4></FONT></B>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Microsoft Windows 95, Windows 98 and Windows Me driver-development documentation is included in the LDK, but the build environments for Windows 95, Windows 98 and Windows Me are no longer supported, and are no longer available in the LDK.</FONT></P>
+
+
+<P><B><FONT face="Verdana, Arial, Helvetica"><H4><I>Dirs</I> Files</H4></FONT></B>
+<P><FONT face="Verdana, Arial, Helvetica" size="2">The method of generating Dirs files has changed. Now, the Dirs are created by the LDK setup program during the installation of the LDK. If the Dirs need to be recreated after installation of the kit, a command-line utility (MakeDirs) is supplied in the <DDKRoot>\bin\x86 directory. The uninstall program also updates the Dirs if a Basic Uninstall is selected.</FONT></P>
+
+<P>
+</UL>
+
+
+
+
+<!-------------------------LDK Build Environment------------------------------------->
+<A name=environments></A>
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1">The LDK Build Environment</FONT></B>
+
+<UL>
+
+<P><B><FONT face="Verdana, Arial, Helvetica"><H4>Use this LDK For...</H4></FONT></B>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Use the LDK build environments for evaluation and preview purposes only. Do not use these LDK Build Environments for production-level coding. The Windows Server 2003 DDK should be used for production at this time. This release of the LDK is for evaluation and preview only.</FONT></P>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Use the <b>Windows Longhorn build environments</b>
+in the LDK to build drivers that use new features or functionality available only in Windows Longhorn.</FONT></P>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Use the <b>Windows Server 2003 build environments</b>
+in the LDK to build drivers that use new features or functionality available only in Windows Server 2003.</FONT></P>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Use the <b>Windows XP build environments</b> in
+the LDK to build drivers that do not use new functionality as described above, and are targeted for either Windows XP or Windows XP and Windows Server 2003. The Windows XP build environments in the LDK contain minor updates to the DDK shipped with Windows XP and Windows XP Service Pack 1.</FONT></P>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Use the <b>Windows 2000 build environments</b> in the LDK to build drivers that are designed to run on Windows 2000, or later operating systems. The Windows 2000 build environment in the LDK include updated headers and libraries for Windows 2000 Service Pack 4.</FONT></P>
+
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1"><H4>Restructuring of NTDDK.h and WDM.h for Windows Longhorn</H4></font></B>
+<P><FONT face="Verdana, Arial, Helvetica" size="2"></FONT>In this release of the Windows LDK, we have begun the process of restructuring and updating many of the Windows driver development header files. Astute developers will note, for example, that the Windows Longhorn version of NTDDK.h now includes WDM.h (instead of duplicating information contained in WDM.h).
+
+The headers format changes <i>should not have any affect</i> on which header files you include or how you write your driver.  Please be sure to file a bug report if you discover any inconsistencies that result from this restructuring.</P>
+
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1"><H4>Changes to Support Conditional Compilation Based on Build Environment</H4></FONT></B>
+<P><FONT face="Verdana, Arial, Helvetica" size="2">The environment variable DDK_TARGET_OS has been introduced to allow conditional testing in the 'sources' file to determine if a driver is being built in the Windows 2000, Windows XP, Windows Server 2003, or Windows Longhorn build environments. This variable is set to &quot;Win2K&quot;, &quot;WinXP&quot;, &quot;WinNET&quot;, or &quot;Wlh&quot; respectively. For more information, see "DDK_TARGET_OS" in the index of the LDK documentation.</FONT></P>
+
+
+</ul>
+<p>
+<br>
+
+
+
+<!-------------------------Building LDK Samples---------------------->
+<A name=samples></A>
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1">Building LDK Samples</B></FONT>
+<ul>
+
+
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Some samples may use new features or functionality in Windows Longhorn. These samples will not build properly in the Windows Server 2003, Windows XP or Windows 2000 build environments. In addition, <B>some</b> samples use features or functionality first present in Windows XP. These samples will not build properly in the Windows 2000 Build environments.</FONT></P>
+
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">If you build the entire LDK, samples that are not supported in the active build environment will not be built because of one (or more) of the following:</FONT></P>
+
+<ul>
+<li>Changes to the driver's SOURCES
+<li>Changes to one of the driver's MAKEFILEs
+<li>Changes to a DIRS file
+</ul>
+
+
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">The result is that the correct set of drivers is always built when a command window is started for a given build environment, and the <b>build -cZ</b> command is issued from the LDK base directory.</FONT></P>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">When a command window is started for a given build environment, a user may manually <b>cd</b> to the directory of a driver that uses features or functionality that are not supported in that environment. If the user attempts to build such a driver in an unsupported environment, and the driver was blocked from building by means of a DIRS file, the build command fails with a variety of errors and/or warnings. This is the expected behavior.</FONT></P>
+
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2"><b>Note: For More information, see <A href="relnote.htm#OTHER">Other Sample Issues</b></A></FONT>
+<p>
+
+
+<br><P><B><FONT face="Verdana, Arial, Helvetica" size="+1"><H4>Expected Warnings - Building Samples in Windows XP and Windows 2000 Environments</H4></FONT></B>
+
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Some samples in the Windows Server 2003 DDK are not supported on Windows XP and Windows 2000.  These samples now generate a warning when they are built in a non-supported build environment.  The warning (which will appear in the build warning log) is in the format:</P>
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="2">BUILDMSG: Warning : The sample [path to sample] is not valid for the current OS target</B></P>
+
+
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1"><H4>Extensible Firmware Interface (EFI)</H4></FONT></B>
+
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Developers who would like to build 64 bit EFI executable images for the Intel&reg; Itanium&#8482; Processor Family may use the 64 bit LDK build environments for compiling and linking images. This includes EFI compliant System Firmware, EFI applications and Option ROMs. EFI drivers and applications will only run in the pre-boot EFI firmware environment before Windows XP, Windows Server 2003, or Windows Longhorn is loaded. At this time only the 64 bit compiler and linker have been tested with the EFI Sample Implementation releases and the Toolkit. For further information on EFI specifications and sample source code go to <a href="http://developer.intel.com/technology/EFI">http://developer.intel.com/technology/EFI</a>.</FONT></P>
+
+
+
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1"><H4>Changes to the Windows 2000 Build Environment</h4></b>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Additional headers have been added to more completely match the headers shipped for the Win XP environment. This was necessary to allow some of the samples to compile when built in the Windows 2000 build environment.</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">When creating the Windows 2000 build environment using the Start Menu icon, the environment variable BUILD_OPTIONS is set in order to exclude many samples from default compilation under this environment. This has a couple of effects and limitations, which apply only to the Windows 2000 environment.</p>
+
+<ul>
+<li>Build -cZ from the root of the LDK now results in a clean build with no errors or warnings.
+<li>When executing Build -cZ from the root, not all samples are built.
+<li>This does not prevent you from using the CD command to move into an arbitrary sample directory and attempting to build the sample. When doing so, samples that do not work correctly in the Windows 2000 build environment will still produce errors and/or warnings.
+</ul>
+
+</ul>
+
+
+<!-------------------------------Other Sample Issues-------------------------->
+<A name=other></A>
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1">Other Sample Issues</b></p>
+<ul>
+
+
+
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1"><H4>Revised and improved Still Image Section</h4></b>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">The Still Imaging / WIA section has major improvements from the previous Windows Server 2003 DDK release. If you write drivers for WIA, make sure to visit this section.</p>
+
+
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1"><H4>WDM General CplSvr1 Sample</h4></b>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">The sample is not complete in this release of the LDK. The
+sample is currently under development. </p>
+
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1"><H4>IME Warnings under the Japanese System Locale</h4></b>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">When the system locale has been set to Japanese, the following three warnings occur: </p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">cht\chajei\..\ime.rc(37) : warning RC4093: unescaped newline in character constant in inactive code.<br>
+<FONT face="Verdana, Arial, Helvetica" size="2">cht\phon\..\ime.rc(37) : warning RC4093: unescaped newline in character constant in inactive code.<br>
+<FONT face="Verdana, Arial, Helvetica" size="2">cht\quick\..\ime.rc(37) : warning RC4093: unescaped newline in character constant in inactive code.<br>
+<P><FONT face="Verdana, Arial, Helvetica" size="2">These warnings appear in both the free and checked builds. These warnings do not cause any problems in the resulting drivers. </p>
+
+
+
+</ul>
+
+
+
+<!-------------------------Compiling and Linking---------------------->
+<A name=compiling></A>
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1">Compiling and Linking</b></p>
+
+<UL>
+
+<P><B><FONT face="Verdana, Arial, Helvetica"><H4>Tested Platforms and Compilers</h4></B>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">The LDK includes a complete set of tools for building drivers. These tools have been upgraded from those released with the Windows XP DDK and Windows Server 2003 DDK. As in the Windows XP DDK, Microsoft Visual C++ is no longer required.</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Use the included tools for all Windows 2000, Windows XP, and Windows Server 2003 drivers. This version of the Windows LDK does not support building drivers with a version of Microsoft Visual C++ other than the one supplied with the LDK.</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Some Windows Millennium Edition (Me) drivers (such as DirectX drivers for that platform) may require Visual C++ version 6.0 for use regardless of the platform being used to build the drivers. Later versions of Visual C++ will not work in the Windows Me build environment.</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">This toolset has not been fully tested for use other than driver development. Development work on this toolset is not complete.</p>
+
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1"><H4>Buffer Overflow Checking and DriverEntry</h4></b>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">The Windows LDK enables the /Gs compiler option for both free and checked drivers built in the Windows Longhorn and Windows Server 2003 build environments.  This compiler option implements stack buffer overflow checking.  To support this feature, the Windows Longhorn and Windows Server 2003 build environments set the driver entry point to GsDriverEntry.  GsDriverEntry performs some brief initialization, and then calls the driver's DriverEntry entry point.</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Experience with using this switch at Microsoft has shown that the /Gs option adds very little overhead to a kernel module and also helps to counter potential security risks.</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Buffer overflow checking can be turned off by setting the environment variable BUFFER_OVERFLOW_CHECKS to zero in the Windows Longhorn and Windows Server 2003 build environments.</p>
+
+
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1"><H4>Updated Setenv.bat</h4></b>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">The &lt;BaseDir&gt\setenv64.bat has been merged into a
+&lt;BaseDir&gt;\setenv.bat. Windows XP, Windows Server 2003, and Windows Longhorn build environments are supported with the &lt;BaseDir&gt;\setenv.bat but the command line has been updated.  For more information, see "setenv.bat" in the index of the LDK documentation. </p>
+
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1"><H4>Changes to Build Log File Names</h4></b>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">The names of the log files created by the build utility have been changed to support the multiple build environment functionality included in the kit. For more information, see "specifying the location of created files" in the index of the LDK documentation.</p>
+
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1"><H4>Building Binary Compatible Drivers</h4></B>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Drivers typically should be built in the build environment of the earliest operating system that the drivers support. Therefore, a driver that needs to run on Windows 2000 and Windows XP should be built in the Windows 2000 build environment.</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Some
+drivers, however, may want to use additional features that are available on the
+newer operating system when they run on that operating system. Such drivers
+may succeed by using functions such as IoIsWdmVersionAvailable()
+and MmGetSystemRoutineAddress(), or similar
+technology specific functions.</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Thorough testing is required to determine if a driver built for a
+later operating system works properly on an earlier operating system. This
+may not always be possible. </p>
+
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1"><H4>Change in Definition of KeNumberProcessors</h4></B>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">The
+kernel variable <b>KeNumberProcessors</b> indicates
+the number of active CPUs in the system on which a driver is running. The definition
+for this variable has been changed in the Windows XP versions of <span
+class=SpellE>ntddk.h and wdm.h from a pointer
+to a value. The Windows 2000 definition of this variable required that <span
+class=SpellE>KeNumberProcessors be dereferenced
+(for example, *KeNumberProcessors). As a result of the change
+in the definition of this variable, drivers built in the Windows XP build
+environment must not dereference this variable (for example, KeNumberProcessors).</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Drivers
+that fail to use KeNumberProcessors correctly get an &quot;illegal indirection&quot; error at compile time.</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Regardless of the declaration used, drivers that properly reference KeNumberProcessors according to the environment in which
+they are built work properly on Windows 2000, Windows XP, and Windows
+Server 2003. Therefore, a driver that properly references KeNumberProcessors
+and that is built in the Windows 2000 build environment gets the proper value for
+this variable when the driver is run on any of the three platforms (Windows
+2000, Windows XP, and Windows Server 2003).</p>
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1"><H4>Windows 9x Development Platform</h4></b>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Using Windows 9x as a development platform for WDM or Windows XP drivers is not supported. Drivers that target Windows XP, with or without Windows 9x as an additional target, should be developed on a computer running Windows XP.</p>
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1"><H4>New Slist Implementation</h4></b>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Additional optimizations have been added to the Windows XP and later implementations of singly-linked lists (<b>Slists</b>). The Windows 2000 implementation of Slists also remains in the LDK to enable drivers built on Windows 2000 to run unchanged on Windows XP and later systems. The
+functions affected are ExInterlockedPopEntrySList() and ExInterlockedPushEntrySList() as well as ExAllocateFromPagedLookasideList(), ExFreeToPagedLookasideList(), ExAllocateFromNPagedLookasideList(), and ExFreeToNPagedLookasideList().</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">The Windows XP and later implementation of these functions, by
+default, <i>is not binary compatible</i> with the implementation on Windows
+2000. If your driver uses SLists and needs to run on
+Windows 2000, you should build your driver in the Windows 2000 build environment.
+Optionally, you can build your driver in another build environment and use the Windows 2000 Slist implementation by defining the symbol _WIN2K_COMPAT_SLIST_USAGE at compile time, before including any other LDK
+header files. </p>
+
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1"><H4>Identifying Obsolete Functions in Your Driver</h4></b>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">The Windows Server 2003 and Windows Longhorn build environments of the Windows LDK have a very useful feature that driver developers can enable. When
+this feature is enabled, the compiler generates a warning message whenever particular obsolete functions or macros
+from ntddk.h are referenced. These obsolete functions
+are clearly marked in the LDK documentation.</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">To enable deprecated function checking at compile time, you must define the symbol DEPRECATE_DDK_FUNCTIONS in your build environment. This variable is defined, and thus <i>deprecated function checking is enabled, in the Windows Longhorn checked build environment</i>.</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">The compiler warning message generated when deprecated function checking is enabled shows both the line in your source file that invoked the obsolete function, and the line in ntddk.h where
+the function is declared. An example of an error message you will receive:</p>
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="2">\test\mydriver.c(1785) : error C4996: 'RtlExtendedIntegerMultiply'
+was declared deprecated</b></p>
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="2">winddk\WinXP\inc\ddk\wxp\ntddk.h(3106) : error see
+declaration of 'RtlExtendedntegerMultiply'</b></p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Each of the functions that have been declared deprecated in ntddk.h
+have comments that indicate what, if any, function or mechanism you should use instead of the obsolete function. You can find this information in the LDK Documentation. If you look at line 3106 of ntddk.h you'll find the following declaration, instructing you to use native 64-bit math instead of RTL functions for this purpose:</p>
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="2">DECLSPEC_DEPRECATED_DDK&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;//
+Use native __int64 math<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NTSYSAPI<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;LARGE_INTEGER<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;NTAPI<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;RtlExtendedIntegerMultiply <br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;LARGE_INTEGER Multiplicand,<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;LONG Multiplier<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;);</b></p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">The goal of this feature is to help developers easily discover functions in their drivers that have been obsolete. Functions that have been declared deprecated in the LDK have been obsolete at least since Windows 2000. Only a subset of functions that are obsolete have been actually
+declared as deprecated. There may be other obsolete functions, both in ntddk.h and in other header files that have not yet been declared deprecated. see the LDK documentation to confirm which functions are obsolete and which are presently supported.</p>
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1"><H4>Predefined Paths</h4></b>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">The Windows LDK, by default, will not use any pre-defined Include or Library paths
+(as specified by the %include% and %lib% environment variables). This is due to the stand alone nature of the LDK and to avoid possible conflicts with other installed source or compiler programs. Any drivers that need to alter the search path for Include files should use the Includes= directive in the <b>SOURCES</b> file.</p>
+
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1"><H4>Projects Including ATL Libraries</h4></b>
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Projects that use the ATL libraries may encounter a build break when compiling for Windows 2000, Windows XP, or Windows Server 2003.  The temporary fix for this release of the LDK is to add the following line prior to including ATL headers, (your project’s stdafx.h is a good place to add it):</p>
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="2">#include “specstrings.h”</b></p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">This is a temporary fix and will be corrected in a future release of the LDK.</p>
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1"><H4>Lsadll.lib vs. Secur32.lib</h4></b>
+<P><FONT face="Verdana, Arial, Helvetica" size="2">lsadll.lib has been removed from the LDK.  This library contained the client-side implementations of the LsaRegisterLogonProcess, LsaDeregisterLogonProcess, LsaConnectUntrusted, LsaLookupAuthenticationPackage, LsaCallAuthenticationPackage, LsaLogonUser, and LsaFreeReturnBuffer APIs before secur32.dll was introduced in Windows 2000.  To recompile an application/driver that uses lsadll.lib using the LDK, simply switch lsadll.lib to secur32.lib (for user-mode binaries) or ntoskrnl.lib (for kernel-mode binaries). Applications/drivers already compiled using lsadll.lib will continue to work.</p>
+
+
+
+</p>
+
+
+</ul>
+
+<!-------------------------Print Drivers (Rorleth)---------------------->
+<A name=print></A>
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1">Print Drivers</FONT></B>
+<UL>
+
+
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1"><H4>Cannot Install Printers on Current Longhorn x64 Platform</h4></b>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">On the current x64 version of Longhorn distributed for WinHEC, it is not yet possible to install a printer driver for the x64 platform, in turn preventing creation of a printer queue.  Printer driver installation works as normal on Windows 2003 Server SP1 versions for all architectures, and in the Longhorn IA64 and x86 WinHEC versions.</p>
+
+
+</ul>
+
+
+
+<!-------------------------WDM Audio Drivers---------------------->
+<A name=WDM></A>
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1">WDM Audio Drivers</FONT></B>
+<UL>
+
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">This Windows&reg;&nbsp;LDK should be used for all WDM audio driver development. Please rebuild your driver to take advantage of recent changes and fixes. As of this release, this LDK supports Windows 98 Second Edition, Windows Me, Windows 2000, Windows XP, and Windows Server 2003.  Additionally, the LDK supports pre-production porting of drivers to Windows Longhorn. This LDK does not support nor do we recommend the development of WDM audio drivers for the original Windows 98 release. The code samples that are listed below will work interchangeably on the supported operating systems with the INF files that are provided with the samples: 
+
+<P>
+<UL>
+<LI>ac97 - A sample audio driver that runs on certain Intel based motherboard with an integrated AC97 controller. This sample shows how to write a WDM audio adapter driver that implements WavePci support for a PCI add-in card with scatter/gather DMA capabilities. Included with this sample driver are additional subdirectories containing sample code that works in conjunction with the driver. The subdirectories are named as follows: 
+	<UL>
+	<LI>cpl - This sample shows how to write a control panel application. It requires that both the proppage 		sample DLL and the ac97 sample driver be installed. 
+	<LI>driver - This is the sample audio driver for the AC97 controller. 
+	<LI>INFViewer - This subdirectory contains an HTML version of the driver's INF file with hot-linked references 		to INF sections and keyword definitions in order to facilitate easy exploration. 
+	<LI>proppage - This sample shows how to write a property-page DLL that gets loaded by the device manager when 	a user elects to display the properties of your device. In addition to displaying the default property sheets, 	the device manager also displays the property sheet that is defined in the sample. This sample DLL requires 	that the ac97 sample driver be installed. 
+	</ul>
+
+
+<LI>ddksynth - Kernel-mode DLS synthesizer. This sample can be adapted for a MIDI output device as well. 
+<LI>dmusuart - MPU-401 miniport driver for processing DirectMusic and MIDI input and output streams. This is the source code for the built-in DMusUART miniport driver in portcls.sys. Hardware vendors can adapt this sample to write their own custom miniport drivers. 
+<LI>fmsynth - FM-synth miniport driver for MIDI. This sample driver provides an interface to a device that implements OPL3-style synthesis. This is the source code for the built-in FMSynth miniport driver in portcls.sys. Hardware vendors can adapt this sample to write their own custom miniport drivers. 
+<LI>gfx - The two GFX samples appear in the DDK for Windows XP SP1, Windows Server 2003, and later. These samples implement support for a simple GFX (global effects) filter (USB only): 
+	<UL>
+	<LI>driver - This sample GFX driver performs a simple data transformation on a stereo audio stream that is 		played through a pair of USB speakers. 
+	<LI>GFXProp - This sample implements a property page that the user accesses through the Windows Multimedia 		control panel in order to configure the GFX filter. 
+	</UL>
+
+
+<LI>mpu401 - Stand-alone sample adapter driver. This adapter driver implements standard functionality for an MPU-401 MIDI interface device. The source code for this sample is quite small because it uses only the system-supplied miniport drivers that are implemented in portcls.sys. 
+<LI>msvad - Microsoft Virtual Audio Device. This is a collection of samples that all use the same "virtual audio device" in lieu of an actual hardware-based adapter driver. Each of these samples highlights a different facet of the WDM audio driver architecture: 
+	<UL>
+	<LI>ac3 - Demonstrates support for a non-PCM audio data format. 
+	<LI>drmmult - Demonstrates support for multiple-stream audio with SAP-protected content. For information about SAP (secure audio path), see the Platform SDK documentation. 
+	<LI>drmsimp - Demonstrates support for a single audio stream with SAP-protected content. 
+	<LI>ds2dhw - Demonstrates support for hardware-accelerated two-dimensional mixing for DirectSound. 
+	<LI>multstr - Demonstrates support for playback of multiple streams of PCM audio data. 
+	<LI>pcmex - Demonstrates support for a PCM audio format that is defined by the WAVEFORMATEXTENSIBLE structure. 
+	<LI>simple - A skeleton reference implementation of an audio adapter driver upon which the other msvad sample drivers are built. 
+	</UL>
+
+
+<LI>sb16 - Sound Blaster 16 sample. This sample implements an audio adapter driver for an SB-compatible adapter card on an ISA bus. 
+<LI>stdunk - Standard <B>IUnknown</B> sample. Skeleton implementation of a standard <B>IUnknown</B> interface that conforms to the port-class model for using COM in the kernel. 
+</UL>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">For more information, see the Readme documentation that accompanies each of these samples.</FONT><P>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">To install the portion of the Windows DDK that contains the WDM audio driver samples, follow these instructions:</FONT>
+<UL>
+<LI>Run the Windows DDK setup application. 
+<LI>From the list of component groups that the setup application displays, first select "WDM Samples" under "Windows DDK"; then select "Audio Samples". 
+</UL>
+<P>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">When setup is complete, you will find the audio driver samples in the src\wdm\audio subdirectory under the main directory of your DDK installation.</FONT><P>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">The LDK includes documentation for developing drivers to run in Windows 98 and Windows Me, but it no longer provides build environments for Windows 98 and Windows Me. If you require the Windows 98 or Windows Me build environments and related tools see to the Windows XP Service Pack 1 DDK. 
+</FONT><P>
+
+<P>
+
+</ul>
+
+<!-------------------------Display Drivers---------------------->
+<A name=display></A>
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1">Display Drivers</FONT></B>
+<UL>
+
+
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1"><H4>Disabling the Watchdog Timer While Testing Display Drivers</h4></b>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Microsoft® Windows® XP and later operating systems use a watchdog timer that generates bugcheck 0xEA (or breaks into an attached debugger) if a thread remains in a video display driver longer than a certain time threshold. If, during testing and debugging, you use software to emulate rendering that a display adapter will eventually perform, you might need to lengthen the watchdog time threshold. Otherwise, it is likely that the threshold will be exceeded by the rendering emulation code, which is significantly slower than hardware rendering.</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">To specify the watchdog time threshold for display drivers, create the following REG_DWORD entry in the registry: </p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbspHKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Watchdog\Display\BreakPointDelay</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">The value of BreakPointDelay specifies the watchdog time threshold in 10-second units. For example, a value of 200 specifies a threshold of 2,000 seconds. On operating systems earlier than Windows XP Service Pack 2, BreakPointDelay has meaning only if a debugger is connected.</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">If you test your display driver without an attached debugger, you can prevent the watchdog timer from generating a bugcheck by creating the following REG_DWORD entry in the registry and setting its value to 1:</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbspHKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Watchdog\Display\DisableBugCheck</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2"><b>Note:</b> Setting DisableBugCheck to 1 disables the generation of a bugcheck, but does not disable EA recovery (forced return from the display driver and a change to VGA mode).</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">To disable EA recovery, set the value of the following registry entry to 0.</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbsp&nbspHKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Control\Watchdog\Display\EaRecovery</p>
+
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">The techniques in this section of the Windows LDK Release Notes should only be used for testing and debugging. Do not release a driver that alters BreakPointDelay or DisableBugCheck.  For more information, search for "watchdog" in the LDK documentation.</p>
+
+
+</ul>
+
+
+
+<!-------------------------Windows Compatibility---------------------->
+<A name=compatibility></A>
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1">Windows Compatibility: Windows 2000 to Windows XP, Windows Server 2003, and Windows Longhorn </b></p>
+<ul>
+
+
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1"><H4>Windows Memory Manager</h4></b>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">A change made in the memory manager starting with Windows XP affects how functions such as ZwMapViewOfSection and MmMapLockedPagesSpecifyCache work.</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">In the past (Windows&reg; NT 4.0 and Windows 2000), the driver writer was required to ensure that the same physical page was not mapped with different caching attributes. In other words, it was possible to map the same physical page with different caching attributes. This is an error, and can cause internal processor corruption that leads to undefined results.</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">In Windows XP and later systems, the memory manager catches this problem, that is, when mapping the same physical page, the page must always be mapped with the same caching attribute. If conflicting attributes are specified by the caller of the above functions (ZwMapViewOfSection and MmMapLockedPagesSpecifyCache), the Windows Memory Manager automatically tries to determine and use the correct attribute. If the correct attribute cannot be determined then ZwMapViewOfSection returns STATUS_CONFLICTING_ADDRESSES and MmMapLockedPagesSpecifyCache returns NULL. </p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">For more information on this topic, go to: <A HREF="http://support.microsoft.com/default.aspx?scid=kb;en-us;189327">http://support.microsoft.com/default.aspx?scid=kb;en-us;189327</A>
+
+</ul>
+
+
+
+
+
+
+<!----------------------Tools---------------------------->
+<A name=tools></A>
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1">Tools</b></p>
+<ul>
+
+
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1"><H4>Call Usage Verifier</H4></FONT></B>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">The Windows LDK contains an updated version of <i>Call Usage Verifier</i> (CUV), which was first included in the Windows Server 2003 DDK. CUV provides enhanced bug detection and debugging support for driver writers. It can be used in conjunction with Driver Verifier or used separately. The updated version included in the LDK contains a small number of bug fixes and enhacements to reduce the number of "false positive" error reports.  For more information on CUV, see "Call Usage Verifier" in the index of the LDK documentation.
+</FONT></P>
+
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1"><H4>TraceView- Making Driver Tracing Easier</h4></b>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">The Windows LDK contains a utility, named TraceView, which makes it easier for driver developers to use the features provided by WPP Software Tracing in their drivers</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">WPP Software Tracing enables developers that include trace statements in their drivers to conditionally collect binary trace information during driver execution.  Individual trace statements can be associated with a flags value, similar to DbgPrintEx, thus allowing a sub-set of tracing statements to be activated dynamically in a particular driver.  When not enabled, WPP Software Tracing statements add little run-time overhead to the driver.  This can make it practical for developers to leave trace statements in the production build of their drivers, and to enable a sub-set of these statements in the field to aid in debugging.  For more information on WPP Software Tracing, see "WPP Software Tracing" in the LDK documentation index.</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">The TraceView utility can be used to extract trace information from a driver's PDB file, as well as start and stop tracing sessions.  TraceView can also display WPP trace output in a GUI window.  Usage notes for the TraceView utility can be found in the LDK under \winddk\bldnum\tools\tracing.</p>
+
+
+
+<P><B><FONT face="Verdana, Arial, Helvetica"><H4>PREfast Static Analysis Tool: Introducing PREfast</h4></B>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">In response to developer requests for more diagnostic tools, the LDK includes PREfast - a new tool that helps driver developers detect errors in their C/C++ driver code.  PREfast is a static analysis tool that can identify critical defects such as buffer overruns and report associated problems during the development phase - before your driver ships. PREfast can be run within any of the standard LDK build environments, using your existing build structure. For more information on PREfast, see the documentation and command line reference in the Windows LDK Help.</p>
+<ul>
+
+<P><B><FONT face="Verdana, Arial, Helvetica"><H4>PREfast Usage Notes</h4></B>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">The goal of PREfast is to examine a C/C++ program carefully and identify potential problems in the code.  As a result, after careful examination of all the warnings that PREfast produces for a driver, you will likely determine that some of those warnings are not problems.</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">To exclude warnings that are not problematic, users can automatically filter PREfast errors by means of the PREfast viewer.  The "winpft" filter is particularly useful for this purpose.  You can enable a filter by selecting the filter manually from the PREfast viewer (click the "Filter" button), or by starting the PREfast viewer with the following command while in a DDK Build Environment:</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">C:\> prefast /filterpreset=winpft view</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Test your code with PREfast within any of the LDK 32-bit build environments.  Using PREfast within any of the 64-bit build environments is not supported at this time.
+</p>
+
+
+<P><B><FONT face="Verdana, Arial, Helvetica"><H4>PREfast Warning 314 on IoSetCompletionRoutine</h4></B>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">When building a driver with PREfast, you will notice that each invocation of the IoSetCompletionRoutine macro results in PREfast reporting a warning 314, with the following text:</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">"Incorrect order of operations: bitwise-or has higher precedence than the conditional-expression operator."</p>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">This warning, which is expected and may be safely ignored, is automatically suppressed with the "winpft" filter that is discussed in the PREfast Usage Notes.</p>
+
+
+<P><B><FONT face="Verdana, Arial, Helvetica"><H4>Building the Sample Driver With PREfast</h4></B>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">The Windows LDK samples have been tested with PREfast, and build with zero PREfast warnings.</p>
+</ul>
+<br>
+
+
+
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1"><H4>FusionManifestValidator</h4></b>
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Note: Currently, on Microsoft Windows 2000 computers running FusionManifestValidator, some files may not compile correctly.</p>
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1"><H4>Old Tools</h4></b>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Many older tools that were previously located in the \bin directory have been moved to individual directories located in the \tools directory. Several of these tools, such as drivers.exe, objdir.exe, and kernprof.exe, can be found in the \tools\other\ directory. </p>
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1"><H4>New Tools</h4></b>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">In response to developers' requests, many new tools are available in the LDK. These tools can be found in sub-directories of the LDK \tools directory. Tools that you should evaluate include the PnP Driver Test utility (\tools\pnpdtest\), the sleeper tool for testing driver power management states (\tools\acpi\sleeper\), and the DeviceTree tool that displays the complete system's PnP device tree (\tools\devicetree\). Descriptions of each tool appear in a text file or HTML file located in that tool's directory, or in the LDK documentation.</p>
+
+
+</ul>
+
+
+<!----------------------Miscellaneous---------------------------->
+<A name=miscellaneous></A>
+<P><B><FONT face="Verdana, Arial, Helvetica" size="+1">Miscellaneous</b></p> 
+<ul>
+
+
+
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="2">Color Printing Problem in Windows Server 2003</b>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">Some printer drivers may print color pictures incorrectly in Windows Server 2003 (Japanese version). The problem occurs when the printer driver calls EngTextOut with the pptlOrg parameter set to 0 (a NULL pointer value means that no brush origin is defined). The solution is to set pptlOrg to use a pointer to a brush origin of (0,0) rather than a NULL pointer, prior to the call to EngTextOut.</p>
+
+<br>
+
+<P><B><FONT face="Verdana, Arial, Helvetica" size="2">HBAAPI.MOF and HBAPIWMI.H have been updated to
+include WMI interfaces for the proposed SNIA HBAAPI 2.0 specification.</b>
+
+<P><FONT face="Verdana, Arial, Helvetica" size="2">These files contain information that is based upon an early revision of the HBAAPI 2.0 specification. Because the specification has not yet been approved, the information may change in future releases of these files. </p>
+
+
+
+</ul>
+<br>
+
+
+<!----------------------Test Harness---------------------------->
+<P><B><FONT face="Verdana, Arial, Helvetica" size=+2>LDK Test Harness News</B></P>
+<UL>
+
+<FONT face="Verdana, Arial, Helvetica" size="2"><H4>Please read the entire section on Tested Scenarios prior to installing the Test Harness.</H4></FONT></B></P>
+
+<A name=INSTALL></A>
+<B><FONT face=Verdana size=+1>Installing the LDK Test Harness</FONT></B> 
+  
+
+<A name=security></A>
+<P><B><FONT face="Verdana, Arial, Helvetica"><H4>Security Issues</H4></B>
+
+
+<P><FONT face="Verdana, Arial, Helvetica" size=2>Security modeling and reviews have not been addressed as part of this release.  We highly recommend that the LDK Test Harness Controller, Studio, and Test Clients (systems under test) only be installed on a private network.  For this release, we recommend that the LDK Test Harness components not be installed on your standard development system or on any system connected to an unsecured network.  This issue will be addressed and fixed for future releases of the LDK.</font></p>
+
+
+<A name=scenarios></A>
+<P><B><FONT face="Verdana, Arial, Helvetica"><H4>Tested Scenarios</H4></B>
+
+
+<P><FONT face="Verdana, Arial, Helvetica" size=2>The ideal setup is two (2) or more PCs. One desktop x86 platform PC, installed with Windows Longhorn, must have the following items installed, in order. Microsoft® .NET 
+  Framework v1.1, Microsoft® SQL Server 2000 Desktop Engine (MSDE), Test Harness 
+  Controller, and the Test Harness Studio. The second, and all subsequent PCs 
+  (x86 architecture, installed with Windows Longhorn), would have the 
+  Test Harness Client installed.</P>
+  <P><FONT face="Verdana, Arial, Helvetica" size=2>This early preview release of 
+  the LDK Test Harness has not been fully tested on all architectures and 
+  operating systems intended for the final product. As such, there are 
+  significant potential risks if you install and/or run any portion of the Test 
+  Harness on untested platforms. The Test Harness Controller and Test Harness 
+  Studio have been tested on x86 platform PCs running Windows XP, Windows Server 
+  2003, and Windows Longhorn. Please note that Test Harness Studio 
+  has only been tested on PCs that already have Test Harness Controller 
+  installed. The Test Harness Clients have been tested on x86, IA64, and AMD64 
+  platform PCs running Windows XP, Windows Server 2003, and Windows Longhorn.</P>
+  <P><FONT face="Verdana, Arial, Helvetica" size=2>The Test Harness Studio 
+  requires Microsoft® .NET Framework v1.1 to be installed prior to installing 
+  Test Harness Studio. Install the .NET Framework from <A 
+  href="http://download.microsoft.com/download/a/a/c/aac39226-8825-44ce-90e3-bf8203e74006/dotnetfx.exe">http://download.microsoft.com/download/a/a/c/aac39226-8825-44ce-90e3-bf8203e74006/dotnetfx.exe</A> 
+  prior to installing the Test Harness Studio.</P>
+
+
+<P><FONT face="Verdana, Arial, Helvetica" size=2><b>Note:</b> To run the <b>Printing Device Capabilities test</b> or the <b>Printer Driver Stress test</b> on all operating systems except Windows Longhorn, you must attach a debugger.</font></p>
+<br>
+
+<A name=issues></A>
+<P><B><FONT face="Verdana, Arial, Helvetica"><H4>Installation Issues</H4></B>
+
+<P><FONT face="Verdana, Arial, Helvetica" size=2><b>WARNING NOTE:</b> Installing the LDK Test Harness Studio without first installing the LDK Test Harness Controller is an invalid scenario that is not blocked in this LDK release, and will result in a failed LDK Test Harness Studio installation.  This installation scenario will be blocked in the next LDK release.  The following invalid steps are provided to illustrate what <b><i>NOT</b></i> to do, and are for informational purposes only.</P>
+<OL>
+<li>Launch the LDK setup wizard<br>
+<li>Navigate to the "Longhorn Driver Kit Component Groups" pane of the LDK setup wizard<br>
+<li>Select the "Test Harness Studio" component.  Note: Do not select the "Test Harness Controller" component.<br>
+<li>Click the <b>Next</b> button.<br>
+<li>Select the "Local Computer" option button, and then click the <b>Next</b> button.<br>
+<li>Click the <b>Next</b> button to begin the actual setup process.<br>
+<br><b>Result:</b> The LDK Test Harness Studio fails to install after the Windows LDK setup program is complete.
+</OL>
+
+
+  <P><FONT face="Verdana, Arial, Helvetica" size=2>The Test Controller installer 
+  fails to create a log file share when installing the Test Controller on a 
+  Windows XP based computer. In this case, the log file share can be manually 
+  created by typing "net share SystemLogs=%SystemRoot%\SystemLogs" at a command 
+  prompt.</P>
+  
+<P><FONT face="Verdana, Arial, Helvetica" size=2>The LDK installation path must be on an existing local, non-removable drive.  Installation to remote drives (e.g. network shares) and removable media is not supported, but the installer will not prevent it.</P>
+
+<P><FONT face="Verdana, Arial, Helvetica" size=2>The LDK must be installed 
+  from a path that contains no spaces.</P>
+  <P><FONT face="Verdana, Arial, Helvetica" size=2>There is a known issue where 
+  the Studio UI will only work when installed on the same machine as the 
+  controller. Additionally, users other than the one that performed the 
+  installation of the Studio UI will not be able to access the Studio UI.</P>
+  <P><FONT face="Verdana, Arial, Helvetica" size=2>The <B>Quick Start Guide</B> 
+  and the <B>User Manual</B> can be found C:\WINDDK\4060\TestHarness\Studio 
+  where C:\ is the drive the Studio UI was installed to.</P>
+<br>
+
+
+<A name=uninstall></A>
+<P><B><FONT face="Verdana, Arial, Helvetica"><H4>Uninstall Issues</H4></B>
+
+<P><FONT face="Verdana, Arial, Helvetica" size=2><b>NOTE:</b> Before attempting to uninstall the LDK Test Harness Controller or the LDK Test Harness Studio, the user must <b>exit</b> the LDK Test Harness Studio application.   If the LDK Test Harness Studio application is not closed prior to the LDK uninstall program being launched, the LDK Test Harness Controller/Studio uninstall will fail.  The user will not receive an error message alerting to the failure of the LDK uninstall program.
+</P>
+<br>
+
+
+<!-----------------------XPSP2 and ICF-------------------------------------------------------------------->
+<A name=xpsp2></A>
+<P><B><FONT face="Verdana, Arial, Helvetica"><H4>Internet Connection Firewall with XPSP2</H4></B>
+
+<P><FONT face="Verdana, Arial, Helvetica" size=2>The Microsoft Windows XP Service Pack 2 (XPSP2) operating system automatically enables the Internet Connection Firewall (ICF). The ICF blocks communications between the LDK Test Harness Controller and the LDK Test Harness clients.</P>
+
+<P><FONT face="Verdana, Arial, Helvetica" size=2>If the ICF was enabled before you installed the LDK Test Harness client software on the test computers, then the test computers will not appear in the LDK Test Harness Studio. If you enabled the ICF after the test computers were already visible in the LDK Test Harness Studio, then you will not be able to schedule jobs to run on the test computers.</P>
+
+<P><FONT face="Verdana, Arial, Helvetica" size=2>To allow the LDK Test Harness Controller and client computers to communicate, open port 1778 in the ICF using the following procedure.</P>
+
+<P><FONT face="Verdana, Arial, Helvetica" size=2>To open port 1778 in the ICF:
+<OL>
+<li>From the <b>Start menu</b>, click <b>Control Panel</b>. The <b>Control Panel</b> window is displayed.<br>
+<li>In the <b>Control Panel</b> window, double-click <b>Network Connections</b>. The <b>Network Connections</b> window is displayed.<br>
+<li>In the <b>Network Connections</b> window, right-click the network that the LDK Test Harness Controller and test computers will use to communicate, and then select <b>Properties</b>. The <b>Properties</b> dialog box is displayed.<br>
+<li>On the <b>Advanced</b> tab of the <b>Properties</b> dialog box, click <b>Settings</b>. The <b>Windows Firewall</b> dialog box is displayed.<br>
+<li>On the <b>Exceptions</b> tab of the <b>Windows Firewall</b> dialog box, click <b>Add Port</b>. The A<b>dd a Port</b> dialog box is displayed.<br>
+<li>In the <b>Add a Port</b> dialog box, enter <b>1778</b> for the <b>Port Number</b>, and enter <b>LDKport</b> for the <b>Name</b>.<br>
+<li>Click <b>OK</b> to close the <b>Add a Port</b> dialog box.<br>
+<li>Click <b>OK</b> to close the <b>Windows Firewall</b> dialog box.<br>
+<li>Click <b>OK</b> to close the <b>Properties</b> dialog box.<br>
+<li>Repeat steps 3 through 9 for the other networks that the LDK Test Harness Controller and test computers will use to communicate.<br>
+<li>If you already installed the LDK Test Harness software on the client computers, then use the following procedure to stop and restart the wttsvc process on each client computer: <br>
+	<ol style='margin-top:0in' start=1 type=a>
+	<li>From the <b>Start</b> menu, click <b>Run</b>.<br>
+	<li>In the <b>Run dialog</b> box, type <b>cmd</b>. A command prompt window is displayed.<br>
+	<li>At the command prompt, type <b>net stop wttsvc</b> to stop the service.<br>
+	<li>At the command prompt, type <b>net start wttsvc</b> to restart the service.<br>
+	<li>Close the command prompt window.<br>
+	<li>After five minutes, the client computers should appear in the LDK Test Harness Studio. (If necessary, refresh the 		data in the LDK Test Harness Studio to view the client computers.) <br>
+	<li>If the client computers do not appear in the LDK Test Harness Studio, wait five more minutes, and then repeat step 		f. The LDK Test Harness examines each client computer and records information about the computer’s configuration. 			Depending on the computer and how it is configured, this process could take several minutes.<br>
+	</ol>
+
+<li>If you have not installed the LDK Test Harness software on the client computers, install it now.<br>
+<br>
+<br>
+</OL>
+
+
+
+<A name=job></A>
+<FONT face="Verdana, Arial, Helvetica"><B><H4>Job Creation</H4></B>
+
+
+  <P><FONT face="Verdana, Arial, Helvetica" size=2>Any network share that is 
+  referenced in a job, such as a share that contains test executables, must be 
+  shared out to the "everyone" group. Currently, all security information 
+  entered into the Test Harness is manipulated &amp; stored in clear text. This 
+  may impact some organizations corporate security policies and care should be 
+  taken when using the Test Harness in a secure production environment.</P>
+  <P><FONT face="Verdana, Arial, Helvetica" size=2>For acceptable performance of 
+  this preview version of the Test Harness, it is highly recommended that the 
+  number of database results returned in any query be limited to no more than 
+  100. Queries may be jobs, job results, Machine Pools, etc.</P>
+  
+<A name=run></A>
+<P><B><FONT face="Verdana, Arial, Helvetica"><H4>Run Time</H4></B>
+
+
+  <P><FONT face="Verdana, Arial, Helvetica" size=2>The LDK Test Harness client 
+  does not work on client systems where the logged on user does not have access 
+  rights to client. The LDK client will simply NOT WORK on systems where client 
+  is installed, but logged in user does not have administrator access rights to 
+  Controller. It will not display any warning or error messages.</P>
+  <P><FONT face="Verdana, Arial, Helvetica" size=2>Non-English user names are 
+  automatically converted to question marks.</P>
+  <P><FONT face="Verdana, Arial, Helvetica" size=2>The Test Harness Controller 
+  setup does not create a Machine Pool for default testing. You must create one 
+  by hand.</P>
+  <P><FONT face="Verdana, Arial, Helvetica" size=2>A single machine cannot 
+  function as Controller, Studio &amp; Client.</P>
+  <P><FONT face="Verdana, Arial, Helvetica" size=2>Some computer attributes will 
+  not show-up after the initial client setup is run. The system inventory is not 
+  getting properly transferred from the Test Harness Client system to the Test 
+  Harness Controller system on the initial client setup. To address this issue, 
+  run 'net stop wttsvc' and then run 'net start wttsvc' on the system under 
+  test.</P>
+  <P><FONT face="Verdana, Arial, Helvetica" size=2>Option for Test Case Result 
+  Report is displayed even when there are no results in the selected Machine 
+  pool. Clicking on it does not do anything.</P>
+  <P><FONT face="Verdana, Arial, Helvetica" size=2>Cannot supply the " (double 
+  quote character) as a value for a parameter. This will cause problems for 
+  command line arguments because any values that contain spaces must be enclosed 
+  in double quotes.</P>
+  <P><FONT face="Verdana, Arial, Helvetica" size=2>When rebooting a computer 
+  with the Test Harness Controller installed on it, the SQLSERVERAGENT and the 
+  SQLAgent$MSLDK services does not start automatically. The user must start each 
+  service manually after each reboot.</P>
+  <P><FONT face="Verdana, Arial, Helvetica" size=2>A job will not be imported 
+  into a database if it is already present in the database. No error or warning 
+  messages will be displayed.</P>
+  <P><FONT face="Verdana, Arial, Helvetica" size=2>Double-Click edit of a Job in 
+  the Job Explorer has not been implemented. You must right-click on the job | 
+  Edit to edit jobs.</P>
+  <P><FONT face="Verdana, Arial, Helvetica" size=2>You will not be able to view 
+  the test logs from the Test Harness Studio. At this time, you must view the 
+  logs manually</P>
+  <P><FONT face="Verdana, Arial, Helvetica" size=2>It is possible for the system 
+  to get into a running state and not go back into the Ready state. If this 
+  occurs: 
+  <UL>
+    <LI>From a command prompt on the system under test (client), run 'net stop 
+    wttsvc' 
+    <LI>Delete %systemdrive%\WTT\JobsWorkingDir\JobRuns from the system under 
+    test. 
+    <LI>From the LDK Studio, go to My Assets | Edit Machine Details, and change 
+    the system under test state from 'Running' to 'Ready' 
+    <LI>From a command prompt on the system under test (client), run 'net start 
+    wttsvc' </LI></UL>
+  <P></P>
+  <P><FONT face="Verdana, Arial, Helvetica" size=2>There is not a convenient way 
+  to clean out the jobs list in the Job Monitor Window. One solution is to 
+  delete the job (which automatically deletes the job results). Another solution 
+  is to filter the results.</P>
+  
+<A name=notes></A>
+<P><B><FONT face="Verdana, Arial, Helvetica"><H4>Job Notes</H4></B>
+
+
+  <P><FONT face="Verdana, Arial, Helvetica" size=2>The NDIS single card job 
+  requires a MAC address. This job will fail to run correctly if the MAC address 
+  is not specified in the PARAMETER tab and if the target machine is not 
+  selected at schedule time. When scheduling this job please insert the MAC 
+  address of the test card in the PARAMETER tab and select the associated 
+  machine using the check box on the MACHINES tab.</P>
+  <P><FONT face="Verdana, Arial, Helvetica" size=2>The DPE job requires a test 
+  driver. Before scheduling this job, you must choose your test driver. Insert 
+  the driver name on the Parameters tab and then schedule the job.</P>
+  <P><FONT face="Verdana, Arial, Helvetica" size=2>All DCT jobs currently 
+  require the Microsoft® DirectX 9.0 Software Development Kit (SDK) to be 
+  preinstalled. Install the DirectX 9.0 SDK from <A 
+  href="http://download.microsoft.com/download/0/7/5/0754a2e2-9f7d-4061-9e06-2b55cfb0e224/dx90asdk.exe">http://download.microsoft.com/download/0/7/5/0754a2e2-9f7d-4061-9e06-2b55cfb0e224/dx90asdk.exe</A> 
+  prior to running the DCT jobs.</P>
+  <P><FONT face="Verdana, Arial, Helvetica" size=2>The Photo Print job requires 
+  a printer to be attached to the target machine. Attach a printer to the target 
+  machine before scheduling this job.</P>
+
+</UL>
+<br>
+
+
+</ul>
+
+
+
+<P align="center"><A href="relnote.htm#top"><FONT face="Verdana" size="2">Top of page</FONT></A>
+<P>
+<TABLE cellspacing="0" border="0" width="624">
+	<TR>
+		<td height="2" valign="middle" bgcolor="Aqua"><P></P></td>
+	</TR>
+
+
+</TABLE><FONT face="MS Sans Serif" size="1">
+<P>Copyright &copy; Microsoft Corporation 2004</FONT></P>
+</BODY>
+</HTML>

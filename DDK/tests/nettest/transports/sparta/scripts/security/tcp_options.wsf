@@ -1,0 +1,1351 @@
+'********************************* TCP_Options.wsf ***********************************
+'*                                                                                   *
+'* Author            :    Kamil Ustuntas                                             *
+'* Revision history  :                                                               *
+'*                                                                                   *
+'*    03/06/2003     kamilu        Created                                           *
+'*                                                                                   *
+'* This script will test the TCP options                                             *
+'*                                                                                   *
+'********************************* TCP_Options.wsf ***********************************
+
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\common\Common.Lib"/>
+      <script language="VBScript" src="..\common\TCPHelper.Lib"/>
+      <script id="TCP_Options" language="VBScript">
+
+
+option explicit
+
+Dim Core, Sparta, Autosrv, MediaType, AutoArpObject, IFace, pController, ExceptionStatus
+Dim fVersion6
+
+'
+' Start the script
+'
+StartScript "TCP_Options", g_szLogDirectory, "Tests for TCP Options"
+
+
+' ==================================================================================================
+' Main routine
+' ==================================================================================================
+
+Sub Main
+
+   Core.SetAssertionTracking "30800"
+   '/**
+   ' @area name="Offload Compliance Test Assertions"
+   ' @group name="TCP Miscellaneous Test Assertions"
+   ' @group name="TCP Options Test Assertions"
+   ' @define name="Offload" Offload Compliance Test Assertions
+   ' @define name="TCPMisc" TCP Miscellaneous Test Assertions
+   ' @define name="Options" TCP Options Test Assertions
+   ' @hierarchy Offload TCPMisc Options
+   ' @key Reference="WLP# - x.x.x.x; RFC-2581; RFC-1323; RFC-2883; RFC-3517"
+   ' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+   ' @key TestName="TCP Options Tests"
+   ' @key TestParam="-v6: uses IPv6 [Default: IPv4]"   
+   ' @key TestLog="TCP_Options.log"
+   '*/
+
+
+    '
+    ' Parse arguments for IPv6 option
+    '
+    dim ValueArray, Status
+    ValueArray = Array(false, false, false, false)
+    ParseArguments array("-v6", "-offload", "-nocap", "-popup"), array(vbBoolean, vbBoolean, vbBoolean, vbBoolean), ValueArray
+    fVersion6 = ValueArray(0)
+
+    '/**
+    ' @config conf="Delete Tcp1323Opts, TcpWindowSize and SockOpts registry values in order to test default behavior"
+    '*/
+    '
+    ' Delete Tcp1323Opts, TcpWindowSize and SockOpts registry values in order to test default behavior
+    '
+    'Shout "Delete Tcp1323Opts and TcpWindowSize registry values in order to test default behavior"
+    'Status = SetRegKeys(null, TcpParamPath(fVersion6), Array("Tcp1323Opts", "TcpWindowSize", "SockOpts"), Array(Null, Null, Null))
+    'if (Status <> 0) then
+    '    Block "TestWindowScalingOption: SetRegKeys - " & Status      
+    '    exit sub
+    'end if
+
+   '/**
+   ' @test name="Stack must respect MSS, which is negotiated during connection establishment, through out the connection"
+   ' An MSS is negotiatied during connection establishment
+   ' Test verifies that Stack sends data according to the MSS. 
+   '*/
+
+    '
+    ' Test MSS option
+    ' MSS negotiated during connection establishment must be respected through the rest of the connection
+    '
+    if ShouldExecuteTest("MSS") then
+        Shout "Test MSS option"
+        StartTest "MSS Option in TCP Connection"
+        TestMSSOption
+        EndTest
+    end if
+
+   '/**
+   ' @test name="Stack must respect Window Size, which is negotiated during connection establishment, through out the connection"
+   ' A window size is negotiatied during connection establishment
+   ' Test verifies that Stack sends data according to the window size. 
+   '*/
+
+    '
+    ' Test Window Scaling option
+    ' Window Scaling negotiated during connection establishment must be respected through the rest of the connection
+    '
+    if ShouldExecuteTest("WindowScaling") then
+        Shout "Test Window Scaling option"
+        if fVersion6 then
+            Shout "Window scaling is not implemented in TCPv6 of Windows Server 2003"
+        else
+            StartTest "Window Scaling Option in TCP Connection"
+            TestWindowScalingOption
+            EndTest
+        end if
+    end if
+
+   '/**
+   ' @test name="Stack must respect Timestamp option, which is negotiated during connection establishment, through out the connection"
+   ' Timestamp option is negotiatied during connection establishment
+   ' Test verifies that Stack sends data according to the Timestamp option. 
+   '*/
+
+    '
+    ' Test Timestamp option
+    ' Timestamp option negotiated during connection establishment must be respected through the rest of the connection
+    '
+    if ShouldExecuteTest("Timestamp") then
+        Shout "Test Timestamp option"
+        if fVersion6 then
+            Shout "Timestamp is not implemented in TCPv6 of Windows Server 2003"
+        else
+            StartTest "Timestamp Option in TCP Connection"
+            TestTimestampOption
+            EndTest
+        end if
+    end if
+
+   '/**
+   ' @test name="Stack must respect SACK option, which is negotiated during connection establishment, through out the connection"
+   ' Sack option is negotiatied during connection establishment
+   ' Test verifies that Stack sends data according to the Sack option. 
+   '*/
+    '
+    ' Test Sack option
+    ' Sack negotiated during connection establishment must be respected through the rest of the connection
+    '
+    if ShouldExecuteTest("Sack") then
+        Shout "Test Sack option"
+        if fVersion6 then
+            Shout "Sack is not implemented in TCPv6 of Windows Server 2003"
+        else
+            StartTest "Sack Option in TCP Connection"
+            TestSackOption
+            EndTest
+        end if
+    end if
+
+end Sub
+
+
+' ==================================================================================================
+'
+' Tests if MSS negotiated during connection establishment is respected through the rest of the connection
+'
+' ==================================================================================================
+
+Sub TestMSSOption
+    Dim ulStatus, usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, pSYNPacket, usMSS, ulNextIndex, pTCPPacket, usRemoteMSS
+    Dim szSrcAddress, szDestAddress, pAutoDisc, pIFace
+    ulSeqNumber = 5000
+    ulAckNumber = 0
+    usSrcPort = 5000
+    usDestPort = 5001
+    usMSS = 400
+    ulNextIndex = 0
+
+    StartVariation
+
+    if (fVersion6) then
+        szSrcAddress = g_szLocalSpoofIp6Address
+        szDestAddress = g_szRemoteIp6Address
+        set pAutoDisc = sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, szSrcAddress, FALSE)
+    else
+        szSrcAddress = g_szLocalSpoofIp
+        szDestAddress = g_szRemoteIpAddress
+        set pAutoDisc = sparta.AutoArp(g_szLocalMacAddress, g_szLocalMacAddress, szSrcAddress)
+    end if
+    Set pIFace = CreateInterface(fVersion6, true, g_szRemoteMacAddress, g_szLocalMacAddress, szDestAddress, szSrcAddress)
+    Set IFace = Nothing
+    Set IFace = pIFace 
+    pIFace.StartListening
+
+    Set pTCPPacket = Nothing
+    '
+    ' Create the SYN packet
+    '
+    Shout "Create the SYN packet"
+    Set pSYNPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_SYN, 0)
+
+    '
+    ' Add MSS Option
+    '
+    Shout "Add MSS Option; MSS = " & usMSS
+    pSYNPacket.TCPHeader.TCPOption(0).AddMSS(usMSS)
+    
+    '
+    ' Send SYN with MSS option
+    '
+    Shout "Send SYN with MSS option"
+    Set pTCPPacket=GrabSynAck(fVersion6, pSYNPacket, szDestAddress, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+    if (pTCPPacket is Nothing) then
+        Block "TestMSSOption: Failed to receive a SYN-ACK in return to a SYN sent with an MSS of " & usMSS
+        ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+        exit Sub
+    end if
+    
+    '
+    ' Obtain the remote MSS
+    '
+    Shout "Obtain the remote MSS"
+    Dim ulCount, fMSSPresent
+    ulCount = 0
+    fMSSPresent = FALSE
+    Dim usType
+    usType = TCP_OPTION_NOOP    
+    on error resume next
+    do 
+        usType = pTCPPacket.TCPHeader.TCPOption(ulCount).Kind
+        if (usType = TCP_OPTION_MSS) then
+            usRemoteMSS = pTCPPacket.TCPHeader.TCPOption(ulCount).MssValue
+            fMSSPresent = TRUE
+            exit do
+        end if
+        ulCount = ulCount + 1
+    loop while usType <> TCP_OPTION_EOO
+    if (fMSSPresent = FALSE) then
+        Block "TestMSSOption: MSS option not present in SYN-ACK"
+        ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+        exit Sub
+    end if
+    
+    '
+    ' The correct MSS after negotiation should be MIN of the two MSS(s)
+    '
+    Shout "Remote MSS = " & usRemoteMSS
+    if (usRemoteMSS < usMSS) then
+        usMSS = usRemoteMSS
+    end if
+    Shout "Negotiated MSS should be = " & usMSS
+
+    '
+    ' The MSS + IP header + TCP header shoudln't drop below 128
+    '
+    if (usMSS = 0) then
+        usMSS = 536
+        Shout "MSS adjusted to " & usMSS & " because it was equal to 0"
+    elseif (usMSS < 88) then
+        usMSS = 88
+        Shout "MSS adjusted to " & usMSS & " because it was less than 88"
+    end if
+    
+    '
+    ' Send an ACK
+    '
+    Shout "Send an ACK"
+    Set pTCPPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+    pIFace.Send(pTCPPacket)
+    Core.Sleep 500
+
+    '
+    ' Check if connection is offloaded
+    '
+    If Not IsConnectionOffloaded(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSessionId) and g_fTestOffload And g_fTOENic Then
+      Sev1 "TestMSSOption : Failed to offload the connection"
+      ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+      Exit sub
+    End If
+
+    '
+    ' Verify the MSS is correct
+    '
+    Shout "Verify the MSS is correct"
+    ulStatus = VerifyMSS(usMSS, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSessionId, ulSeqNumber, ulAckNumber, pIFace)
+    if (ulStatus <> 0) then
+        Sev1 "TestMSSOption: MSS is incorrect"
+    end if
+
+    '
+    ' Reset the connection
+    '
+    ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+    pIFace.StopListening
+    Set pIFace = Nothing
+    set pAutoDisc = Nothing
+end Sub
+
+
+' ==================================================================================================
+'
+' Tests if Window Scaling negotiated during connection establishment is respected through the rest of the connection
+'
+' ==================================================================================================
+
+Sub TestWindowScalingOption
+    Dim ulStatus
+    Dim szSrcAddress, szDestAddress, pAutoDisc, pIFace
+
+    StartVariation
+
+    if (fVersion6) then
+        szSrcAddress = g_szLocalSpoofIp6Address
+        szDestAddress = g_szRemoteIp6Address
+        set pAutoDisc = sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, szSrcAddress, FALSE)
+    else
+        szSrcAddress = g_szLocalSpoofIp
+        szDestAddress = g_szRemoteIpAddress
+        set pAutoDisc = sparta.AutoArp(g_szLocalMacAddress, g_szLocalMacAddress, szSrcAddress)
+    end if
+    Set pIFace = CreateInterface(fVersion6, true, g_szRemoteMacAddress, g_szLocalMacAddress, szDestAddress, szSrcAddress)
+    Set IFace = Nothing
+    Set IFace = pIFace 
+    pIFace.StartListening
+
+    '
+    ' Send a SYN with the WS option and verify the receive window on the other end is default 
+    ' window (DefaultTcpWindowSize)
+    '   
+    PassiveConnectReceiveWindowTest szSrcAddress, szDestAddress, DefaultTcpWindowSize (fVersion6), 1, DefaultTcpWindowSize (fVersion6), TRUE, pIFace
+    
+    pIFace.StopListening
+    Set pIFace = Nothing
+    set pAutoDisc = Nothing
+End Sub
+
+
+' ==================================================================================================
+'
+' Tests if Timestamp negotiated during connection establishment is respected through the rest of the connection
+'
+' ==================================================================================================
+
+Sub TestTimestampOption
+    Dim ulCounter, ulLastAckNumber
+    Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+    Dim pTCPPacket, ulBytesRcvd, ulTSValue, ulTSEcho, pACKPacket
+
+    Dim szSrcAddress, szDestAddress, pAutoDisc, pIFace, usMss
+
+    usMss = EthernetMss(fVersion6)
+
+    StartVariation
+
+    if (fVersion6) then
+        szSrcAddress = g_szLocalSpoofIp6Address
+        szDestAddress = g_szRemoteIp6Address
+        set pAutoDisc = sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, szSrcAddress, FALSE)
+    else
+        szSrcAddress = g_szLocalSpoofIp
+        szDestAddress = g_szRemoteIpAddress
+        set pAutoDisc = sparta.AutoArp(g_szLocalMacAddress, g_szLocalMacAddress, szSrcAddress)
+    end if
+    Set pIFace = CreateInterface(fVersion6, true, g_szRemoteMacAddress, g_szLocalMacAddress, szDestAddress, szSrcAddress)
+    Set IFace = Nothing
+    Set IFace = pIFace 
+    pIFace.StartListening
+
+    usSrcPort = 5000
+    usDestPort = 5000
+    ulSeqNumber = Clng(1000)
+    ulAckNumber = Clng(1)
+    ulTSValue = 1000
+    ulTSEcho = 100
+
+    ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+
+    '
+    ' Establish a connection with the TS option enabled
+    '
+    StartVariation
+    ulStatus = ActiveConnectWithTS(pIFace, szSrcAddress, szDestAddress, usMss, ulTSValue, ulTSEcho, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)
+    if (ulStatus <> 0) then
+        Block "TestTimestampOption: ActiveConnectWithTS - " & ulStatus
+        ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+        exit sub
+    end if
+
+    '
+    ' Check if connection is offloaded
+    '
+    If Not IsConnectionOffloaded(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSessionId) and g_fTestOffload And g_fTOENic Then
+      Sev1 "PassiveConnect : Failed to offload the connection"
+      ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+      exit sub
+    End If
+
+    '
+    ' Send some data packets, and verify the TS option in the ACKs
+    '
+    StartVariation
+    Set pTCPPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_ACK, 100)
+    pTCPPacket.TCPHeader.TCPOption(0).AddTS ulTSValue, ulTSEcho
+    For ulCounter = 1 to 5
+        ulTSValue = ulTSValue + ulCounter
+        pTCPPacket.TCPHeader.TCPOption(0).TsEcho = ulTSEcho
+        pTCPPacket.TCPHeader.TCPOption(0).TsValue = ulTSValue
+        pTCPPacket.TCPHeader.SeqNumber = ulSeqNumber
+        pIFace.Send(pTCPPacket)
+
+        '
+        ' Receive the ACK
+        '
+        set pACKPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 300, pIFace)
+        if (pACKPacket is Nothing) then
+            Sev1 "TestTimestampOption: Didn't receive an ACK"
+            ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+            exit sub
+        end if
+
+        '
+        ' Validate the TS option in the ACK
+        '
+        ulStatus = ValidateTSOption(pACKPacket, TRUE, ulTSEcho, ulTSValue)
+        If (ulStatus <> 0) then
+            Sev1 "TestTimestampOption: ValidateTSOption failed for the ACK"
+            ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+            exit sub
+        end if
+    Next
+
+    '
+    ' Ask Autosrv to send the data packets and verify the TS option in the packets
+    '
+    StartVariation
+    ulStatus = pController.Send(ulSessionId, 1, 0, usMSS+100, ulTID)
+    if (ulStatus <> 0) then
+        Sev1 "TestTimestampOption: Send - " & ulStatus
+        ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+        exit sub
+    end if
+    ulLastAckNumber = ulAckNumber
+    For ulCounter = 1 to 2
+        '
+        ' Receive the data packets
+        '
+        set pACKPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 300, pIFace)
+        if (pACKPacket is Nothing) then
+            Sev1 "TestTimestampOption: Didn't receive a data packet"
+            ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+            exit sub
+        end if
+
+        '
+        ' Validate the TS option in the data packet
+        '
+        ulStatus = ValidateTSOption(pACKPacket, TRUE, ulTSEcho, ulTSValue)
+        If (ulStatus <> 0) then
+            Sev1 "TestTimestampOption: ValidateTSOption failed for the data packet"
+            ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+            exit sub
+        end if
+    Next
+    if (ulLastAckNumber <> (ulAckNumber - usMSS - 100)) then
+        Sev1 "TestTimestampOption: Incorrect ACK " & ulSeqNumber
+        ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+        exit sub
+    end if
+
+    '
+    ' Send an ACK
+    '
+    ulTSValue = ulTSValue + ulCounter
+    Set pTCPPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_ACK, 100)
+    pTCPPacket.TCPHeader.TCPOption(0).AddTS ulTSValue, ulTSEcho
+    pIFace.Send(pTCPPacket)
+
+
+    '
+    ' Ask Autosrv to issue a shutdown and check the TS options in the packets
+    '
+    StartVariation
+    ulStatus = pController.Shutdown(ulSessionId, ulTID)
+    if (ulStatus <> 0) then
+        Sev1  "TestTimestampOption: Shutdown - " & ulStatus
+        ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+        exit sub
+    end if
+
+    '
+    ' Receive the FIN-ACK and validate the TS option
+    '
+    set pACKPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_FIN or TCP_ACK, 5000, pIFace)
+    if (pACKPacket is Nothing) then
+        Sev1  "TestTimestampOption: Didn't receive a FIN packet"
+        ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+        exit sub
+    end if
+    ulStatus = ValidateTSOption(pACKPacket, TRUE, ulTSEcho, ulTSValue)
+    If (ulStatus <> 0) then
+        Sev1  "TestTimestampOption: ValidateTSOption failed for the FIN"
+        ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+        exit sub
+    end if
+
+    If not IsConnectionOffloaded(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSessionId) and g_fTestOffload And g_fTOENic Then
+      Sev1 "TestTimestampOption : Failed to offload the connection"
+      ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+      Exit sub
+    End If
+    '
+    ' Send a FIN-ACK
+    '
+    Set pTCPPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_FIN or TCP_ACK, 0)
+    pTCPPacket.TCPHeader.TCPOption(0).AddTS ulTSValue, ulTSEcho
+    pIFace.Send(pTCPPacket)
+
+    '
+    ' Receive the ACK and validate the TS option
+    '
+    set pACKPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 300, pIFace)
+    if (pACKPacket is Nothing) then
+        Sev1  "TestTimestampOption: Didn't receive an ACK"
+        ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+        exit sub
+    end if
+    ulStatus = ValidateTSOption(pACKPacket, TRUE, ulTSEcho, ulTSValue)
+    If (ulStatus <> 0) then
+        Sev1  "TestTimestampOption: ValidateTSOption failed for the ACK"
+        ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+        exit sub
+    end if
+
+    g_fCheckOffloadConnection = false
+    ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+    g_fCheckOffloadConnection = true
+
+    pIFace.StopListening
+    Set pIFace = Nothing
+    set pAutoDisc = Nothing
+End Sub
+
+
+' ==================================================================================================
+'
+' Tests if Sack negotiated during connection establishment is respected through the rest of the connection
+'
+' ==================================================================================================
+
+Function TestSackOption
+    Dim ulStatus
+    Dim szSrcAddress, szDestAddress, pAutoDisc, pIFace
+
+    StartVariation
+
+    if (fVersion6) then
+        szSrcAddress = g_szLocalSpoofIp6Address
+        szDestAddress = g_szRemoteIp6Address
+        set pAutoDisc = sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, szSrcAddress, FALSE)
+    else
+        szSrcAddress = g_szLocalSpoofIp
+        szDestAddress = g_szRemoteIpAddress
+        set pAutoDisc = sparta.AutoArp(g_szLocalMacAddress, g_szLocalMacAddress, szSrcAddress)
+    end if
+    Set pIFace = CreateInterface(fVersion6, true, g_szRemoteMacAddress, g_szLocalMacAddress, szDestAddress, szSrcAddress)
+    Set IFace = Nothing
+    Set IFace = pIFace 
+    pIFace.StartListening
+
+    SACKPermitEnabled pIFace, szDestAddress, szSrcAddress, FALSE, TRUE
+    
+    pIFace.StopListening
+    Set pIFace = Nothing
+    set pAutoDisc = Nothing
+End Function
+
+
+' ==================================================================================================
+'
+' Function verifies the MSS is as expected
+'
+' ==================================================================================================
+
+Function VerifyMSS(usMSS, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSessionId, ulSeqNumber, ulAckNumber, pIFace)
+    Dim ulStatus, ulTID, ulCounter, pTCPPacket, ulBytesRcvd, ulAsyncStatus
+
+    VerifyMSS = 0
+
+    '
+    ' Ask AutoSrv to do a send of 3*MSS
+    '
+    Shout "Ask AutoSrv to do a send of 3*MSS"
+    ulStatus = pController.Send(ulSessionId, 1, 0, 3*usMSS, ulTID)
+    if (ulStatus <> 0) then
+        Shout "VerifyMSS: AsyncSend - " & ulStatus
+        VerifyMSS = ulStatus
+        exit Function
+    end if
+
+    '
+    ' Receive 3 packets, verify the length of each is MSS and ACK them
+    '
+    Shout "Receive 3 packets, verify the length of each is MSS and ACK them"
+    For ulCounter = 1 to 3
+        '
+        ' receive packet
+        '
+        Shout "receive packet #" & ulCounter
+        Set pTCPPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 5000, pIFace)
+        If (pTCPPacket is Nothing) Then
+            Shout "VerifyMSS: No data packet received"
+            VerifyMSS = 1
+            exit For
+        end if
+
+        '
+        ' Verify size is correct
+        '
+        Shout "Verify size is correct"
+        if (ulBytesRcvd <> usMSS) then
+            Shout "VerifyMSS: Packet length = " & ulBytesRcvd & ", expected " & usMSS
+            VerifyMSS = 1
+            exit For
+        end if
+
+        '
+        ' Send an ACK
+        '
+        Shout "Send an ACK"
+        Set pTCPPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+        pIFace.Send(pTCPPacket)
+    Next
+
+    '
+    ' Stop the send
+    '
+    ulStatus = pController.Stop(ulSessionId, ulTID, ulAsyncStatus)
+    if (ulStatus <> 0) then
+        Shout "VerifyMSS: Stop - " & ulStatus
+    end if
+
+End Function
+
+
+' ==================================================================================================
+'
+' A routine to do a passive connect and verify the receive window size
+'
+' ==================================================================================================
+
+Sub PassiveConnectReceiveWindowTest(szSrcAddress, szDestAddress, ulWindowSize, bScaleFactor, ulRcvWinSize, fWSPresent, pIFace)
+   Dim ulStatus, ulSeqNumber, ulAckNumber, usSrcPort, usDestPort, ulSessionId, ulTID, pTCPPacket, usMss
+   
+   usSrcPort = 5000
+   usDestPort = 5001
+   ulSeqNumber = 1000
+   ulAckNumber = 1
+   
+   StartVariation
+   
+   usMss = EthernetMss (fVersion6)
+
+   '
+   ' Make stack do a passive connect and verify the window size in SYN-ACK 
+   '
+   ulStatus = VerifyWindowInPassiveConnect(pIFace, szSrcAddress, szDestAddress, fWSPresent, ulRcvWinSize, ulWindowSize, bScaleFactor, usMSS, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)
+   if (ulStatus <> 0) then
+      Block "PassiveConnectReceiveWindowTest: VerifyWindowInPassiveConnect - " & ulStatus
+      ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+      exit sub
+   end if
+
+   '
+   ' Check if connection is offloaded
+   '
+   If Not IsConnectionOffloaded(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSessionId) and g_fTestOffload And g_fTOENic Then
+      Sev1 "PassiveConnectReceiveWindowTest : Failed to offload the connection"
+      ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+      Exit sub
+   End If
+
+   if (bScaleFactor > 14) then
+      bScaleFactor = 14
+   end if
+
+   StartVariation
+
+   '
+   ' Open up the receive window
+   '
+   ulStatus = OpenRecvWin(pIFace, szSrcAddress, szDestAddress, ulRcvWinSize, usMSS, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)
+   if (ulStatus <> 0) then
+      Block "PassiveConnectReceiveWindowTest: OpenRecvWin - " & ulStatus
+      ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+      exit sub
+   end if
+      
+   '
+   ' Verify the max receive window size
+   '
+   ulStatus = VerifyMaxRcvWin(pIFace, szSrcAddress, szDestAddress, ulRcvWinSize, usMSS, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)   
+   if (ulStatus <> 0) then
+      Sev1 "PassiveConnectReceiveWindowTest: VerifyMaxRcvWin - " & ulStatus
+      ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+      exit sub
+   end if
+   
+   '
+   ' Reset the connection
+   '
+   ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+
+End Sub
+
+
+' ==================================================================================================
+'
+' Function to verify the max receive window is as advertized
+'
+' ==================================================================================================
+
+Function VerifyMaxRcvWin(pIFace, szSrcAddress, szDestAddress, ulRcvWinSize, usMSS, usSrcPort, usDestPort, ulSessionId, ByRef ulSeqNumber, ByRef ulAckNumber)
+   Dim ulStatus, ulTID, fContinue, pTCPPacket, pACKPacket
+   Dim ulNumPackets, ulLastPacketSize, ulLastSeqNumber, ulBytesSent, ulBytesRcvd, ulCounter
+   
+   '
+   ' Obtain the number of packets and the size of the last packet
+   '
+   ulNumPackets = CLng(ulRcvWinSize/usMSS)
+   if ((ulNumPackets*usMSS) >= ulRcvWinSize) then
+      ulNumPackets = ulNumPackets - 1 
+   end if
+   ulLastPacketSize = ulRcvWinSize - ulNumPackets*usMSS
+   ulLastSeqNumber = ulSeqNumber + ulRcvWinSize - ulLastPacketSize
+    
+   '
+   ' Ask AutoSrv to post a receive for data as large as receive window
+   '   
+   ulStatus = pController.Receive(ulSessionId, 1, 0, ulRcvWinSize, ulTID)
+   if (ulStatus <> 0) then
+      Shout "VerifyMaxRcvWin: Receive - " & ulStatus
+      VerifyMaxRcvWin = ulSTatus
+      exit function
+   end if
+   
+   '
+   ' Create anad send the last packet
+   '   
+   Set pTCPPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulLastSeqNumber, ulAckNumber, (TCP_ACK or TCP_PUSH), ulLastPacketSize)
+   pIFace.Send(pTCPPacket)      
+   Set pACKPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 2000, pIFace)
+   if (pACKPacket is Nothing) then
+      Shout "VerifyMaxRcvWin: No ACK received"
+      VerifyMaxRcvWin = 1
+      exit function
+   end if
+   
+   '
+   ' Send the packets in the reverse order 
+   '   
+   Set pTCPPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_ACK, usMSS)
+   For ulCounter = 1 to ulNumPackets
+      pTCPPacket.TCPHeader.SeqNumber = (ulNumPackets - ulCounter)*usMSS + ulSeqNumber
+      pIFace.Send(pTCPPacket)      
+      Set pACKPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 1000, pIFace)
+      if (pACKPacket is Nothing) then
+         Shout "VerifyMaxRcvWin: No ACK received"
+         VerifyMaxRcvWin = 1
+         exit function
+      end if
+   Next
+   
+   Core.Sleep 2000
+   
+   '
+   ' Obtain the number of bytes received
+   '   
+   ulStatus = pController.GetSessionStats(ulSessionId, ulBytesSent, ulBytesRcvd)
+   if (ulStatus <> 0) then
+      Shout "VerifyMaxRcvWin: GetSessionStats - " & ulStatus
+      VerifyMaxRcvWin = ulSTatus
+      exit function
+   end if
+
+   '
+   ' Ensure the number of bytes rcvd is as expected
+   '   
+   if (ulBytesRcvd <> ulRcvWinSize) then   
+      Shout "VerifyMaxRcvWin: Didn't receive the entire data - " & ulBytesRcvd
+      VerifyMaxRcvWin = 1
+      exit function
+   end if
+                                                     
+   VerifyMaxRcvWin = 0
+End Function
+
+
+' ==================================================================================================
+'
+' Function to open the receive window. receive window opens by MSS for every ACK received
+'
+' ==================================================================================================
+
+Function OpenRecvWin(pIFace, szSrcAddress, szDestAddress, ulRcvWinSize, usMSS, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)
+   Dim ulNumAcks, ulStatus, ulTID, fContinue, ulNumPackets, pAckPacket, pTCPPacket
+   Dim ulMaxWinSize, ulCount, ulBytesRcvd
+    
+   '
+   ' Compute the # acks required to open up the window
+   '
+   ulNumAcks = CLng(ulRcvWinSize/usMSS)+1
+   
+   if (ulNumAcks = 0) then
+      OpenRecvWin = 0
+      exit function
+   end if
+   
+   '
+   ' Ask AutoSrv to send ulNumAcks packets at delay of 100ms, each of size usMSS
+   '
+   ulStatus = pController.Send(ulSessionId, ulNumAcks, 0, usMSS, ulTID)
+   if (ulStatus <> 0) then
+      Shout "OpenRecvWin: Send - " & ulStatus
+      OpenRecvWin = ulStatus
+      exit function
+   end if
+   
+   '
+   ' Start receiving the packets and ACKing them till we timeout. We will also delay the
+   ' ACKs for the last 10 packets to increase the rexmit timeout
+   '
+   fContinue = TRUE
+   ulNumPackets = 0
+   ulCount = 0
+   Set pAckPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+   While (fContinue)
+      '
+      ' Receive the packet
+      '
+      Set pTCPPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 2000, pIFace)
+      if (pTCPPacket is Nothing) then
+         fContinue = FALSE
+         if (ulNumPackets < ulNumAcks) then
+            Shout "OpenRecvWin: Didn't receive expected # of packets"
+            Shout "Expected = " & ulNumAcks & " Received = " & ulNumPackets
+            OpenRecvWin = 1
+            exit function
+         elseif (ulNumPackets > ulNumAcks) then
+            Shout "OpenRecvWin: Rexmit happened"   
+            OpenRecvWin = 1
+            exit function
+         end if
+      else 
+         '
+         ' Send an ACK. Delay the ACKs for the last 10 packets
+         ' 
+         ulNumPackets = ulNumPackets + 1        
+         if ((ulNumPackets > (ulNumAcks-20)) OR (ulNumAcks < 20)) then
+            Core.Sleep 100
+            ulCount = ulCount + 1
+         end if
+         pAckPacket.TCPHeader.SeqNumber = ulSeqNumber
+         pAckPacket.TCPHeader.AckNumber = ulAckNumber
+         pIFace.Send(pAckPacket)
+      end if         
+   Wend
+
+   OpenRecvWin = 0
+
+End Function
+
+
+' ==================================================================================================
+'
+' Function to get the stack to do a pasive connect and verify the scale factor and the window 
+' size in the SYN-ACK
+'
+' ==================================================================================================
+
+Function VerifyWindowInPassiveConnect(pIFace, szSrcAddress, szDestAddress, fWSPresent, ulRcvWinSize, ulWindowSize, bScaleFactor, usMSS, usSrcPort, usDestPort, ByRef ulSessionId, ByRef ulSeqNumber, ByRef ulAckNumber)
+   Dim ulTID, ulStatus, pTCPPacket, pSynPacket, ulCounter, ulBytesRcvd
+
+   '
+   ' Create the SYN pacjet
+   '   
+   Set pSYNPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_SYN, 0)
+   pSYNPacket.TCPHeader.TCPOption(0).AddMSS(usMSS)
+   pSYNPacket.TCPHeader.WindowSize = ulWindowSize
+   if Not (IsNull(bScaleFactor)) then
+      pSYNPacket.TCPHeader.TCPOption(1).AddWS(bScaleFactor)
+   end if
+   
+   '
+   ' Ask Autosrv to issue an accept, send a SYN and grab the SYN-ACK 
+   '
+   Set pTCPPacket=GrabSynAck(fVersion6, pSYNPacket, szDestAddress, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+   if (pTCPPacket is Nothing) then
+      Shout "VerifyWindowInPassiveConnect: Failed to receive a SYN-ACK"
+      VerifyWindowInPassiveConnect = ulStatus
+      exit function
+   end if
+         
+   
+   '
+   ' Verify that WS option is present/not in the SYN-ACK
+   '
+   ulStatus = GetScaleFactor(pTCPPacket)
+   if (IsNull(ulStatus) AND (fWSPresent = TRUE)) then
+      Shout "VerifyWindowInPassiveConnect: No WS option present in SYN-ACK"
+      VerifyWindowInPassiveConnect = 1
+      exit function
+   elseif ((Not IsNull(ulStatus)) AND (fWSPresent = FALSE)) then   
+      Shout "VerifyWindowInPassiveConnect: WS option present in SYN-ACK"
+      VerifyWindowInPassiveConnect = 1
+      exit function
+   end if
+      
+   '
+   ' Verify the 32 bit window size in SYN-ACK
+   '   
+   ulStatus = VerifyRecvWinSize(pTCPPacket, ulRcvWinSize, usMSS)
+   if (ulStatus <> 0) then
+      Shout "VerifyWindowInPassiveConnect: WS factor incorrect in SYN"      
+      VerifyWindowInPassiveConnect = 1
+      exit function
+   end if  
+   
+   '
+   ' Send an ACK and complete the handshake
+   '
+   Set pTCPPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+   pIFace.Send(pTCPPacket)
+   
+   VerifyWindowInPassiveConnect = 0
+   
+End Function
+
+
+' ==================================================================================================
+'
+' Function to obtain the scale factor from a TCP packet
+' Return :
+'     scale factor/ NULL if WS option is not present in the packet
+'
+' ==================================================================================================
+
+Function GetScaleFactor(pTCPPacket)
+   Dim ulCounter, usKind
+   
+   For ulCounter = 0 to 39
+      usKind = pTCPPacket.TCPHeader.TCPOption(ulCounter).Kind
+      if (usKind = TCP_OPTION_WS) then
+         GetScaleFactor = pTCPPacket.TCPHeader.TCPOption(ulCounter).WsFactor
+         Exit Function
+      end if
+   Next             
+   
+   GetScaleFactor = NULL
+
+End Function
+
+
+' ==================================================================================================
+'
+' Function to verify that 32 bit window size is as expected
+'
+' ==================================================================================================
+
+Function VerifyRecvWinSize(pTCPPacket, ByRef ulExpectedWinSize, usMSS)
+   Dim bWSFactor, ulWindowSize, ulTotalWindowSize, ulMSSFactor
+      
+   '
+   ' Obtain the WS factor and the window size field from the packet
+   '
+   bWSFactor = GetScaleFactor(pTCPPacket)
+   ulWindowSize = pTCPPacket.TCPHeader.WindowSize
+   
+   '
+   ' Calculate the total (32 bit) window size based on the above information
+   '
+   ulTotalWindowSize = LeftShift(ulWindowSize, bWSFactor)
+   
+   '
+   ' The total window size should be the closest to ulExpectedWinSize rounded up multiple of MSS 
+   '
+   if (ulTotalWindowSize <> Clng(65535)) then
+      ulMSSFactor = ulExpectedWinSize/usMSS
+      if (ulExpectedWinSize <> (ulMSSFactor * usMSS)) then
+         ulExpectedWinSize = (ulMSSFactor+1)*usMSS
+      end if
+   end if
+     
+   if (ulExpectedWinSize <> ulTotalWindowSize) then
+      
+      '
+      ' Since we are not supposed to scaled the window in SYN segments, we should
+      ' actually be advertising a window of 0xffff if window scaling is required
+      ' but because of the convoluted window calculation logic, depending on 
+      ' whether the window was set thru SO_RCVWND socket option or registry, teh
+      ' window will end up being scaled/not. 
+      ' To get aound this problem, we will allow the advertised window to be
+      ' either the correct scaled value or 0xffff
+      '
+      if ((ulExpectedWinSize > Clng(65535)) and (ulWindowSize = 65535)) then
+         VerifyRecvWinSize = 0
+         exit function
+      end if
+   
+      Shout "VerifyRecvWinSize: Window size incorrect - " & ulTotalWindowSize
+      VerifyRecvWinSize = 1
+      Exit function      
+   end if
+   
+   VerifyRecvWinSize = 0    
+   
+End Function
+
+
+' ==================================================================================================
+'
+' Function to do ulValue << bFactor
+'
+' ==================================================================================================
+
+Function LeftShift(ByVal ulValue, bFactor)
+   Dim ulCounter
+   
+   if Not (IsNull(bFactor)) then
+      For ulCounter = 1 to bFactor
+         ulValue = ulValue * 2
+      Next
+   end if 
+   LeftShift = ulValue
+End Function
+
+
+' ==================================================================================================
+'
+' A function to validate the TS option in a TCP packet
+'
+' ==================================================================================================
+
+Function ValidateTSOption(pTCPPacket, fTSExpected, ByRef ulLastTSValue, ulExpectedTSEcho)
+   Dim ulIndex
+
+   '
+   ' Check the optione is present only if expected
+   '
+   ulIndex = GetTSOptionIndex(pTCPPacket)
+   if (Not(fTSExpected)) then
+      if (Not(IsNull(ulIndex))) then
+         Shout "ValidateTSOption: TS option present in the packet"
+         ValidateTSOption = 1
+         exit function
+      end if
+
+      ValidateTSOption = 0
+      exit function
+   end if
+   if (IsNull(ulIndex)) then
+      Shout "ValidateTSOption: TS option not present in the packet"
+      ValidateTSOption = 1
+      exit function
+   end if
+
+   '
+   ' Check that the TS value is not less than the last TS value
+   '
+   if (pTCPPacket.TCPHeader.TCPOption(ulIndex).TsValue < ulLastTSValue) then
+      Shout "ValidateTSOption: TS value is smaller " & pTCPPacket.TCPHeader.TCPOption(ulIndex).TsValue & " < " & ulLastTSValue
+      ValidateTSOption = 1
+      exit function
+   end if
+
+   '
+   ' Check that the TS echo field is set correctly
+   '
+   if (pTCPPacket.TCPHeader.TCPOption(ulIndex).TsEcho <> ulExpectedTSEcho) then
+      Shout "ValidateTSOption: TS echo is incorrect " & pTCPPacket.TCPHeader.TCPOption(ulIndex).TsEcho & " <> " & ulExpectedTSEcho
+      ValidateTSOption = 1
+      exit function
+   end if
+
+   ulLastTSValue = pTCPPacket.TCPHeader.TCPOption(ulIndex).TsValue
+   ValidateTSOption = 0
+
+End Function
+
+
+' ==================================================================================================
+'
+' Function to obtain the index of the TS option in the TCP packet. Return NULL if none.
+'
+' ==================================================================================================
+
+Function GetTSOptionIndex(pTCPPacket)
+  Dim ulCounter, usKind
+
+  For ulCounter = 0 to 39
+     usKind = pTCPPacket.TCPHeader.TCPOption(ulCounter).Kind
+     if (usKind = TCP_OPTION_TS) then
+        GetTSOptionIndex = ulCounter
+        Exit Function
+     end if
+  Next
+
+  GetTSOptionIndex = NULL
+End Function
+
+
+' ==================================================================================================
+'
+' Function to make the stack do an active connect
+'
+' ==================================================================================================
+
+Function ActiveConnectWithTS(pIFace, szSrcAddress, szDestAddress, usMss, ByRef ulTSValue, ByRef ulTSEcho, usSrcPort, usDestPort, ByRef ulSessionId, ByRef ulSeqNumber, ByRef ulAckNumber)
+   Dim ulStatus, ulTID, pTCPPacket, ulBytesRcvd
+
+   '
+   ' Ask Autosrv to issue a connect and grab the SYN
+   '
+   Set pTCPPacket = GrabSyn(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+   if (pTCPPacket is Nothing) then
+      Shout "ActiveConnectWithTS: Failed to receive a SYN"
+      ActiveConnectWithTS = 1
+      exit Function
+   end if
+
+   '
+   ' Verify the SYN contains the TS option
+   '
+   if (Not(VerifyTSOption(pTCPPacket, false))) then
+      Shout "ActiveConnectWithTS: TS option not present in SYN"
+      ActiveConnectWithTS = 1
+      exit Function
+   end if
+
+   '
+   ' Send the SYN-ACK with the TS option
+   '
+   Set pTCPPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, (TCP_SYN or TCP_ACK), 0)
+   pTCPPacket.TCPHeader.TCPOption(1).AddMSS(usMSS)
+   pTCPPacket.TCPHeader.TCPOption(0).AddTS ulTSValue, ulTSEcho
+   pIFace.Send(pTCPPacket)
+
+
+   '
+   ' Grab the ACK
+   '
+   Set pTCPPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 1000, pIFace)
+   if (pTCPPacket is Nothing) then
+      Shout "ActiveConnectWithTS: Didn't receive an ACK"
+      ActiveConnectWithTS = 1
+      exit Function
+   end if
+
+   '
+   ' Ensure that the ACK contains the TS option
+   '
+   Dim ulIndex
+   ulIndex = GetTSOptionIndex(pTCPPacket)
+   if (IsNull(ulIndex)) then
+      Shout "ActiveConnectWithTS: TS option not present in ACK"
+      ActiveConnectWithTS = 1
+      exit Function
+   end if
+
+   '
+   ' Ensure that is TS is present, the echo field is set correctly
+   '
+   if (pTCPPacket.TCPHeader.TCPOption(ulIndex).TsEcho <> ulTSValue) then
+      Shout "ActiveConnectWithTS: Incorrect TS echo field in ACK " & pTCPPacket.TCPHeader.TCPOption(ulIndex).TsEcho
+      ActiveConnectWithTS = 1
+      exit Function
+   end if
+
+   ulTSEcho = pTCPPacket.TCPHeader.TCPOption(ulIndex).TsValue
+   ActiveConnectWithTS = 0
+End Function
+
+
+' ==================================================================================================
+'
+' Verify that SACK is present in the SYN/SYN-ACK
+'
+' ==================================================================================================
+
+Sub SACKPermitEnabled(pIFace, szDestAddress, szSrcAddress, fActiveConnect, fSACKPermitInSYN)
+    Dim ulJunkAckNumber, ulCounter, ulLastAckNumber
+    Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+    Dim pTCPPacket, ulBytesRcvd, ulTimeout, usMss
+
+    usMss = EthernetMss(fVersion6)
+
+    usSrcPort = 5000
+    usDestPort = 5000
+    ulSeqNumber = Clng(1000)
+    ulAckNumber = Clng(1)
+
+    '
+    ' Check & ensure that SACK permit is included in SYN & is included in SYN-ACK only if it was 
+    ' present in SYN. Complete the hand-shake & establish the connection
+    '
+    StartVariation
+    if (fActiveConnect) then
+        ulStatus = ActiveConnect(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+    else
+        ulStatus = PassiveConnect(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+    end if
+    if (ulStatus <> 0) then
+        Block "SACKPermitEnabled: Connect - " & ulStatus
+        ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+        exit sub
+    end if
+
+    '
+    ' Ensure that on receiving dup ACKs with the SACK option, the segments are immediately
+    ' rexmitted
+    '
+    StartVariation
+    ulStatus = pController.Send(ulSessionId, 1, 0, 2*usMSS, ulTID)
+    if (ulStatus <> 0) then
+        Sev1 "SACKPermitEnabled: Send - " & ulStatus
+        ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+        exit sub
+    end if
+
+    ulTimeout = 3000          
+    For ulCounter = 1 to 2    
+        Set pTCPPacket = RecvTCPPkt(ulSeqNumber, ulJunkAckNumber, ulBytesRcvd, TCP_ACK, ulTimeout, pIFace)
+        if (pTCPPacket is Nothing) then
+            Block "SACKPermitEnabled: Didn't receive a data packet"
+            ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+            exit sub
+        end if
+        ulTimeout = 300
+    Next
+
+    Set pTCPPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+    pTCPPacket.TCPHeader.TCPOption(0).AddSack
+    pTCPPacket.TCPHeader.TCPOption(0).SackValue(0) = ulAckNumber+usMSS+100
+    pTCPPacket.TCPHeader.TCPOption(0).SackValue(1) = ulAckNumber+2*usMSS   
+    pIFace.Send(pTCPPacket)
+    pIFace.Send(pTCPPacket)
+
+    Dim ulPacketCount
+    ulPacketCount = 0
+    For ulCounter = 1 to 2    
+        Set pTCPPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 100, pIFace)
+        if Not (pTCPPacket is Nothing) then
+            ulPacketCount = ulCounter
+        end if
+    Next
+
+    if (ulPacketCount <> 2) then
+        Sev1 "SACKPermitEnabled: Incorrect packets rexmitted " & ulPacketCount
+        ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+        exit sub
+    end if
+
+    ulAckNumber = ulJunkAckNumber
+    Set pTCPPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+    pIFace.Send(pTCPPacket)
+
+
+    '
+    ' Send an out of sequence packet and ensure the ACK contains the SACK option
+    '
+    StartVariation
+    Set pTCPPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber+10, ulAckNumber, TCP_ACK, 100)
+    pIFace.Send(pTCPPacket)
+
+    Set pTCPPacket = RecvTCPPkt(ulSeqNumber, ulJunkAckNumber, ulBytesRcvd, TCP_ACK, 300, pIFace)
+    if (pTCPPacket is Nothing) then
+        Block "SACKPermitEnabled: Didn't receive an ACK"
+        ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+        exit sub
+    end if
+
+    if (Not(VerifySackOption(pTCPPacket, TRUE))) then   
+        Sev1 "SACKPermitEnabled: SACK option not present in ACK"
+        ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+        exit sub
+    end if
+
+
+    '
+    ' Reset the connection
+    '
+    ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+End Sub
+
+
+' ==================================================================================================
+'
+' Function to verify the sack option is present/not
+'
+' ==================================================================================================
+
+Function VerifySackOption(pTCPPacket, fPresent)   
+  Dim ulCounter, usKind
+   
+  For ulCounter = 0 to 39
+     usKind = pTCPPacket.TCPHeader.TCPOption(ulCounter).Kind
+     if (usKind = TCP_OPTION_SACK) then
+        if (fPresent) then
+           VerifySackOption = TRUE
+        else 
+           VerifySackOption = FALSE
+        end if
+        Exit Function
+     end if
+  Next             
+  
+  Shout "VerifySackOption: Sack Option not present in below packet"
+  Shout "***************************************" 
+  pTCPPacket.Print 
+  Shout "***************************************"
+   
+  VerifySackOption = Not(fPresent)
+End Function   
+
+
+' ==================================================================================================
+'
+' Function to verify the TS option is present/not
+'
+' ==================================================================================================
+
+Function VerifyTSOption(pTCPPacket, fPresent)
+  Dim ulCounter, usKind
+
+  For ulCounter = 0 to 39
+     usKind = pTCPPacket.TCPHeader.TCPOption(ulCounter).Kind
+     if (usKind = TCP_OPTION_TS) then
+        if (fPresent) then
+           VerifyTSOption = TRUE
+        else
+           VerifyTSOption = FALSE
+        end if
+        Exit Function
+     end if
+  Next
+
+  VerifyTSOption = Not(fPresent)
+End Function
+
+      </script>
+   </job>
+</package>
+
+

@@ -1,0 +1,684 @@
+'/**
+'
+' Attacks aimed at TCP reassembly by sending out of order TCP segments
+'
+' Notes:
+' - Ensure that HTTP server is running on the remote machine
+' - Requires Autosrv for the last test
+' - Monitor the CPU usage during the attack
+' - Monitor the memory usage after the attack
+'
+' @module TCPReassembly.wsf
+' @author Sandeep Prabhu
+' @alias sandeep@microsoft.com
+' @date 07/22/2002
+'
+'*/
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\common\Common.Lib"/>
+      <script language="VBScript" src="..\common\TCPHelper.Lib"/>
+      <script id="TCPReassembly" language="VBScript">
+
+
+option explicit
+
+
+dim Core, Sparta, Autosrv, pController, MediaType, IFace, ExceptionStatus
+
+
+StartScript "TCPReassembly", g_szLogDirectory, "TCP reassembly attacks"
+
+sub Main
+   Core.SetAssertionTracking "10200"
+   '/**
+   ' @area name="Offload Compliance Test Assertions"
+   ' @group name="TCP Vulnerabilities and Attacks Assertions"
+   ' @group name="TCP Reassembly of Out-of-order Segments Assertions" 
+   ' @define name="Offload" Offload Compliance Test Assertions
+   ' @define name="Attacks" TCP Vulnerabilities and Attacks Assertions
+   ' @define name="Reassembly" TCP Reassembly of Out-of-order Segments Assertions
+   ' @hierarchy Offload Attacks Reassembly
+   ' @key Reference="WLP# - x.x.x.x; RFC-791 Section 3.2; RFC-1122 Section 3.3.2"
+   ' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+   ' @key TestName="TCP Reassembly of Out-of-order Segments Tests"
+   ' @key TestParam="-v6: uses IPv6 transport [default is IPv4]; -d duration: runs tests for duration seconds [default is 180 seconds]"
+   ' @key TestLog="TCPReassembly.log"
+   '*/
+   dim ValueArray
+   ValueArray = Array(false, 180, false, false, false, false)
+   ParseArguments array("-v6", "-d", "-offload", "-nocap", "-popup", "-autosrv"), array(vbBoolean, vbLong, vbBoolean, vbBoolean, vbBoolean, vbBoolean), ValueArray
+
+   '/**
+   ' @config conf="An HTTP server must be running on port 80 of the stack being tested."
+   ' @test name="The stack must wait to acknowledge out-of-order, duplicate segments until the missing data arrives."
+   '    The stack expects a segment starting at sequence number X.
+   '    The test sends a series of duplicate segments from X+1 to Y. The test then sends the
+   '    missing byte. The test verifies that the stack acknowledges all of the data in
+   '    the sequence number space X to Y. The connection is on port 80.
+   '*/
+   if (ShouldExecuteTest("DuplicateSegments")) then
+      StartTest "Send a bunch of duplicate segments"
+      DoTest ValueArray(0), ValueArray(1), "DuplicateSegments", ValueArray(5)
+      EndTest
+   end if
+
+   '/**
+   ' @test name="The stack must wait to acknowledge out-of-order, random segments until the missing data arrives."
+   '    The stack expects a segment starting at sequence number X.
+   '    The test sends a series of out-of-order segments within the TCP window, from
+   '    A to B (where A >= X+1 and B <= X+WindowSize) The test then sends the
+   '    missing byte. The test verifies that the stack acknowledges all of the data
+   '    within the TCP window. The connection is on port 80.
+   '*/
+   if (ShouldExecuteTest("RandomSegmentsWithinWindow")) then
+      StartTest "Send a bunch of out of order segments within the window"
+      DoTest ValueArray(0), ValueArray(1), "RandomSegmentsWithinWindow", ValueArray(5)
+      EndTest
+   end if
+
+   '/**
+   ' @test name="The stack must reassemble only out-of-order segments within the receive window."
+   '    The stack expects a segment starting at sequence number X.
+   '    The test sends a series of out of order segments: X+1 to X+MSS+1,
+   '    X+MSS+1 to X+2*MSS+1, . . . The test then sends the missing byte. 
+   '    The stack must acknowledge all of the data within the receive window. The
+   '    connection is on port 80.
+   '*/
+   if (ShouldExecuteTest("OutOfOrderBeyondWindow")) then
+      StartTest "Send a bunch of out of order segments within/outside the window"
+      DoTest ValueArray(0), ValueArray(1), "OutOfOrderBeyondWindow", ValueArray(5)
+      EndTest
+   end if
+
+   '/**
+   ' @test name="The stack must wait to acknowledge out-of-order, overlapping segments until the missing data arrives."
+   '    The stack expects a segment starting at sequence number X.
+   '    The test sends a series of out of order overlapping segments. For each of
+   '    the following variations, the test sends the segments in random order,
+   '    but the first segment by sequence number will always be the last
+   '    one sent. The connection is on a non-reserved port.
+   '    <ul><ol>
+   '    <li>30 end-to-end segments: [X, X+A), [X+A, X+2A), [X+2A, X+3A), . . .</li>
+   '    <li>30 segments off by one byte: [X, X+A), [X+A-1, X+2A-1), [X+2A-2, X+3A-2), . . .</li>
+   '    <li>15 segments in the middle of 15 others: [X, X+A), [X+B, X+2B), [X+A, X+2A), [X+A+B, X+A+2B), . . .</li>
+   '    <li>30 segments advancing less than their size: [X, X+A), [X+B, X+A+B), [X+2B, X+A+2B), . . .</li>
+   '    </ol> where A = 567 and B = 29.</ul>
+   '*/
+
+   '    <li>30 end-to-end segments: [X, X+567), [X+567, X+1134), [X+1134, X+1701), . . .</li>
+   '    <li>30 segments off by one byte: [X, X+567), [X+566, X+1133), [X+1132, X+1699), . . .</li>
+   '    <li>15 segments in the middle of 15 others: [X, X+567), [X+29, X+58), [X+567, X+1134), [X+5
+   if (ShouldExecuteTest("OutOfOrderOverlap")) then
+      StartTest "Send a bunch of out of order overlapping segments"
+      DoTest ValueArray(0), ValueArray(1), "OutOfOrderOverlap", ValueArray(5)
+      EndTest
+   end if
+
+end sub
+
+'
+'/**
+' Keep sending duplicate fragments. Suppresses sending the first fragment and
+' keeps sending the second fragment. Eventually sends the first fragment and
+' ensures that the stack correctly acknowledges all data
+'
+' @params
+' !fVersion6      - true/false depending on whether TCPv6/TCPv4
+' !ulDuration     - Duration of run in secs
+' !usSrcPort      - Source port (SPARTA side)
+' !usDestPort     - Destination port (Stack side)
+' !szSrcAddress   - Source address (SPARTA side)
+' !szDestAddress  - Destination address (Stack side)
+' !ulSeqNumber    - Sequence number
+' !ulAckNumber    - Ack number
+' !ulSessionId    - Session id of this connection
+' !pIFace         - Interface to receive the data on
+'
+' @returns  nothing
+'
+' */
+'
+sub DuplicateSegments(fVersion6, ulDuration, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, pIFace)
+   dim pDataPkt, pPacket, ulBytesRcvd, ulExpectSeqNumber, usDataSize, StartTime
+
+   usDataSize = 600
+
+   '
+   ' Keep sending the duplicate segment and ensure that the stack sends
+   ' the last ACK
+   '
+   StartTime = Timer
+   ulExpectSeqNumber = ulSeqNumber
+   set pDataPkt = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber+1, ulAckNumber, TCP_ACK, usDataSize-1)
+   do
+      pIFace.Send(pDataPkt)
+
+      set pPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 300, pIFace)
+      if (pPacket is nothing) then
+         Sev1 "DuplicateSegments: Failed to receive last ACK"
+         exit sub
+      elseif (ulSeqNumber <> ulExpectSeqNumber) then
+         Sev1 "DuplicateSegments: Incorrect seq number - " & Hex(ulSeqNumber) & " <> " & Hex(ulExpectSeqNumber)
+         exit sub
+      end if
+   loop while ((Timer-StartTime) < ulDuration)
+
+   '
+   ' Now send the missing byte
+   '
+   set pDataPkt = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_ACK, usDataSize - 50)
+   pIFace.Send(pDataPkt)
+
+   '
+   ' Ensure the stack ACKs all the data
+   '
+   ulExpectSeqNumber = ulExpectSeqNumber + usDataSize
+   set pPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 300, pIFace)
+   if (pPacket is nothing) then
+      Sev1 "DuplicateSegments: Failed to receive ACK"
+      exit sub
+   elseif (ulSeqNumber <> ulExpectSeqNumber) then
+      Sev1 "DuplicateSegments: Incorrect seq number - " & Hex(ulSeqNumber) & " <> " & Hex(ulExpectSeqNumber)
+      exit sub
+   end if
+
+end sub
+
+
+'
+'/**
+' Keep sending out of order segments which are within the window. Suppresses
+' sending the first segment and keeps sending segments with random sequence
+' number (within the window) and zero size and then the same segment with a
+' random data size. Eventually sends the missing initial segment and ensures
+' that the stack only ACKs data within the window
+'
+' @params
+' !fVersion6      - true/false depending on whether TCPv6/TCPv4
+' !ulDuration     - Duration of run in secs
+' !usSrcPort      - Source port (SPARTA side)
+' !usDestPort     - Destination port (Stack side)
+' !szSrcAddress   - Source address (SPARTA side)
+' !szDestAddress  - Destination address (Stack side)
+' !ulSeqNumber    - Sequence number
+' !ulAckNumber    - Ack number
+' !ulSessionId    - Session id of this connection
+' !pIFace         - Interface to receive the data on
+'
+' @returns  nothing
+'
+' */
+'
+sub RandomSegmentsWithinWindow(fVersion6, ulDuration, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, pIFace)
+   dim pDataPkt, pPacket, ulBytesRcvd, ulExpectSeqNumber, usWindowSize, StartTime
+   dim usMaxSegmentSize
+
+   usWindowSize = DefaultTcpWindowSize(fVersion6)
+   usMaxSegmentSize = EthernetMss(fVersion6)
+
+   '
+   ' Keep sending the duplicate segment and ensure that the stack sends
+   ' the last ACK
+   '
+   StartTime = Timer
+   ulExpectSeqNumber = ulSeqNumber
+   set pDataPkt = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber+1, ulAckNumber, TCP_ACK, 0)
+   do
+      '
+      ' Generate a random data seq number between [
+      '        StartSeqNumber+1 .. StartSeqNumber+WindowSize-1]
+      ' Send the packet with zero data and then with non-zero data
+      '
+      pDataPkt.TcpHeader.SeqNumber = Clng(Rnd*(usWindowSize-1)+1) + ulExpectSeqNumber
+      pDataPkt.UserData 0
+      pIFace.Send(pDataPkt)
+      pDataPkt.UserData Clng(Rnd*usMaxSegmentSize+1)
+      pIFace.Send(pDataPkt)
+
+      '
+      ' Ensure stack resends the last ACK
+      '
+      set pPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 300, pIFace)
+      if (pPacket is nothing) then
+         Sev1 "RandomSegmentsWithinWindow: Failed to receive last ACK"
+         exit sub
+      elseif (ulSeqNumber <> ulExpectSeqNumber) then
+         Sev1 "RandomSegmentsWithinWindow: Incorrect seq number - " & Hex(ulSeqNumber) & " <> " & Hex(ulExpectSeqNumber)
+         exit sub
+      end if
+   loop while ((Timer-StartTime) < ulDuration)
+
+   '
+   ' Now send the missing byte
+   '
+   set pDataPkt = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_ACK, 50)
+   pIFace.Send(pDataPkt)
+
+   '
+   ' Ensure the stack ACKs all the data within the window
+   '
+   set pPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 300, pIFace)
+   if (pPacket is nothing) then
+      Sev1 "RandomSegmentsWithinWindow: Failed to receive ACK"
+      exit sub
+   elseif (ulSeqNumber > (ulExpectSeqNumber+usWindowSize)) then
+      Sev1 "RandomSegmentsWithinWindow: Incorrect seq number - " & Hex(ulSeqNumber) & " > " & Hex(ulExpectSeqNumber+usWindowSize)
+      exit sub
+   end if
+
+end sub
+
+'
+'/**
+' Keep sending out of order segments which may/may not be within the window.
+' Suppresses sending the first segment and keeps sending segments with random sequence
+' number (within the window) and zero size and then the same segment with a
+' random data size. Eventually sends the missing initial segment and ensures
+' that the stack only ACKs data within the window
+'
+' @params
+' !fVersion6      - true/false depending on whether TCPv6/TCPv4
+' !ulDuration     - Duration of run in secs
+' !usSrcPort      - Source port (SPARTA side)
+' !usDestPort     - Destination port (Stack side)
+' !szSrcAddress   - Source address (SPARTA side)
+' !szDestAddress  - Destination address (Stack side)
+' !ulSeqNumber    - Sequence number
+' !ulAckNumber    - Ack number
+' !ulSessionId    - Session id of this connection
+' !pIFace         - Interface to receive the data on
+'
+' @returns  nothing
+'
+' */
+'
+sub OutOfOrderBeyondWindow(fVersion6, ulDuration, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, pIFace)
+   dim pDataPkt, pPacket, ulBytesRcvd, ulExpectSeqNumber, usWindowSize, StartTime
+   dim usSegmentSize, usAckSize
+
+   usWindowSize = DefaultTcpWindowSize(fVersion6)
+   usSegmentSize = EthernetMss(fVersion6)
+   usAckSize = 0
+
+   '
+   ' Keep sending the duplicate segment and ensure that the stack sends
+   ' the last ACK
+   '
+   StartTime = Timer
+   ulExpectSeqNumber = ulSeqNumber
+   set pDataPkt = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber+1, ulAckNumber, TCP_ACK, usSegmentSize)
+   do
+      '
+      ' Send the next segment which may be outside the window
+      '
+      usAckSize = usAckSize + usSegmentSize
+      if (usAckSize >= usWindowSize) then
+         usAckSize = usWindowSize
+      end if
+      pIFace.Send(pDataPkt)
+      pDataPkt.TcpHeader.SeqNumber = pDataPkt.TcpHeader.SeqNumber + usSegmentSize
+
+      '
+      ' Ensure stack resends the last ACK
+      '
+      set pPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 300, pIFace)
+      if (pPacket is nothing) then
+         Sev1 "OutOfOrderBeyondWindow: Failed to receive last ACK"
+         exit sub
+      elseif (ulSeqNumber <> ulExpectSeqNumber) then
+         Sev1 "OutOfOrderBeyondWindow: Incorrect seq number - " & Hex(ulSeqNumber) & " <> " & Hex(ulExpectSeqNumber)
+         exit sub
+      end if
+   loop while ((Timer-StartTime) < ulDuration)
+
+   '
+   ' Now send the missing byte
+   '
+   set pDataPkt = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_ACK, 50)
+   pIFace.Send(pDataPkt)
+
+   '
+   ' Ensure the stack ACKs all the data within the window
+   '
+   set pPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 300, pIFace)
+   if (pPacket is nothing) then
+      Sev1 "OutOfOrderBeyondWindow: Failed to receive ACK"
+      exit sub
+   elseif (ulSeqNumber <> (ulExpectSeqNumber+usAckSize)) then
+      Sev1 "OutOfOrderBeyondWindow: Incorrect seq number - " & Hex(ulSeqNumber) & " <> " & Hex(ulExpectSeqNumber+usAckSize)
+      exit sub
+   end if
+
+end sub
+
+'
+'/**
+' Send out of order overlapping segments. This will also test the random ordered
+' segments with no overlap. For each random ordering, the first segment is the last
+' in the ordering, i.e. sent out at the end. All the segments are within the window.
+' Assumes that the window is atleast 567*30 bytes big.
+'
+' @params
+' !fVersion6      - true/false depending on whether TCPv6/TCPv4
+' !ulDuration     - Duration of run in secs
+' !usSrcPort      - Source port (SPARTA side)
+' !usDestPort     - Destination port (Stack side)
+' !szSrcAddress   - Source address (SPARTA side)
+' !szDestAddress  - Destination address (Stack side)
+' !ulSeqNumber    - Sequence number
+' !ulAckNumber    - Ack number
+' !ulSessionId    - Session id of this connection
+' !pIFace         - Interface to receive the data on
+'
+' @returns  nothing
+'
+' */
+'
+sub OutOfOrderOverlap(fVersion6, ulDuration, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, pIFace)
+   dim pResponse, pPacket, ulBytesRcvd, ulExpectSeqNumber, StartTime
+   dim ulCounter, ulNumSegments, ulNumVars, usOverlap, ulCounter1
+   dim SegmentSeq(10, 5000), SegmentSize(10, 5000), ulEndSeqNumber(10)
+   dim ulStartSeqNumber, ulLastSeqNumber, Order, usSegmentSize
+
+   usSegmentSize = 567
+   ulNumSegments = 30
+   ulNumVars = 0
+
+   '
+   ' Random ordering of
+   '     <-----><-----><----->....
+   '
+   for ulCounter = 0 to (ulNumSegments-1)
+      SegmentSeq(ulNumVars, ulCounter) = usSegmentSize*ulCounter
+      SegmentSize(ulNumVars, ulCounter) = usSegmentSize
+   next
+   ulEndSeqNumber(ulNumVars) = usSegmentSize*ulNumSegments
+   ulNumVars = ulNumVars + 1
+
+   '
+   ' Random ordering of
+   '     <----->
+   '          <----->
+   '                    .......
+   '
+   usOverlap = 1
+   for ulCounter = 0 to (ulNumSegments-1)
+      SegmentSeq(ulNumVars, ulCounter) = (usSegmentSize-usOverlap)*ulCounter
+      SegmentSize(ulNumVars, ulCounter) = usSegmentSize
+   next
+   ulEndSeqNumber(ulNumVars) = SegmentSeq(ulNumVars, ulNumSegments-1)+SegmentSize(ulNumVars, ulNumSegments-1)
+   ulNumVars = ulNumVars + 1
+
+   '
+   ' Random ordering of
+   '     <------><------><------><------> ......
+   '       <-->    <-->    <-->    <-->   ......
+   '
+   usOverlap = 29
+   for ulCounter = 0 to (ulNumSegments-1)
+      if ((ulCounter Mod 2) <> 0) then
+         SegmentSeq(ulNumVars, ulCounter) = SegmentSeq(ulNumVars, ulCounter-1)+usOverlap
+         SegmentSize(ulNumVars, ulCounter) = usOverlap
+      else
+         SegmentSeq(ulNumVars, ulCounter) = Int(ulCounter/2)*usSegmentSize
+         SegmentSize(ulNumVars, ulCounter) = usSegmentSize
+      end if
+   next
+   ulEndSeqNumber(ulNumVars) = Int((ulNumSegments+1)/2)*usSegmentSize
+   ulNumVars = ulNumVars + 1
+
+   '
+   ' Random ordering of
+   '     <-----><-----><-----><----->......
+   '        <-----><-----><-----><----->.....
+   '
+   usOverlap = 29
+   for ulCounter = 0 to (ulNumSegments-1)
+      if ((ulCounter Mod 2) <> 0) then
+         SegmentSeq(ulNumVars, ulCounter) = SegmentSeq(ulNumVars, ulCounter-1)+usOverlap
+      else
+         SegmentSeq(ulNumVars, ulCounter) = Int(ulCounter/2)*usSegmentSize
+      end if
+      SegmentSize(ulNumVars, ulCounter) = usSegmentSize
+   next
+   ulEndSeqNumber(ulNumVars) = SegmentSeq(ulNumVars, ulNumSegments-1)+SegmentSize(ulNumVars, ulNumSegments-1)
+   ulNumVars = ulNumVars + 1
+
+   StartVariation
+   StartTime = Timer
+   do
+      '
+      ' Get the ordering of the numbers - 1st segment will be sent the last
+      '
+      Order = GetPermutation(ulNumSegments)
+
+      '
+      ' For each overlap pattern
+      '
+      for ulCounter1 = 0 to (ulNumVars-1)
+         '
+         ' Send the out of order overlapping segments for this particular overlap pattern
+         '
+         set pPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+         ulStartSeqNumber = ulSeqNumber
+         ulLastSeqNumber = ulEndSeqNumber(ulCounter1) + ulSeqNumber
+         for ulCounter = 0 to (ulNumSegments-1)
+            pPacket.TcpHeader.SeqNumber = SegmentSeq(ulCounter1, Order(ulCounter))+ulStartSeqNumber
+            pPacket.UserData SegmentSize(ulCounter1, Order(ulCounter))
+            pIFace.Send(pPacket)
+
+            '
+            ' Receive and validate the ACK
+            ' Till we send the missing first segment, we should be receiving the ACK demanding that
+            ' segment. And on sending the first segment, we should get an ACK for all the received
+            ' data
+            '
+            set pResponse = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 300, pIFace)
+            if (pResponse is Nothing) then
+               Sev1 "OutOfOrderOverlap: Failed to receive an ACK"
+               exit sub
+            else
+               if ((ulCounter < (ulNumSegments-1)) AND (ulSeqNumber <> ulStartSeqNumber)) then
+                  Sev1 "OutOfOrderOverlap: Incorrect intermediate ACK " & Hex(ulSeqNumber) & " <> " & Hex(ulStartSeqNumber)
+                  exit sub
+               elseif ((ulCounter = (ulNumSegments-1)) AND (ulSeqNumber <> ulLastSeqNumber)) then
+                  Sev1 "OutOfOrderOverlap: Incorrect final ACK " & Hex(ulSeqNumber) & " <> " & Hex(ulLastSeqNumber)
+                  exit sub
+               end if
+            end if
+         next
+      next
+   loop while ((Timer-StartTime) < ulDuration)
+
+end sub
+
+
+'
+' Function to obtain a permutation of the numbers 0 to (ulNumSegments-1)
+'
+function GetPermutation(ulNumSegments)
+   dim ulCounter, Order(5000)
+
+   Randomize
+
+   '
+   ' First segment will always be the last to be received
+   '
+   Order(ulNumSegments-1) = 0
+   for ulCounter = 0 to (ulNumSegments-2)
+      Order(ulCounter) = ulCounter + 1
+   next
+
+   '
+   ' Generate a permutation of segments 2...Last
+   ' We would do this as follows
+   '     x1, x2, ...xi,...xk
+   ' Select a random number between 1 and k - say i
+   ' Swap xk and xi
+   '     x1, x2, ... xk, ... xk-1, xi
+   ' Repeat for x1, x2 ... xk-1
+   '
+   for ulCounter = 0 to (ulNumSegments-2)
+      dim ulLastIndex, ulSelectedIndex, ulTmp
+
+      ulLastIndex = ulNumSegments-2-ulCounter
+
+      '
+      ' Generate a random number between 0 and last index
+      ' The number at this index will go to the end of the list
+      '
+      ulSelectedIndex = Clng(Rnd*ulLastIndex)
+
+      '
+      ' Swap the numbers in the selected & last index
+      '
+      ulTmp = Order(ulSelectedIndex)
+      Order(ulSelectedIndex) = Order(ulLastIndex)
+      Order(ulLastIndex) = ulTmp
+   next
+
+   GetPermutation = Order
+
+
+End Function
+
+'
+'/**
+' Routine to launch the individual tests
+'
+' @params
+' !fVersion6      - true/false for TCPv6/TCPv4
+' !ulDuration     - Duration of run in secs
+' !szTestName     - Specific test to do
+'
+' @return nothing
+'*/
+'
+sub DoTest(fVersion6, ulDuration, szTestName, fAutosrv)
+   dim ulStatus, pPacket, pIFace, pAutoDisc, ulBytesRcvd, ulSessionId, ulTID
+   dim usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber
+
+   randomize
+   usSrcPort = Clng(60534*Rnd + 5000)
+   ulSeqNumber = Clng(60535*Rnd)
+   if fAutosrv then
+      usDestPort = Clng(60534*Rnd + 5000)
+   else
+      usDestPort = 80
+   end if
+   
+   ulAckNumber = Clng(60535*Rnd)
+
+   StartVariation
+
+   '
+   ' Start off auto discovery and create the interfaces
+   '
+   if (fVersion6) then
+      szSrcAddress = g_szLocalSpoofIp6Address
+      szDestAddress = g_szRemoteIp6Address
+      set pAutoDisc = sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, szSrcAddress, FALSE)
+   else
+      szSrcAddress = g_szLocalSpoofIp
+      szDestAddress = g_szRemoteIpAddress
+      set pAutoDisc = sparta.AutoArp(g_szLocalMacAddress, g_szLocalMacAddress, szSrcAddress)
+   end if
+   set pIFace = CreateInterface(fVersion6, TRUE, g_szRemoteMacAddress, g_szLocalMacAddress, szDestAddress, szSrcAddress)
+   pIFace.StartListening
+
+   if (szTestName = "OutOfOrderOverlap") then
+      '
+      ' Establish a connection
+      '
+      usDestPort = null
+      ulStatus = PassiveConnect(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+      if (ulStatus <> 0) then
+         Block "DoTest: Failed to connect"
+         exit sub
+      end if
+
+      '
+      ' Post a receive
+      '
+      ulStatus = pController.Receive(ulSessionId, 0, 0, 65535, ulTID)
+      if (ulStatus <> 0) then
+         Block "DoTest: Receive - " & ulStatus
+      else
+         Execute szTestName & " fVersion6, ulDuration, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, pIFace"
+      end if
+
+      '
+      ' Reset the connection
+      '
+      ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+   else
+
+      if fAutosrv then
+          ulStatus = PassiveConnect(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+          if (ulStatus <> 0) then
+             Block "DoTest: Failed to connect"
+             exit sub
+          end if
+      else
+
+          '
+          ' Send a SYN to HTTP port
+          '
+          set pPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_SYN, 0)
+          pPacket.TcpHeader.TcpOption(0).AddMSS(EthernetMss(fVersion6))
+          pIFace.Send(pPacket)
+
+          '
+          ' Grab a SYN-ACK
+          '
+          set pPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_SYN or TCP_ACK, 300, pIFace)
+          if (pPacket is nothing) then
+             Sev1 "DoTest: Failed to connect to " & usDestPort & " using src port - " & usSrcPort
+             exit sub
+          end if
+
+          '
+          ' Send an ACK
+          '
+          set pPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+          pIFace.Send(pPacket)
+      end if
+
+      '
+      ' Check if connection is offloaded
+      '
+      If Not IsConnectionOffloaded(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSessionId) and g_fTestOffload And g_fTOENic Then
+          Sev1 "DoTest : Failed to offload the connection"
+          ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+          Exit sub
+      End If
+
+      '
+      ' Do the specific test
+      '
+      Execute szTestName & " fVersion6, ulDuration, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, pIFace"
+
+      '
+      ' Send a RST
+      '
+      'set pPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_RST, 0)
+      'pIFace.Send(pPacket)
+
+      '
+      ' Reset the connection
+      '
+      ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+   end if
+
+end sub
+
+      </script>
+   </job>
+</package>
+

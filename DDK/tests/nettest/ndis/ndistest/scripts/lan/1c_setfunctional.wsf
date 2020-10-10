@@ -1,0 +1,407 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_5
+</MEDIA>
+<WHQL>
+802_5
+</WHQL>
+<CARDMACH>
+1C,1M
+</CARDMACH>
+<RUNORDER>
+1280
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[This script tests the ability of token ring drivers to set the current
+functional address on multiple open instances. It also verifies that a query
+of the driver returns the correct functional address for that open instance.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="1c_SetFunctional" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      
+      <!-- Begin Wireless Specific Includes -->
+      <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	   <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	   <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	   <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	   <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+      <!-- End Wireless Specific Includes -->
+      
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/> 
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script language="VBScript" src="..\inc\ConstLAN.vbs"/>
+      <script id="1c_SetFunctional" language="VBScript">
+'==========================================================================
+' Script Name:    1c_SetFunctional
+'==========================================================================
+Option Explicit 
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0)) 
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard
+   Private oOpenOne, oOpenTwo
+   Private m_lTestAdapterIndex
+   
+   Private Sub Class_Initialize
+      
+   End Sub
+   
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+      Set oOpenOne  = Nothing
+      Set oOpenTwo  = Nothing
+   End Sub
+   
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+      
+      Set pAdapterList = oNDInfo.AdapterList
+      
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oOpenOne = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oOpenOne is Nothing) Then
+         Exit Function
+      End If
+      
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+  
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")           
+         If(vbAssociateWep(oOpenOne, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If	
+           
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+      
+      Set oOpenTwo = oTestCard.vbOpenAdapter
+      If (oOpenTwo is Nothing) Then
+         Exit Function
+      End If
+      
+      Set pAdapterList = Nothing
+      
+      If (oTestCard.NdisMedium <> NDISMEDIUM802_5) Then
+         Call oLog.Failed ("Media type not valid for this script" , 20981)
+         Exit Function
+      End If
+      
+      SetupTest = TRUE
+   End Function
+   
+   Public Function RunTest (lTestAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+      
+      ExecuteTestCore
+      
+      oLog.Variation("Clear Events")
+      
+      Call oOpenOne.vbClearEvents()
+      Call oOpenTwo.vbClearEvents()
+   End Function
+   
+   Private Function ExecuteTestCore
+      Dim bResult, nCount
+      
+      Dim NewFunctAddr1
+      NewFunctAddr1 = FunctAddr(&H01&, &H02&, &H03&, &H04&)
+      
+      Dim NewFunctAddr2
+      NewFunctAddr2 = FunctAddr(&H01&, &H02&, &H03&, &H14&)
+      
+      Dim CurFunctAddr1
+      CurFunctAddr1 = FunctAddr(&H00&, &H00&, &H00&, &H00&)
+      
+      Dim CurFunctAddr2
+      CurFunctAddr2 = FunctAddr(&H00&, &H00&, &H00&, &H00&)
+      
+      Dim addrLen
+      
+      oLog.Variation("Checking current functional addresses")
+      addrLen = 4
+      
+      bResult = oOpenOne.vbFastNdisRequest(OID_802_5_CURRENT_FUNCTIONAL, CurFunctAddr1, addrLen)
+      If (Not bResult) Then
+         Call oLog.Failed ("Unable to query open 1 functional address" , 20986)
+      End If
+      
+      addrLen = 4
+      bResult = oOpenTwo.vbFastNdisRequest(OID_802_5_CURRENT_FUNCTIONAL, CurFunctAddr2, addrLen)
+      If (Not bResult) Then
+         Call oLog.Failed ("Unable to query open 2 functional address" , 20987)
+      End If
+      
+      If ((Not FunctAddrCmp(CurFunctAddr1, NullFunctAddr)) Or _
+               (Not FunctAddrCmp(CurFunctAddr2, NullFunctAddr)) ) Then
+         Call oLog.Failed ("Incorrect functional address" , 20988)
+      End If
+      
+      '------------------------------------
+      ' single-open tests
+      ' variation:   set/clear the same functional address multiple times
+      '---------------------------------------------------------
+      oLog.Variation("Set/clear an address multiple times")
+      
+      For nCount = 0 to 24
+         
+         oLog.Variation("Setting functional address")
+         
+         Call oOpenOne.vbSetFunctionalAddr(NewFunctAddr1)
+         
+         addrLen = 4
+         
+         bResult = oOpenOne.vbFastNdisRequest(OID_802_5_CURRENT_FUNCTIONAL, CurFunctAddr1, addrLen)
+         If (Not bResult) Then
+            Call oLog.Failed ("Unable to query current functional address" , 20990)
+         ElseIf (Not FunctAddrCmp(CurFunctAddr1, NewFunctAddr1)) Then
+            Call oLog.Failed ("Incorrect functional address returned" , 20991)
+         End If
+         
+         oLog.Variation("Clearing the functional address")
+         
+         Call oOpenOne.vbSetFunctionalAddr(NullFunctAddr)
+         
+         addrLen = 4
+         
+         bResult = oOpenOne.vbFastNdisRequest(OID_802_5_CURRENT_FUNCTIONAL, CurFunctAddr1, addrLen)
+         If (Not bResult) Then
+            call oLog.Failed ("Unable to query current functional address" , 20993)
+         ElseIf (Not FunctAddrCmp(CurFunctAddr1, NullFunctAddr)) Then
+            call oLog.Failed ("Incorrect functional address returned" , 20994)
+         End If
+         
+      Next
+      
+      '----------------------------------------------------
+      ' variation:   set/clear different functional addresses
+      '----------------------------------------------------
+      oLog.Variation("Set/clear a series of addresses")
+      
+      For nCount = 0 To 31
+         
+         oLog.Variation("Setting functional address")
+         NewFunctAddr1 = FunctAddr(&H01&, &H02&, nCount, &H04&)
+         
+         Call oOpenOne.vbSetFunctionalAddr(NewFunctAddr1)
+         
+         addrLen = 4
+         
+         bResult = oOpenOne.vbFastNdisRequest(OID_802_5_CURRENT_FUNCTIONAL, CurFunctAddr1, addrLen)
+         If (Not bResult) Then
+            call oLog.Failed ("Unable to query current functional address" , 20996)
+         ElseIf (Not FunctAddrCmp(CurFunctAddr1, NewFunctAddr1)) Then
+            call oLog.Failed ("Incorrect functional address returned" , 20997)
+         End If
+         
+         oLog.Variation("Clearing the functional address")
+         
+         Call oOpenOne.vbSetFunctionalAddr(NullFunctAddr)
+         
+         addrLen = 4
+         
+         bResult = oOpenOne.vbFastNdisRequest(OID_802_5_CURRENT_FUNCTIONAL, CurFunctAddr1, addrLen)
+         If (Not bResult) Then
+            call oLog.Failed ("Unable to query current functional address" , 20999)
+         ElseIf (Not FunctAddrCmp(CurFunctAddr1, NullFunctAddr)) Then
+            call oLog.Failed ("Incorrect functional address returned" , 21000)
+         End If
+         
+      Next
+      
+      '---------------------------------------------------------
+      ' multiple-open tests
+      ' variation:   set/unset the same functional address multiple times
+      '---------------------------------------------------------
+      NewFunctAddr1 = FunctAddr(&H01&, &H02&, &H03&, &H04&)
+      
+      oLog.Variation("Repeatedly set/clear a single address on each instance")
+      
+      For nCount = 0 To 24
+         
+         oLog.Variation("Setting functional addresses")
+         If ((nCount And &H01&) = &H01&) Then
+            Call oOpenOne.vbSetFunctionalAddr(NewFunctAddr1)
+         Else
+            Call oOpenTwo.vbSetFunctionalAddr(NewFunctAddr2)
+         End If
+         
+         If ((nCount And &H01&) = &H01&) Then
+            Call oOpenTwo.vbSetFunctionalAddr(NewFunctAddr2)
+         Else
+            Call oOpenOne.vbSetFunctionalAddr(NewFunctAddr1)
+         End If
+         
+         oLog.Variation("Checking if set correctly")
+         addrLen = 4
+         bResult = oOpenOne.vbFastNdisRequest(OID_802_5_CURRENT_FUNCTIONAL, CurFunctAddr1, addrLen)
+         If (Not bResult) Then
+            call oLog.Failed ("Unable to query open 1 functional address" , 21003)
+         End If
+         
+         addrLen = 4
+         bResult = oOpenTwo.vbFastNdisRequest(OID_802_5_CURRENT_FUNCTIONAL, CurFunctAddr2, addrLen)
+         If (Not bResult) Then
+            call oLog.Failed ("Unable to query open 2 functional address" , 21004)
+         End If
+         
+         If (Not FunctAddrCmp(CurFunctAddr1, NewFunctAddr1)) Then
+            call oLog.Failed ("Incorrect open 1 functional address" , 21005)
+         End If
+         
+         If (Not FunctAddrCmp(CurFunctAddr2, NewFunctAddr2)) Then
+            call oLog.Failed ("Incorrect open 2 functional address" , 21006)
+         End If
+         
+         oLog.Variation("Clearing the addresses")
+         Call oOpenOne.vbSetFunctionalAddr(NullFunctAddr)
+         Call oOpenTwo.vbSetFunctionalAddr(NullFunctAddr)
+         
+         oLog.Variation("Checking if cleared properly")
+         addrLen = 4
+         bResult = oOpenOne.vbFastNdisRequest(OID_802_5_CURRENT_FUNCTIONAL, CurFunctAddr1, addrLen)
+         If (Not bResult) Then
+            call oLog.Failed ("Unable to query one 1 functional address" , 21009)
+         End If
+         
+         addrLen = 4
+         bResult = oOpenTwo.vbFastNdisRequest(OID_802_5_CURRENT_FUNCTIONAL, CurFunctAddr2, addrLen)
+         If (Not bResult) Then
+            call oLog.Failed ("Unable to query one 2 functional address" , 21010)
+         End If
+         
+         If (Not FunctAddrCmp(CurFunctAddr1, NullFunctAddr)) Then
+            call oLog.Failed ("Incorrect open 1 functional address" , 21011)
+         End If
+         
+         If (Not FunctAddrCmp(CurFunctAddr2, NullFunctAddr)) Then
+            call oLog.Failed ("Incorrect open 2 functional address" , 21012)
+         End If
+         
+      Next      
+      
+      '----------------------------------------------------
+      ' variation:   set/clear different functional addresses
+      '----------------------------------------------------
+      oLog.Variation("Set/clear different addresses on two open instances")
+      
+      For nCount = 0 To 15
+         oLog.Variation("Setting different functional addresses")
+         NewFunctAddr1 = FunctAddr(&H01&, &H02&, nCount, &H04&)
+         NewFunctAddr2 = FunctAddr(&H01&, &H02&, (nCount + &H10&), &H04&)
+         
+         Call oOpenOne.vbSetFunctionalAddr(NewFunctAddr1)
+         Call oOpenTwo.vbSetFunctionalAddr(NewFunctAddr2)
+         
+         oLog.Variation("Checking if set properly")
+         addrLen = 4
+         bResult = oOpenOne.vbFastNdisRequest(OID_802_5_CURRENT_FUNCTIONAL, CurFunctAddr1, addrLen)
+         If (Not bResult) Then
+            call oLog.Failed ("Unable to query open 1 functional address" , 21015)
+         End If
+         
+         addrLen = 4
+         bResult = oOpenTwo.vbFastNdisRequest(OID_802_5_CURRENT_FUNCTIONAL, CurFunctAddr2, addrLen)
+         If (Not bResult) Then
+            call oLog.Failed ("Unable to query open 2 functional address" , 21016)
+         End If
+         
+         If (Not FunctAddrCmp(CurFunctAddr1, NewFunctAddr1)) Then
+            call oLog.Failed ("Incorrect open 1 functional address" , 21017)
+         End If
+         
+         If (Not FunctAddrCmp(CurFunctAddr2, NewFunctAddr2)) Then
+            call oLog.Failed ("Incorrect open 2 functional address" , 21018)
+         End If
+         
+         oLog.Variation("Clearing the addresses")      
+         If ((nCount And &H01&) = &H01&) Then
+            Call oOpenOne.vbSetFunctionalAddr(NullFunctAddr)
+         Else
+            Call oOpenTwo.vbSetFunctionalAddr(NullFunctAddr)
+         End If
+         
+         If ((nCount And &H01&) = &H01&) Then
+            Call oOpenTwo.vbSetFunctionalAddr(NullFunctAddr)
+         Else
+            Call oOpenOne.vbSetFunctionalAddr(NullFunctAddr)
+         End If
+         
+         oLog.Variation("Checking if cleared properly")      
+         addrLen = 4
+         bResult = oOpenOne.vbFastNdisRequest(OID_802_5_CURRENT_FUNCTIONAL, CurFunctAddr1, addrLen)
+         If (Not bResult) Then
+            call oLog.Failed ("Unable to query one 1 functional address" , 21021)
+         End If
+         
+         addrLen = 4
+         bResult = oOpenTwo.vbFastNdisRequest(OID_802_5_CURRENT_FUNCTIONAL, CurFunctAddr2, addrLen)
+         If (Not bResult) Then
+            call oLog.Failed ("Unable to query one 2 functional address" , 21022)
+         End If
+         
+         If (Not FunctAddrCmp(CurFunctAddr1, NullFunctAddr)) Then
+            call oLog.Failed ("Incorrect open 1 functional address" , 21023)
+         End If
+         
+         If (Not FunctAddrCmp(CurFunctAddr2, NullFunctAddr)) Then
+            call oLog.Failed ("Incorrect open 2 functional address" , 21024)
+         End If
+         
+      Next
+   End Function
+   
+End Class
+
+</script>
+</job>
+</package>
+
+<!--- CRC = 0x84ff0f03 --->

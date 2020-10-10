@@ -1,0 +1,94 @@
+Test Assertion_A13448
+
+Var p:Property, root:Item, fmt:Format
+Var lVal, fmtSize, guid:GUID, bExist
+{
+    PrintDescriptionFromXML('13.4.4.8')
+    StartWia()
+    GetRoot(root)
+
+    GetNextItem(root)
+
+    While ( root ) Do
+    {
+        If ( !CheckItemType(root, WiaItemTypeImage) And 
+             !CheckItemType(root, WiaItemTypeAudio) And
+             !CheckItemType(root, WiaItemTypeVideo) )
+        Then Goto nextlabel
+
+        If ( !GetProperty(root, p, WIA_IPA_PREFERRED_FORMAT) )
+        Then 
+        {
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+
+        If (!CheckPropertyAccessFromXML(p) )
+        Then 
+        {
+            Writeln '\tIncorrect access'
+            Exit Failed
+        }
+
+        If (!CheckPropertyTypeFromXML(p) )
+        Then
+        {
+            Writeln '\tIncorrect vartype'
+            Exit Failed
+        }
+
+        GetFormatInfo(root, fmt)
+        fmtSize = GetFormatSize(fmt)
+
+        bExist = 0
+        For lVal = 0 To fmtSize -1
+        {
+            GetFormatAt(fmt, lVal, guid)
+
+            If (CheckValueGUID(p, guid))
+            Then 
+            {
+                bExist = 1
+                Break
+            }
+        }
+
+        If ( !bExist )
+        Then 
+        {
+            Writeln '\tThe value of WIA_IPA_PREFERRED_FORMAT is not a valid value for this item' 
+            Writeln '\tRefer to WIA_IPA_FORMAT for a list of valid values for this item' 
+            Exit Failed
+        }
+        If(IsPropertyReadWrite(p))
+        Then
+        {
+            If ( SetPropertyInvalidValue(root, p) )
+            Then
+            {
+                Writeln '\tSetting invalid property value succeeded'
+                Exit Failed
+            }
+
+            If (!CheckSuppValues(root, p))
+            Then
+            {
+                Writeln '\tChecking supported property values failed'
+                Exit Failed
+            }
+        }
+        Else
+        {
+            If (SetPropertyValidValue(root,p) Or SetPropertyInvalidValue(root,p) )
+            Then 
+            {
+                Writeln '\tSetting a read-only property value succeeded'
+                Exit Failed
+            }
+        }
+:nextlabel:
+        GetNextItem(root)
+    }
+
+    StopWia()
+}

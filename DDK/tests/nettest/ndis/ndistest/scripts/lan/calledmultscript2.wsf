@@ -1,0 +1,185 @@
+<package>
+<SCRIPTDEF>
+<CARDMACH>
+1C,1M
+</CARDMACH>
+<RUNORDER>
+1260
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[This is one script in a set of scripts that are used to test Ndis 6.0 multicast
+oids
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+    <job id="CalledMultScript2" prompt="no">
+        <reference object="NDInfo.Info.1" version="1.0"/>
+        <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+        <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+        <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+        <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+        <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+        <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+        <script language="VBScript" src="..\inc\ndisstatus.vbs"/>                
+        <script language="VBScript" src="..\inc\clog.vbs"/>
+        <script language="VBScript" src="..\newinc\CCard.vbs"/>
+        <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+        <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+        <script language="VBScript" src="..\newinc\COpen.vbs"/>
+        <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+        <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+        <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+        <script language="VBScript" src="..\newinc\Setup.vbs"/>
+        <script language="VBScript" src="..\inc\Events.vbs"/>
+        <script language="VBScript" src="..\inc\Constants.vbs"/>
+        <script language="VBScript" src="..\inc\ConstLAN.vbs"/>
+        <script id="CalledMultScript2" language="VBScript">
+'==========================================================================
+' Script Name:    CalledMultScript2
+'==========================================================================
+Option Explicit 
+
+Dim oTestObj
+
+Call InitializeThread ()
+
+Dim lTestAdapterIndex, oArgs
+
+' Get the test adapter index
+lTestAdapterIndex = 1
+Set oArgs = Wscript.Arguments
+If (oArgs.Count <> 1) Then
+   MsgBox "Support script called incorrectly", vbCritical, "CalledMulticastScript 2"
+Else
+   lTestAdapterIndex = CLng(oArgs(0))
+
+   ' Found the adapter index, use it
+   Set oTestObj = New TestObj
+   Call oTestObj.RunTest(lTestAdapterIndex) 
+   Set oTestObj = Nothing
+End If
+Set oArgs = Nothing
+
+Call TerminateThread ()
+
+Class TestObj
+   Private oTestCard, oTestOpen
+   Private m_lTestAdapterIndex
+   
+   Private Sub Class_Initialize
+      
+   End Sub
+   
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+      Set oTestOpen = Nothing
+   End Sub
+
+
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+
+      ' If we are not running on a 6.0 driver, we will not be called
+      Set pAdapterList = oNDInfo.AdapterList
+      
+      oLog.Variation ("2: Setting up Test Adapter")
+      Set oTestCard = New CLanCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oTestOpen = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpen is Nothing) Then
+         Exit Function
+      End If
+      
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+
+   Public Function RunTest (lTestAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+      
+      ExecuteTestCore
+   End Function
+
+
+   Private Function ExecuteTestCore    
+      Dim bResult
+      Dim lIndex
+      Dim lRandomNum
+      Dim lAddedCnt
+
+      oLog.Variation ("2: Loop through trying to add and delete the address")
+
+      bResult = TRUE
+      lAddedCnt = 0
+        
+      ' Now, run a big loop that tries to add and delete a multicast address
+      For lIndex = 1 To 20
+         lRandomNum = oNDTSupp.Random(1, 2)        
+         If (lRandomNum = 2) Then
+                ' Lets try deleting an address
+                bResult = DeleteMulticastAddr(GoodMulticastAddr, lAddedCnt)
+         Else
+                ' Lets try adding an address
+                bResult = AddMulticastAddr(GoodMulticastAddr, lAddedCnt)
+         End If
+      Next
+   End Function
+
+   Private Function AddMulticastAddr (ByVal NewAddr, ByRef lAdded)
+       Dim BytesWritten, BytesNeeded
+       Dim lNdisStatus
+
+       oLog.Variation ("2: Add")
+       AddMulticastAddr = oTestOpen.vbNdisRequest(OID_802_3_ADD_MULTICAST_ADDRESS, NewAddr, 6, _
+                                        REQUEST_SET_INFO, BytesWritten, BytesNeeded, lNdisStatus, TRUE)
+                                        
+       If (AddMulticastAddr) Then
+           If (lNdisStatus <> 0 And lNdisStatus <> NDIS_STATUS_INVALID_OID) Then
+               Call oLog.Failed ("Should not have failed in adding the address", 88888)
+               AddMulticastAddr = FALSE
+           Else
+               lAdded = lAdded + 1
+           End If
+       End If    
+   End Function
+
+   Function DeleteMulticastAddr (ByVal OldAddr, ByRef lAdded)
+      Dim BytesWritten, BytesNeeded
+      Dim lNdisStatus
+            
+      oLog.Variation ("2: Delete")
+      DeleteMulticastAddr = oTestOpen.vbNdisRequest(OID_802_3_DELETE_MULTICAST_ADDRESS, OldAddr, 6, _
+                                     REQUEST_SET_INFO, BytesWritten, BytesNeeded, lNdisStatus, TRUE)
+
+      If (DeleteMulticastAddr) Then
+        If (lNdisStatus <> 0 And lNdisStatus <> NDIS_STATUS_INVALID_OID) Then
+            If (lAdded > 0) Then
+                Call oLog.Failed ("Should not have fail in deleting the address", 88888)
+                DeleteMulticastAddr = FALSE                
+            End If
+        Else
+            lAdded = lAdded - 1
+        End If
+      End If
+   End Function
+
+End Class
+</script>
+</job>
+</package>
+
+<!--- CRC = 0x09579a9e --->

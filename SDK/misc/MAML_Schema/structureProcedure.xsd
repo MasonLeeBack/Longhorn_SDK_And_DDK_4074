@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="utf-8"?>
+<schema targetNamespace="http://schemas.microsoft.com/maml/2003/5" xmlns:doc="http://schemas.microsoft.com/maml/internal" xmlns:maml="http://schemas.microsoft.com/maml/2003/5" xmlns="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<!-- Schema documentation -->
+	<annotation>
+		<documentation>
+			This schema definition defines common structure types for the CS Schema.
+			This schema is part of the common layer.			
+		</documentation>
+	</annotation>
+	<!-- include and import declarations -->
+	<include schemaLocation="block.xsd"/>
+	<element name="step">
+		<annotation>
+			<documentation>
+				This element is a step in a procedure.
+            </documentation>
+			<appinfo>
+				<doc:localizable>n/a</doc:localizable>
+			</appinfo>
+		</annotation>
+		<complexType>
+			<sequence>
+				<choice minOccurs="0" maxOccurs="unbounded">
+					<group ref="maml:blockGroup"/>
+					<group ref="maml:structureListGroup"/>
+					<element ref="maml:table"/>
+					<element ref="maml:example"/>
+					<element ref="maml:glossaryList"/>
+				</choice>
+				<choice minOccurs="0" maxOccurs="unbounded">
+					<element ref="maml:step"/>
+					<element ref="maml:procedure"/>
+				</choice>
+			</sequence>
+			<attributeGroup ref="maml:contentIdentificationSharingAndConditionGroup"/>
+		</complexType>
+	</element>
+
+
+	<element name="procedure">
+		<annotation>
+			<documentation>
+            This element is the root of a procedure.
+            </documentation>
+			<appinfo>
+				<doc:localizable>n/a</doc:localizable>
+			</appinfo>
+		</annotation>
+		<complexType>
+			<sequence>
+				<element ref="maml:title" minOccurs="0"/>
+				<element ref="maml:summary" minOccurs="0"/>
+				<element ref="maml:step" maxOccurs="unbounded"/>
+				<choice minOccurs="0">
+					<element ref="maml:alertSet"/>
+					<element ref="maml:alert"/>
+				</choice>
+			</sequence>
+			<attributeGroup ref="maml:expandCollapseGroup"/>
+			<attributeGroup ref="maml:contentIdentificationSharingAndConditionGroup"/>
+		</complexType>
+	</element>
+
+</schema>

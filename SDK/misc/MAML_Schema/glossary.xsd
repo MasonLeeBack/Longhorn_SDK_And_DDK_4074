@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<schema xmlns="http://www.w3.org/2001/XMLSchema" 
+		xmlns:maml="http://schemas.microsoft.com/maml/2003/5" 
+		xmlns:doc="http://schemas.microsoft.com/maml/internal"
+		targetNamespace="http://schemas.microsoft.com/maml/2003/5" 
+		elementFormDefault="qualified"
+        attributeFormDefault="unqualified"
+        >
+		
+	<!-- Schema documentation -->
+	<annotation>
+		<documentation>
+			This schema definition defines question and answer types for the CS Schema.
+			This schema is part of the base layer.			
+		</documentation>
+	</annotation>
+	
+	<include schemaLocation="structure.xsd"/>	
+	
+	<!-- element declarations -->
+	<element name="glossary">
+		<annotation>
+			<documentation>
+				The glossary element describes a set of terms and their definitions.
+			</documentation>
+		</annotation>
+		<complexType>
+			<sequence>
+				<element ref="maml:title"/>
+				<element ref="maml:subTitle" minOccurs="0"/>
+				<choice>
+					<element ref="maml:glossaryDiv" maxOccurs="unbounded"/>
+					<element ref="maml:glossaryEntry" maxOccurs="unbounded"/>
+				</choice>
+			</sequence>
+			<attribute name="contentType" type="token"/>
+			<attributeGroup ref="maml:contentIdentificationSharingAndConditionGroup"/>
+		</complexType>
+	</element>
+
+	<element name="glossaryDiv">
+		<annotation>
+			<documentation>The glossaryDiv element describes a titled division within a glossary.</documentation>
+		</annotation>
+		<complexType>
+			<sequence>
+				<element ref="maml:title"/>
+				<element ref="maml:glossaryEntry" maxOccurs="unbounded"/>
+			</sequence>
+			<attributeGroup ref="maml:contentIdentificationSharingAndConditionGroup"/>
+			<attribute name="class" type="string"/>
+		</complexType>
+	</element>
+	
+</schema>

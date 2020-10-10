@@ -1,0 +1,373 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<schema targetNamespace="http://schemas.microsoft.com/maml/2003/5" xmlns="http://www.w3.org/2001/XMLSchema"
+	xmlns:maml="http://schemas.microsoft.com/maml/2003/5" xmlns:doc="http://schemas.microsoft.com/maml/internal"
+	elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<!-- Schema documentation -->
+	<annotation>
+		<documentation>This schema file defines the schema for a Task/procedural Help file.</documentation>
+	</annotation>
+	<!-- include and import declarations -->
+	<include schemaLocation="hierarchy.xsd" />
+	<include schemaLocation="structureTaskExecution.xsd" />
+	<include schemaLocation="shellExecute.xsd" />
+	<attributeGroup name="sequenceOptionsGroup">
+		<annotation>
+			<documentation />
+		</annotation>
+		<attribute name="sequenceType">
+			<simpleType>
+				<restriction base="token">
+					<enumeration value="AllOfTheFollowing" />
+					<enumeration value="OnlyOneOfTheFollowing" />
+					<enumeration value="OneOrMoreOfTheFollowing" />
+				</restriction>
+			</simpleType>
+		</attribute>
+	</attributeGroup>
+	<!-- Type declarations -->
+	<complexType name="actionReferenceType">
+		<annotation>
+			<documentation>The UI tag is a reference to a UI element that is stored in a different schema.</documentation>
+		</annotation>
+		<complexContent>
+			<extension base="maml:textBlockType">
+				<attribute name="id" type="token">
+					<annotation>
+						<documentation>
+					This is the action that is to be performed on the UI Element
+				</documentation>
+					</annotation>
+				</attribute>
+				<attribute name="waitFactor" type="float" default="1.0" />
+				<attribute name="modeOverride" use="optional">
+					<simpleType>
+						<restriction base="string">
+							<enumeration value="DoIt" />
+							<enumeration value="ShowMe" />
+						</restriction>
+					</simpleType>
+				</attribute>
+			</extension>
+		</complexContent>
+	</complexType>
+	<!-- Add Asset ID to Task -->
+	<element name="task">
+		<complexType>
+			<complexContent>
+				<extension base="maml:taskType">
+					<attribute name="contentType" type="token" fixed="ACWProcedure" />
+					<attribute name="showWelcome" type="boolean" />
+					<attribute name="showFinished" type="boolean" />
+					<attribute name="version" type="string" fixed="M7" />
+					<attribute name="noDefaultSummary" type="boolean" />
+				</extension>
+			</complexContent>
+		</complexType>
+	</element>
+	<element name="taskProcedure" type="maml:taskProcedureType">
+		<annotation>
+			<documentation>A procedure is a list of steps to take that should complete the task.</documentation>
+		</annotation>
+	</element>
+	<element name="author">
+		<annotation>
+			<documentation>Allows  creator of the content file to provide information about themselves</documentation>
+		</annotation>
+		<complexType>
+			<sequence>
+				<element name="authorName" type="string" minOccurs="0" />
+				<element name="authorURI" type="anyURI" minOccurs="0" />
+				<element name="authorMessage" type="string" minOccurs="0" />
+				<element name="authorImageURI" type="anyURI" minOccurs="0" />
+			</sequence>
+		</complexType>
+	</element>
+	<complexType name="taskType">
+		<annotation>
+			<documentation>The task element describes a set of steps that can be executed as an ACW or displayed as help.</documentation>
+		</annotation>
+		<sequence minOccurs="0">
+			<element ref="maml:title" minOccurs="0" />
+			<element ref="maml:summary" minOccurs="0" />
+			<element ref="maml:introduction" minOccurs="0">
+				<annotation>
+					<documentation>Introduction text for the task.</documentation>
+				</annotation>
+			</element>
+			<element ref="maml:taskProcedure">
+				<annotation>
+					<documentation>A procedure is a list of steps to take that should complete the task.</documentation>
+				</annotation>
+			</element>
+			<element ref="maml:content" minOccurs="0" />
+			<element ref="maml:sections" minOccurs="0" />
+			<element ref="maml:alertSet" minOccurs="0" />
+			<element ref="maml:relatedTopics" minOccurs="0" />
+			<element ref="maml:author" minOccurs="0">
+				<annotation>
+					<documentation>Allows  creator of the content file to provide information about themselves</documentation>
+				</annotation>
+			</element>
+			<element name="taskExecutionBlock" type="maml:taskAutomationType" minOccurs="0">
+				<annotation>
+					<documentation>The ID in a uiAction tag is pointing to the ID in this tag.  This tag stores all the goop associated with running UI Automation.
+					</documentation>
+				</annotation>
+			</element>
+		</sequence>
+		<attribute name="procedureId" type="string" />
+		<attributeGroup ref="maml:contentIdentificationSharingAndConditionGroup" />
+		<attribute name="runtimeCondition" type="string" />
+	</complexType>
+	<complexType name="taskProcedureType">
+		<choice maxOccurs="unbounded">
+			<element ref="maml:textStep">
+				<annotation>
+					<documentation>This step consists of nothing but text.  In show-me, it's a step by itself.  In Do-it, it's either ignored, or we stop to show, depending on attribute value</documentation>
+				</annotation>
+			</element>
+			<element ref="maml:uiActionsStep">
+				<annotation>
+					<documentation>The step consists of one or more clicks on UI elements. </documentation>
+				</annotation>
+			</element>
+			<element ref="maml:stopStep">
+				<annotation>
+					<documentation>If the "condition" attribute in the step tag returns true then print the text inside here and stop the procedure</documentation>
+				</annotation>
+			</element>
+			<element ref="maml:userChoiceStep">
+				<annotation>
+					<documentation>Present the user with a list of radio-button options, and invite him to choose one.</documentation>
+				</annotation>
+			</element>
+			<element ref="maml:gotoStep">
+				<annotation>
+					<documentation>Instead of executing the next step in this task, execute the one with the same ID as the ID specified here</documentation>
+				</annotation>
+			</element>
+			<element ref="maml:commandStep">
+				<annotation>
+					<documentation>A step that launches a shell execute command line</documentation>
+				</annotation>
+			</element>
+			<element ref="maml:functionStep"></element>
+			<element ref="maml:subTask">
+				<annotation>
+					<documentation>Can mingle subTasks with a step.  To call a subTask in another file, use the replaceWith attribute</documentation>
+				</annotation>
+			</element>
+		</choice>
+	</complexType>
+	<element name="textStep">
+		<annotation>
+			<documentation>This step consists of nothing but text.  In show-me, it's a step by itself.  In Do-it, it's either ignored, or we stop to show, depending on attribute value</documentation>
+		</annotation>
+		<complexType>
+			<complexContent>
+				<extension base="maml:textBlockType">
+					<attribute name="showDuringDoIt" type="boolean" />
+					<attributeGroup ref="maml:stepAttGrp" />
+					<attribute name="timeoutInSeconds" type="int" />
+				</extension>
+			</complexContent>
+		</complexType>
+	</element>
+	<element name="uiActionsStep">
+		<annotation>
+			<documentation>The step consists of one or more clicks on UI elements. </documentation>
+		</annotation>
+		<complexType>
+			<complexContent>
+				<extension base="maml:uiActionsType">
+					<attributeGroup ref="maml:stepAttGrp" />
+				</extension>
+			</complexContent>
+		</complexType>
+	</element>
+	<element name="stopStep">
+		<annotation>
+			<documentation>If the "condition" attribute in the step tag returns true then print the text inside here and stop the procedure</documentation>
+		</annotation>
+		<complexType>
+			<complexContent>
+				<extension base="maml:textBlockType">
+					<attributeGroup ref="maml:stepAttGrp" />
+				</extension>
+			</complexContent>
+		</complexType>
+	</element>
+	<element name="userChoiceStep">
+		<annotation>
+			<documentation>Present the user with a list of radio-button options, and invite him to choose one.</documentation>
+		</annotation>
+		<complexType>
+			<sequence>
+				<element name="userChoiceIntro" type="maml:textBlockType" minOccurs="0">
+					<annotation>
+						<documentation>Introduce the choice the user is about to be invited to make</documentation>
+					</annotation>
+				</element>
+				<element ref="maml:option" maxOccurs="unbounded">
+					<annotation>
+						<documentation>Each radio button option is in an Option tag.  The option's text is in the Para tag, and if the user chooses this option, goto the associated target.</documentation>
+					</annotation>
+				</element>
+				<element name="userChoicePrompt" type="maml:textBlockType" minOccurs="0">
+					<annotation>
+						<documentation>Provide a prompt for the user, after presenting him the radio-button options.</documentation>
+					</annotation>
+				</element>
+			</sequence>
+			<attributeGroup ref="maml:sequenceOptionsGroup" />
+			<attribute name="default" type="IDREF" use="optional" />
+			<attribute name="expandCollapse" type="string" />
+			<attributeGroup ref="maml:stepAttGrp" />
+		</complexType>
+	</element>
+	<element name="gotoStep">
+		<annotation>
+			<documentation>Instead of executing the next step in this task, execute the one with the same ID as the ID specified here</documentation>
+		</annotation>
+		<complexType>
+			<complexContent>
+				<extension base="maml:textBlockType">
+					<attribute name="showDuringDoIt" type="boolean" />
+					<attribute name="targetAddress" type="IDREF" />
+					<attributeGroup ref="maml:stepAttGrp" />
+				</extension>
+			</complexContent>
+		</complexType>
+	</element>
+	<element name="commandStep">
+		<annotation>
+			<documentation>A step that launches a shell execute command line</documentation>
+		</annotation>
+		<complexType>
+			<complexContent>
+				<extension base="maml:shellExecuteType">
+					<attributeGroup ref="maml:stepAttGrp" />
+					<attribute name="waitForExit" type="boolean" default="false" />
+				</extension>
+			</complexContent>
+		</complexType>
+	</element>
+	<element name="functionStep">
+		<complexType>
+			<sequence>
+				<element name="assemblyName" type="string" />
+				<element name="function" type="QName" />
+				<element name="parameters" minOccurs="0">
+					<complexType>
+						<sequence>
+							<element name="parameter" maxOccurs="unbounded">
+								<complexType>
+									<simpleContent>
+										<extension base="string">
+											<attribute name="type" type="QName" use="required" />
+										</extension>
+									</simpleContent>
+								</complexType>
+							</element>
+						</sequence>
+					</complexType>
+				</element>
+			</sequence>
+			<attributeGroup ref="maml:stepAttGrp" />
+		</complexType>
+	</element>
+	<element name="subTask" type="maml:subTaskType">
+		<annotation>
+			<documentation>Can mingle subTasks with a step.  To call a subTask in another file, use the replaceWith attribute</documentation>
+		</annotation>
+	</element>
+	<complexType name="subTaskType">
+		<complexContent>
+			<extension base="maml:taskType">
+				<attribute name="optional" type="boolean" default="false" />
+				<attributeGroup ref="maml:sequenceOptionsGroup" />
+			</extension>
+		</complexContent>
+	</complexType>
+	<element name="option" type="maml:optionType">
+		<annotation>
+			<documentation>Each radio button option is in an Option tag.  The option's text is in the Para tag, and if the user chooses this option, goto the associated target.</documentation>
+		</annotation>
+	</element>
+	<complexType name="optionType">
+		<annotation>
+			<documentation>This is to represent a branch condition (either explicitly chosen by the user or by a state condition check.)</documentation>
+		</annotation>
+		<sequence>
+			<element name="optionLabel" type="ID" />
+			<element name="branch" type="maml:taskProcedureType" />
+		</sequence>
+		<attributeGroup ref="maml:contentIdentificationSharingAndConditionGroup" />
+	</complexType>
+	<complexType name="uiActionsType">
+		<annotation>
+			<documentation>Encodes some sequence of UI actions.			</documentation>
+		</annotation>
+		<sequence>
+			<element name="actionRef" maxOccurs="unbounded">
+				<annotation>
+					<documentation>Each action has an ID that refers to the action's complete structure, stored elsewhere.</documentation>
+				</annotation>
+				<complexType>
+					<complexContent>
+						<extension base="maml:actionReferenceType">
+							<attribute name="optional" type="boolean" />
+						</extension>
+					</complexContent>
+				</complexType>
+			</element>
+			<element name="description" type="maml:taskTextBlockType">
+				<annotation>
+					<documentation>Full text description of the entire step.  May encompass more than one click action.</documentation>
+				</annotation>
+			</element>
+			<element ref="maml:onFailure" minOccurs="0" maxOccurs="unbounded" />
+		</sequence>
+	</complexType>
+	<attributeGroup name="runtimeConditionAttGrp">
+		<attribute name="runtimeConditionID" type="string" />
+	</attributeGroup>
+	<attributeGroup name="stepAttGrp">
+		<attributeGroup ref="maml:contentIdentificationSharingAndConditionGroup" />
+		<attribute name="runtimeCondition" type="string" />
+		<attribute name="stepStatus" type="maml:stepStatusType" />
+	</attributeGroup>
+	<simpleType name="failureReasonType">
+		<restriction base="string">
+			<enumeration value="disabled" />
+			<enumeration value="notFound" />
+			<enumeration value="noElements" />
+		</restriction>
+	</simpleType>
+	<simpleType name="stepStatusType">
+		<restriction base="string">
+			<enumeration value="complete" />
+			<enumeration value="incomplete" />
+			<enumeration value="error" />
+			<enumeration value="inProgress" />
+		</restriction>
+	</simpleType>
+	<element name="onFailure" type="maml:onFailureTaskProcedureType" />
+	<complexType name="onFailureTaskProcedureType">
+		<complexContent>
+			<extension base="maml:taskProcedureType">
+				<attribute name="id" type="string" />
+				<attribute name="reason" type="maml:failureReasonType" />
+			</extension>
+		</complexContent>
+	</complexType>
+	<complexType name="taskTextBlockType">
+		<complexContent>
+			<extension base="maml:textBlockType">
+				<choice minOccurs="0">
+					<element name="executionSummary" type="maml:textBlockType" />
+				</choice>
+			</extension>
+		</complexContent>
+	</complexType>
+</schema>

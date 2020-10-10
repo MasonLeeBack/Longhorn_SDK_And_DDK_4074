@@ -1,0 +1,52 @@
+<Project DefaultTargets="Build">
+  <!-- MSBUILD Project File -->
+	
+  <PropertyGroup>
+
+    <Property Language="C#" />
+      <!--
+        Description: This property defines the language used for coding
+        Possible Values: {C#, cpp, vb}
+        Default Value:
+        Required: YES
+      -->
+		
+    <Property DefaultClrNameSpace="ScreenSaver" />
+      <!--
+        Description: This property defines the default clr namespace
+        Possible Values:
+        Default Value:
+        Required: YES
+      -->
+
+    <Property TargetName="BouncingBallsScreenSaver" />
+      <!--
+        Description: This property should be a unique name, different from
+			the other screen savers on your machine.
+        Possible Values:
+        Default Value:
+        Required:YES
+      -->
+		
+    <Property HostInBrowser="False" />
+    <Property SecurityManifest="TrustInfo.xml"/>
+		
+  </PropertyGroup>
+	
+  <!--Import the target file that contains all the common targets -->
+  <Import Project="$(LAPI)\WindowsApplication.target" />
+		
+  <ItemGroup>
+    <!-- Aplication Definition Markup File -->
+    <Item Type="ApplicationDefinition" Include="app.xaml" />
+
+    <!-- Compiled Xaml Files -->
+    <Item Type="Pages" Include="bounce.xaml"/>
+
+    <!-- Compiled Code Files -->
+    <Item Type="Code" Include="app.xaml.cs" />
+    <Item Type="Code" Include="bounce.xaml.cs" />
+
+  </ItemGroup>
+
+</Project>

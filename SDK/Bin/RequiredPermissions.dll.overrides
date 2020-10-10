@@ -1,0 +1,26 @@
+<?xml version="1.0"?>
+<Overrides>
+	<Module Name="CommonLanguageRuntimeLibrary">
+		<Method Sig="System.Console bool CheckOutputDebug() " Reason="This is debug-only code" />
+		<Method Sig="System.Console void InitializeStdOutError(bool ) " />
+		<Method Sig="System.Environment.ResourceHelper string GetResourceString(string ) " />
+		<Method Sig="System.Environment.ResourceHelper string GetResourceString(string , [] object ) " />
+		<Method Sig="System.Exception instance void .ctor() " />
+		<Method Sig="System.Exception instance void .ctor(string ) " />
+		<Method Sig="System.IO.IsolatedStorage.IsolatedStorage instance void InitStore(struct IsolatedStorageScope , class Type , class Type ) " Reason="The line GetControlEvidencePermission().Assert(); in IsolatedStorage.cs confuses PermCalc" />
+		<Method Sig="System.Reflection.Assembly instance class Stream GetManifestResourceStream(string ) " />
+		<Method Sig="System.Reflection.Assembly instance class Stream GetManifestResourceStream(string , &amp; struct StackCrawlMark , bool ) " Reason="There is conditional logic to skip the security check" />
+		<Method Sig="System.RuntimeType instance object CreateInstanceImpl(struct BindingFlags , class Binder , [] object , class CultureInfo , [] object ) " />
+		<Method Sig="System.Security.PermissionSet instance void Assert() " />
+		<Method Sig="System.Security.SecurityException instance void .ctor() " />
+		<Method Sig="System.Security.SecurityException instance void .ctor(string ) " />
+		<Method Sig="System.SystemException instance void .ctor() " />
+		<Method Sig="System.Security.SecurityManager void DEBUG_OUT(string ) " Reason="This is debug-only code" />
+		<Method Sig="System.Security.SecurityResources string GetResourceString(string ) " />
+		<Method Sig="System.Threading.Thread class Thread get_CurrentThread() " />
+		<Method Sig="System.Threading.Thread intptr InternalGetCurrentThread() " />
+		<Method Sig="System.Threading._Thread instance void ThreadStart() " />
+		<Method Sig="System.Threading._Thread instance void ThreadStart(object ) " />
+		<Method Sig="System.Threading.ThreadPool bool BindHandle(intptr ) " />
+	</Module>
+</Overrides>

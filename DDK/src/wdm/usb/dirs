@@ -1,0 +1,4 @@
+DIRS= \
+     bulkusb \
+     isousb \
+     usbview

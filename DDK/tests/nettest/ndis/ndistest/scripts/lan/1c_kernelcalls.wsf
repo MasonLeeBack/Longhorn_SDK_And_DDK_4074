@@ -1,0 +1,1420 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3,802_5,FDDI,ATM,COWAN,WAN,IRDA,1394,InfiniBand
+</MEDIA>
+<WHQL>
+802_3,802_5,FDDI,ATM,COWAN,WAN,IRDA,1394,InfiniBand
+</WHQL>
+<CARDMACH>
+1C,1M
+</CARDMACH>
+<RUNORDER>
+1180
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[
+This script finds out what are the Kernel calls that the driver is making and then
+checks to see if they are legal calls to make. In some of the cases of illegal calls,
+the log file will also contains information on which legal functions can be substituted
+for illegal function call!
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="1c_KernelCalls" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oKrnlCallsVerifier" progid="NDTSupp.KernelCallsVerifier.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      
+      <!-- Begin Wireless Specific Includes -->
+      <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	   <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	   <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	   <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	   <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+      <!-- End Wireless Specific Includes -->
+      
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CIrdaCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CIrdaOpen.vbs"/>      
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\DevChars.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/>        
+      <script id="1c_KernelCalls" language="VBScript">
+
+'==========================================================================
+' Script Name:    1c_KernelCalls
+'==========================================================================
+Option Explicit 
+
+'==========================================================================
+'++++++++++++++++++++++++++++ BEGIN TEST ++++++++++++++++++++++++++++++++++
+'==========================================================================
+
+' Global DECLARATION! These are define value
+
+' LIST constants! Define what the effect of list of these calls
+' (in the list of calls made by the driver) should be
+const LIST_ILLEGAL = 0
+const LIST_ALL_LEGAL = 1
+const LIST_MANDATORY = 2
+
+' CONST for NDIS Versions
+const NDIS_VERSION_DONT_CARE = &H000
+const NDIS_VERSION_50 = &H500
+const NDIS_VERSION_51 = &H501
+
+' This is the adapter object the test is currently running for                        
+Dim glbCurrentAdapterIndex
+
+Call Initialize ()
+
+glbCurrentAdapterIndex = GetTestAdapterIndex (oNDInfo.AdapterList, 0)
+Call Main ()
+
+Call Terminate ()
+
+
+Function Main()
+   Dim TestObj
+   ' Test encapsulated in an object for better info hiding
+   ' and modularisation
+   Set TestObj = new KernelCallsTest
+   
+   ' The actual work is done here
+   call TestObj.RunTest ()
+   
+End Function 'Main ()
+
+
+
+Function ExceptionHandler
+   
+   ' If no exception, this function should not be called
+   If err.number = 0 Then
+      Exit Function
+   End If
+   
+   If err.Number = 438 Then
+      Dim fso, WshShell, WshSysEnv, WinDir, VBVersion
+      
+      Set WshShell = WScript.CreateObject("WScript.Shell")
+      Set WshSysEnv = WshShell.Environment("PROCESS")
+      WinDir = WshSysEnv("WINDIR")
+      
+      ' Check to make sure we got the actual path and not an alias
+      If InStr (WinDir, ":") <> 0 Then
+         Set fso = CreateObject ("Scripting.FileSystemObject")
+         VBVersion = fso.GetFileVersion (windir & "\system32\vbscript.dll")
+         If VBVersion <> "" Then
+            If VBVersion < "5.5" Then
+               oLog.Write ("You are running version " & VBVersion & " of vbscript.dll! " &_
+                     "You need version 5.5 or higher for this test")
+               oLog.Write ("You can download latest script engines from " &_
+                     "<a href=http://www.microsoft.com/msdownload/vbscript/scripting.asp>here</a>")
+            Else
+               oLog.Write ("The version of VBScript.dll running is " & VBVersion)
+            End If
+         Else
+            oLog.Write ("This error might be occuring because of an older version of " &_
+                  "vbscript.dll. Check file properties of vbscript.dll to make sure " &_
+                  "version is 5.5 or higher")
+            oLog.Write ("You can download latest script engines from " &_
+                  "<a href=http://www.microsoft.com/msdownload/vbscript/scripting.asp>here</a>")
+         End If
+      Else
+         oLog.Write ("This error might be occuring because of an older version of " &_
+               "vbscript.dll. Check file properties of vbscript.dll to make sure " &_
+               "version is 5.5 or higher")
+         oLog.Write ("You can download latest script engines from " &_
+               "<a href=http://www.microsoft.com/msdownload/vbscript/scripting.asp>here</a>")
+      End If      
+      
+   End If
+   
+   ' Print the vbscript error (this helps us track any other exception that get raised)
+   call oLog.Failed ("Description = " & err.Description, 88888)
+   call oLog.Write ("Number = " & err.Number)
+   call oLog.Write ("Source = " & err.Source)
+   
+   ' Error is being cleared as we have handled the exception and place an error in the
+   ' script! We do not want to print the illegal termination method in the log
+   err.Clear
+End Function
+
+
+'
+' CLASS KernelCallsTest
+'
+
+Class KernelCallsTest
+   ' This array contain calls made by the driver modules (HAL, NTOS etc)
+   Private mDriver
+   
+   ' The Database Manager! Contains the db info extracted from db file(s)
+   Private mDBManager
+   
+   ' This is the list of the failed functions! Just to spice up the log!!
+   Private mFailedCalls
+   
+   Sub Class_Initialize
+      Set mDriver = new Driver
+      Set mDBManager = new DatabaseManager
+      Set mFailedCalls = new ModuleDatabase
+   End Sub
+   
+   
+   ' This is the worlds interface to this test!
+   ' This should be, in almost all cases, the only
+   ' method exposed to the outside world!
+   Public Function RunTest ()
+      oLog.Variation ("Setting up databases from callsdb.vbs")      
+      If (Not SetupDatabaseFromFile) Then
+         call oLog.Failed ("Failed while reading and storing function from database file", 20940)
+         Exit Function
+      End If
+      
+      oLog.Variation ("Getting list of functions called by driver")
+      If (not GetFunctionsImportedByDriver ()) Then
+         call oLog.Failed ("Could not extract call to some module! Abandoning test", 20941)
+         Exit Function
+      End If
+      
+      oLog.Variation ("Verifying calls made by driver")
+      call CheckImportedFunctions
+      
+      oLog.Variation ("Displaying any failed calls")
+      call PrintFailedCalls 
+   End Function
+   
+   
+   
+   Private Function CheckImportedFunctions ()
+      
+      ' This is the parent function from where calls made to imported
+      ' functions are checked!
+      ' There is a generic call to DBManager which checks for all modules
+      ' for whom database has been constructed. This function will also print
+      ' out the error messages automatically if invalid calls are detected
+      '
+      ' Additions to this method should be made for exception cases like calls
+      ' to Ndis.sys for which some checks have to be made outside of the database
+      '
+      Call CheckAllImportedFunction ()
+      
+   End Function
+   
+   
+   
+   
+   Private Function SetupDatabaseFromFile
+      ' Add any other database file names here in the exact same style
+      SetupDatabaseFromFile = mDBManager.ReadFromDBFile ("..\inc\callsdb.vbs")
+   End Function
+   
+   
+   
+   
+   Private Function GetFunctionsImportedByDriver()
+      Dim strDriverName, nNumModules, arrModuleCalls(), arrModuleNames (), strCallsMade
+      Dim bResult, i
+      
+      ' Assume Failure
+      GetFunctionsImportedByDriver = False
+      
+      ' Get the names of modules (i.e. the distinct databases)
+      nNumModules = mDBManager.GetModuleNames (arrModuleNames)
+      
+      ' Allocate nNumModules number of ModuleCall Objects! Less 1 cos of VB arrays
+      ReDim arrModuleCalls (nNumModules - 1)
+      
+      ' Get name of the driver from the session for Adapter
+      ' For adapter x, the driver name would be in session var xDriverName
+      strDriverName = oNDTSession ((glbCurrentAdapterIndex) & "DriverName")
+      oLog.Write ("Checking Calls being made by " & strDriverName & " driver")
+      
+      For i=0 To nNumModules - 1
+         If (oKrnlCallsVerifier.GetImportedFunctions (strDriverName,_
+                  arrModuleNames (i),_
+                  strCallsMade )) Then
+            strCallsMade = Trim (strCallsMade)
+            if strCallsMade <> "" Then    ' make sure found any calls at all
+               Set arrModuleCalls(i) = new ModuleCalls
+               arrModuleCalls(i).ModuleName = arrModuleNames (i)
+               arrModuleCalls(i).Calls = strCallsMade
+               call mDriver.AddModule (arrModuleCalls (i))
+               call oLog.Write ("The calls made to " & arrModuleNames (i) & " are:")
+               call arrModuleCalls (i).PrintCalls
+            End If
+         Else
+            call oLog.Failed ("Could not get functions imported from " & arrModuleNames (i) & " module", 20942)
+            Exit Function
+         End If
+      Next
+      
+      ' This method will do some post processing on the calls to
+      ' set up information like is it a WDM driver or not
+      call mDriver.ProcessCalls ()
+      
+      ' If here then succeeded in getting calls for all modules
+      GetFunctionsImportedByDriver = True
+   End Function
+   
+   Public Function ComparisonIsSafe (Module, Db)
+      
+      ' Assume its not safe to compare
+      ComparisonIsSafe = False
+      
+      ' Check if the driver is WDM and is exempted from this database
+      if (mDriver.IsWDMDriver And Db.IsDriverModelExempted ("NDISWDM")) Then
+         oLog.Write ("WDM drivers will not be checked against this database")
+         Exit Function
+      End If
+      
+      ' Check if the NdisMedium of this driver exempts this db from comparison
+      If Db.IsMediumExempted (mDriver.NdisMedium) Then
+         oLog.Write ("Driver exempted from this database on basis of Medium")
+         Exit Function
+      End If
+      
+      
+      ' If these are NDIS.SYS or NTOSKRNL.EXE calls, make sure NDIS_DRIVER_VER is not
+      ' a limiting factor
+      if (StrComp (Module.ModuleName, "NDIS.SYS", 1) = 0 Or _
+               StrComp (Module.ModuleName, "NTOSKRNL.EXE", 1) = 0) Then
+         if ( Db.NdisVersion <> NDIS_VERSION_DONT_CARE And _
+                  Db.NdisVersion <> mDriver.NDISVersion) Then
+            oLog.Write ("Driver exempted as it was written with NDIS version less than 5.1")
+            Exit Function
+         End If
+      End If
+      
+      ' Assume its safe to compare
+      ComparisonIsSafe = True
+   End Function
+   
+   
+   
+   
+   Public Function CheckAllImportedFunction ()
+      '
+      ' This function goes through the module calls array
+      ' looking for a match of function name with a corresponding
+      ' module database
+      '
+      Dim arrModuleCalls, arrModuleDB
+      Dim CurrentModule,CurrentDB
+      
+      arrModuleCalls = mDriver.ModuleCalls
+      arrModuleDB = mDBManager.ModuleDB
+      
+      For each CurrentModule in arrModuleCalls
+         oLog.Variation ("Verifying calls made to " & CurrentModule.ModuleName)
+         ' Make some NDIS specific checks
+         If StrComp (CurrentModule.ModuleName, "NDIS.SYS", 1) = 0 Then
+            Call NdisCheckImportedFunctions (CurrentModule)
+         End If
+         
+         For each CurrentDB in arrModuleDB
+            ' Look for a database for this module
+            If (StrComp (CurrentModule.ModuleName, CurrentDB.DBName, 1) = 0) Then
+               ' Found a db correspoding to this module               
+               ' See if there are any pre requisites that need to be fulfilled
+               If (ComparisonIsSafe (CurrentModule, CurrentDB)) Then
+                  oLog.Write ("This comparison with " & CurrentDB.DBName & " is safe")
+                  Call GenericCheckImportedFunctions (CurrentModule, CurrentDB)
+               Else
+                  oLog.Write ("This comparison with " & CurrentDB.DBName & " is NOT safe")
+               End If
+            End If
+         Next
+      Next
+      
+   End Function
+   
+   
+   
+   ' Making some NDIS specific checks here
+   Public Function NdisCheckImportedFunctions (CurrentModule)
+      Dim arrCallByDriver, strCallByDriver, nFound1, nFound2
+      arrCallByDriver = CurrentModule.Calls
+      nFound1 = 0
+      nFound2 = 0
+      
+      For each strCallByDriver in arrCallByDriver
+         If (StrComp (strCallByDriver, "NdisMStartBufferPhysicalMapping", 1) = 0) Then
+            nFound1 = 1
+         ElseIf (StrComp (strCallByDriver, "NdisMCompleteBufferPhysicalMapping", 1) = 0) Then
+            nFound2 = 1
+         End If
+      Next
+      
+      If ((nFound1 + nFound2) = 1) Then
+         call oLog.Failed ("NdisMStartBufferPhysicalMapping and NdisMCompleteBufferPhysicalMapping must be used together", 20943)
+         call FireOnFailure ("NdisMStartBufferPhysicalMapping", CurrentModule.ModuleName)
+         call FireOnFailure ("NdisMCompleteBufferPhysicalMapping", CurrentModule.ModuleName)
+      End If
+   End Function
+   
+   
+   ' This function checks calls in a module against the database with the
+   ' generic algorithm! This algo states that
+   ' 1) For databases with List=Illegal, report failure/warn on a match
+   ' 2) For databases with List=Legal, report failure/warn on a mismatch
+   ' 3) For databases with List=Mandatory, report failure/warn on absence of call
+   Public Function GenericCheckImportedFunctions (Module, Db)
+      Dim strCallByDriver, arrCallByDriver, Value
+      
+      arrCallByDriver = Module.Calls           
+      ' Look for bad calls being made by driver
+      Select Case Db.List
+            ' This is the case 1 above
+         Case LIST_ILLEGAL
+            For Each strCallByDriver in arrCallByDriver
+               Value = Db.Find (strCallByDriver)
+               If Not (Value = "") Then
+                  If Db.ErrorLevel = FAIL_ERR then
+                     call oLog.Failed ("Failed on function call to " & strCallByDriver & " in module " &_
+                           Db.DBName & "! " & Value, 20944)
+                     call FireOnFailure (strCallByDriver, Module.ModuleName)
+                  Else
+                     call oLog.Warned ("Possible Problem with function call to " & strCallByDriver & " in module " &_
+                           Db.DBName & "! " & Value)
+                  End If
+               End If
+            Next
+            
+            ' This is case 2 described above
+         Case LIST_ALL_LEGAL
+            For Each strCallByDriver in arrCallByDriver
+               If Not Db.Exists (strCallByDriver) Then
+                  If Db.ErrorLevel = FAIL_ERR then
+                     Call oLog.Failed ("Unrecognized function " & strCallByDriver & " being called in module "&_
+                           Db.DBName & "! Not found in list of legal calls", 20945)
+                     Call FireOnFailure (strCallByDriver, Module.ModuleName)
+                  Else
+                     call oLog.Warned ("Unrecognized function " & strCallByDriver & " being called in module "&_
+                           Db.DBName & "! Not found in list of legal calls")
+                  End If
+               End If
+            Next
+            
+            
+            ' This is Case 3 described above
+         Case LIST_MANDATORY
+            Dim Key, dbKeysList, bFoundFlag
+            dbKeysList = Db.Keys ()
+            
+            For Each Key in dbKeysList
+               bFoundFlag = False
+               For each strCallByDriver in arrCallByDriver
+                  If (strcomp (Key, strCallByDriver, 1) = 0) then
+                     ' The driver is making the mandatory call
+                     bFoundFlag = True
+                     Exit For
+                  End if
+               Next
+               
+               If (Not bFoundFlag) Then
+                  ' If here, means the driver is not making the mandatory call
+                  If Db.ErrorLevel = FAIL_ERR then
+                     call oLog.Failed ("Mandatory function call to " & Key & " is not being made by module " &_
+                           Db.DBName & "! ", 20946)
+                  Else
+                     call oLog.Warned ("Mandatory function call " & Key & " is not being made by module " &_
+                           Db.DBName & "! ")
+                  End If                  
+               End If
+            Next
+      End Select
+   End Function
+   
+   
+   Private Function FireOnFailure (failCall, modulename)
+      ' Add this call to the failed calls database
+      call mFailedCalls.Add (failCall, modulename)
+   End Function
+   
+   
+   Private Function PrintFailedCalls ()
+      Dim module, arrModuleCalls
+      
+      arrModuleCalls = mDriver.ModuleCalls
+      
+      For each module in arrModuleCalls
+         If mFailedCalls.ItemExists (module.ModuleName) Then
+            call module.PrintFormattedCalls (mFailedCalls)
+         End If
+      Next
+   End Function
+End Class
+
+
+
+
+
+'
+' CLASS Database Manager
+' This class creates and manupilates the dictionary-based
+' databases that we construct from the db file on disk
+'
+Class DatabaseManager
+   
+   Private mModuleDB()
+   Private mNumOfDB
+   
+   Sub Class_initialize
+      mNumOfDB = 0
+   End Sub
+   
+   Property Get ModuleDB
+      ModuleDB = mModuleDB
+   End Property
+   
+   
+   Public Function GetModuleNames (ByRef arrModuleNames)
+      Dim i, j, bIsRepeat
+      Dim nNumModules
+      
+      nNumModules = 0
+      For i=0 To mNumOfDB - 1
+         bIsRepeat = False
+         for j=0 To i-1
+            If ((StrComp (mModuleDB(i).DBName, mModuleDB(j).DBName, 1)) = 0) Then
+               bIsRepeat = True
+               Exit For
+            End If
+         Next
+         
+         If Not bIsRepeat Then
+            ReDim Preserve arrModuleNames (nNumModules)
+            arrModuleNames (nNumModules) = mModuleDB(i).DBName
+            nNumModules = nNumModules + 1
+         End If
+      Next
+      
+      GetModuleNames = nNumModules
+   End Function
+   
+   
+   Public Function ReadFromDBFile (Filename)
+      Dim oFileReader
+      
+      ' Create and open file for reading
+      Set oFileReader = new FileReader
+      
+      If not oFileReader.Open (Filename) Then
+         ' Unable to open file
+         ReadFromDBFile = False
+         Exit Function
+      End If
+      
+      ReadFromDBFile = ParseDBFile (oFileReader)
+      
+   End Function
+   
+   
+   Public Function ParseDBFile (oFileReader)
+      Dim LineRead
+      Dim oStr, Matches
+      Dim IsDbEntry
+      
+      ' Assume failure
+      ParseDBFile = False
+      
+      Set oStr = new StringProcessor
+      
+      Do
+         LineRead = oFileReader.ReadLine()
+         
+         ' Read the entire stream
+         If IsNull (LineRead) Then
+            Set oFileReader = Nothing
+            Exit Do
+         End If
+         
+         LineRead = Trim (LineRead)    ' remove leading & trailing whitespaces
+         
+         If LineRead = "" Then
+            ' A blank line so do nothing            
+         Else
+            ' We want to find patterns in the line read
+            oStr.SearchString = LineRead
+            
+            ' Check if its a tag (signified by expression "[.*")
+            If (oStr.StartsWith ("'")) Then
+               ' This is a remark so just do nothing!
+            ElseIf (oStr.StartsWith ("\[")) Then
+               if (Not ProcessTags (LineRead)) Then
+                  call oLog.Failed ("Possible syntax error in a tag on line " & oFileReader.Line, 20947)
+                  Exit Function
+               End If
+            Else     ' It is a db entry
+               Dim Key, Value
+               If Not ProcessData (LineRead) Then
+                  call oLog.Failed ("Possible syntax error on line " & oFileReader.Line, 20948)
+               End If
+            End If               
+         End If
+      Loop While (True)
+      
+      ' If here then succeeded
+      ParseDBFile = True
+   End Function
+   
+   
+   Private Function ProcessTags (Tag)
+      Dim oStr, newDB
+      
+      ' Assume failure 
+      ProcessTags = False
+      
+      Set oStr = new StringProcessor
+      oStr.SearchString = Tag
+      
+      If oStr.StartsWith ("\[Database") Then
+         ' If here, then this is a tag defining start of a database
+         Dim token
+         
+         ' Create a new Database
+         Set newDB = new ModuleDatabase
+         
+         ' Get the name of the database
+         token = oStr.ExtractTagToken ("Name")         
+         If Not IsNull (token) Then
+            newDB.DBName = token
+            call oLog.Write ("Constructing database for " & newDB.DBName)
+         Else
+            call oLog.Failed ("DB creation failed! Name field not found in Database tag!", 20949)
+            Exit Function
+         End If
+         
+         ' Get the error level of the database if specified         
+         token = oStr.ExtractTagToken ("ErrorLevel")
+         If Not IsNull (token) Then
+            If (StrComp (token, "fail", 1) = 0) Then
+               newDB.ErrorLevel = FAIL_ERR
+            ElseIf(StrComp (token, "warn", 1) = 0) Then
+               newDB.ErrorLevel = WARN_ERR
+            ElseIf(StrComp (token, "success", 1) = 0) Then
+               newDB.ErrorLevel = SUCC_ERR
+            Else
+               call oLog.Warned ("Unidentified token " & token & " found for ErrorLevel field in database: "  & newDB.DBName)
+            End If
+         End If
+         
+         ' Get the List field for the database, if specified         
+         token = oStr.ExtractTagToken ("List")
+         If Not IsNull (token) Then
+            If (StrComp (token, "Illegal", 1) = 0) Then
+               newDB.List = LIST_ILLEGAL
+            ElseIf (StrComp (token, "All_Legal", 1) = 0) Then
+               newDB.List = LIST_ALL_LEGAL
+            ElseIf (StrComp (token, "Mandatory", 1) = 0) Then
+               newDB.List = LIST_MANDATORY
+            Else
+               call oLog.Warned ("Unidentified token " & token & " found for List field in database: "  & newDB.DBName)
+            End If
+         End If
+         
+         
+         ' Get the NdisVersion for the database, if specified
+         token = oStr.ExtractTagToken ("NdisVersion")
+         If Not IsNull (token) Then
+            If (StrComp (token, "51", 1) = 0) Then
+               newDB.NdisVersion = NDIS_VERSION_51
+            Else
+               call oLog.Warned ("Unidentified token " & token & " found for List field in database: "  & newDB.DBName)
+            End If
+         End If
+         
+         
+         ' Check if this database is exempted for any class of devices
+         token = oStr.ExtractTagToken ("ExemptMedium")
+         If Not IsNull (token) Then
+            newDB.AddExemptMedium (token)
+         End If
+         
+         
+         ' Check if driver model is exempt from this db
+         token = oStr.ExtractTagToken ("ExemptDriverModel")
+         If Not IsNull (token) Then
+            newDB.AddExemptDriverModel (token)
+         End If
+         
+         ' Add this database to the list of module db's
+         Redim Preserve mModuleDB (mNumOfDB)         
+         Set mModuleDB (mNumOfDB) = newDB
+         mNumOfDB = mNumOfDB + 1
+         
+      ElseIf oStr.StartsWith ("\[/DATABASE") Then
+         ' This is end of the database!
+      End If
+      
+      ' If here then succeeded in creatiung db
+      ProcessTags = True
+   End Function
+   
+   
+   Private Function ProcessData (data)
+      Dim oStr
+      Dim FunctionName, ErrorMessage
+      Dim CurrentDB
+      
+      ' Assume failure 
+      ProcessData = False
+      
+      CurrentDB = mNumOfDB - 1     ' Zero based array
+      
+      Set oStr = new StringProcessor
+      oStr.SearchString = data
+      
+      If (mModuleDB (CurrentDB).List = LIST_ILLEGAL) Then
+         If (Not oStr.ExtractDBEntries (FunctionName, ErrorMessage)) Then
+            Exit Function
+         End If
+      Else
+         ' This database contains function names only
+         ' therefore, no associated error message
+         ErrorMessage = ""
+         If (Not oStr.ExtractDBEntry (FunctionName)) Then
+            Exit Function
+         End If
+      End If
+      
+      ' Add the key/value pair to the database
+      call mModuleDB (CurrentDB).Add (FunctionName, ErrorMessage)
+      
+      ProcessData = True
+   End Function
+   
+End Class
+
+
+
+
+
+'
+' CLASS FileReader
+'
+' This class will open an ASCII file for reading
+' The class interface can be easily extended to
+' give more serives associated with files. Simply
+' add more properties and/or methods to the class
+' to make it writable or get file attributes etc.
+'
+
+Class FileReader
+   Private mFile
+   Private mFileReader
+   
+   Sub Class_Initialize
+      
+   End Sub
+   
+   Sub Class_Terminate
+      call close()
+   End Sub
+   
+   Property Get Line ()
+      Line = mFileReader.Line
+   End Property
+   
+   Public Function Open (filename)
+      Dim FileSys
+      On Error Resume Next
+      
+      Open = False      ' Assume failure
+      
+      Set FileSys = CreateObject ("Scripting.FileSystemObject")
+      
+      If err.number > 0 Then
+         call ExceptionHandler
+         WScript.Quit
+      End If
+      
+      If Not FileSys.FileExists (filename) Then
+         call oLog.Failed ("The file " & filename & " could not be opened", 20950)
+         On Error Goto 0
+         Exit Function
+      End If
+      
+      Set mFile = FileSys.GetFile (filename)
+      
+      ' the 1 signifies for reading and 0 signifies ASCII
+      Set mFileReader = mFile.OpenAsTextStream (1, 0)
+      
+      open = True
+      
+      If err.number > 0 Then
+         call ExceptionHandler
+         WScript.Quit
+      End If
+      On Error goto 0
+   End Function
+   
+   
+   Public Function Close ()
+      On Error Resume Next
+      If (Not IsNull (mFileReader) And Not IsEmpty (mFileReader)) Then
+         mFileReader.close
+         mFileReader = null      ' To signify that file is now closed
+      End If
+      If err.number > 0 Then
+         call ExceptionHandler
+         WScript.Quit
+      End If
+      On Error goto 0      
+   End Function
+   
+   
+   ' Function reads one line from the stream. Returns NULL if stream has ended
+   Public Function ReadLine
+      On Error Resume Next
+      If (Not mFileReader.AtEndOfStream) Then
+         ReadLine = mFileReader.ReadLine
+      Else
+         ReadLine = Null
+      End If
+      If err.number > 0 Then
+         call ExceptionHandler
+         WScript.Quit
+      End If
+      On Error goto 0      
+   End Function
+End Class
+
+
+
+'
+' CLASS ModuleDatabase
+'
+
+Class ModuleDatabase
+   Private mDictionary
+   Private mDBName
+   Private mErrorLevel
+   Private mList
+   Private mNDISVersion
+   Private mMediumExemptList
+   Private mDriverModelExemptList
+   
+   Sub Class_Initialize
+      ' Allocate the dictionary and default error level to failure
+      Set mDictionary = CreateObject ("Scripting.Dictionary")
+      mDictionary.CompareMode = vbTextCompare
+      
+      ' Set default value for db attributes
+      mErrorLevel = FAIL_ERR
+      mList = LIST_ILLEGAL
+      mNDISVersion = NDIS_VERSION_DONT_CARE
+      Set mMediumExemptList = new ExemptList
+      Set mDriverModelExemptList = new ExemptList
+   End Sub
+   
+   Sub Class_Terminate
+      Set mDictionary = Nothing
+      Set mMediumExemptList = Nothing
+      Set mDriverModelExemptList = Nothing
+   End Sub
+   
+   Property Get ErrorLevel
+      ErrorLevel = mErrorLevel
+   End Property
+   Property Let ErrorLevel (newVal)
+      mErrorLevel = newVal
+   End Property
+   
+   Property Get DBName
+      DBName = mDBName
+   End Property
+   Property Let DBName (newVal)
+      mDBName = newVal
+   End Property
+   
+   Property Get List
+      List = mList
+   End Property
+   Property Let List (newVal)
+      mList = newVal
+   End Property
+   
+   Property Get NDISVersion
+      NDISVersion = mNDISVersion
+   End Property
+   Property Let NDISVersion (newVal)
+      mNDISVersion = newVal
+   End Property
+   
+   Public Sub Add (Key, Value)
+      mDictionary.Add Key, Value
+   End Sub
+   
+   Public Function Find (Key)
+      If mDictionary.Exists (Key) Then
+         Find = mDictionary.Item (Key)
+      Else
+         Find = ""
+      End If
+   End Function
+   
+   Public Function Exists (Key)
+      Exists = mDictionary.Exists (Key)
+   End Function
+   
+   Public Function Items ()
+      Items = mDictionary.Items
+   End Function
+   
+   Public Function Keys ()
+      Keys = mDictionary.Keys
+   End Function
+   
+   Public Function ItemExists (item2find)
+      Dim ItemsList, item
+      
+      ItemsList = mDictionary.Items ()
+      
+      For Each item in ItemsList
+         If strcomp (Item, item2find) = 0 Then
+            ItemExists = True
+            Exit Function
+         End If
+      Next
+      
+      ItemExists = False
+      Exit Function
+   End Function
+   
+   
+   Public Function AddExemptMedium (nMedium)
+      If (StrComp (nMedium, "NDISMEDIUM802_3") = 0) Then
+         mMediumExemptList.Add (0)
+      Elseif (StrComp (nMedium, "NDISMEDIUM802_5") = 0) Then
+         mMediumExemptList.Add (1)
+      Elseif (StrComp (nMedium, "NDISMEDIUMFDDI") = 0) Then
+         mMediumExemptList.Add (2)
+      Elseif (StrComp (nMedium, "NDISMEDIUMWAN") = 0) Then
+         mMediumExemptList.Add (3)
+      Elseif (StrComp (nMedium, "NDISMEDIUMLOCALTALK") = 0) Then
+         mMediumExemptList.Add (4)
+      Elseif (StrComp (nMedium, "NDISMEDIUMDIX") = 0) Then
+         mMediumExemptList.Add (5)
+      Elseif (StrComp (nMedium, "NDISMEDIUMMODEM") = 0) Then
+         mMediumExemptList.Add (5)
+      Elseif (StrComp (nMedium, "NDISMEDIUMARCNETRAW") = 0) Then
+         mMediumExemptList.Add (6)
+      Elseif (StrComp (nMedium, "NDISMEDIUMARCNET878_2") = 0) Then
+         mMediumExemptList.Add (7)
+      Elseif (StrComp (nMedium, "NDISMEDIUMATM") = 0) Then
+         mMediumExemptList.Add (8)
+      Elseif (StrComp (nMedium, "NDISMEDIUMWIRELESSWAN") = 0) Then
+         mMediumExemptList.Add (9)
+      Elseif (StrComp (nMedium, "NDISMEDIUMIRDA") = 0) Then
+         mMediumExemptList.Add (10)
+      Elseif (StrComp (nMedium, "NDISMEDIUMBPC") = 0) Then
+         mMediumExemptList.Add (11)
+      Elseif (StrComp (nMedium, "NDISMEDIUMCOWAN") = 0) Then
+         mMediumExemptList.Add (12)
+      Elseif (StrComp (nMedium, "NDISMEDIUM1394") = 0) Then
+         mMediumExemptList.Add (13)
+      Elseif (StrComp (nMedium, "NDISMEDIUMMAX") = 0) Then
+         mMediumExemptList.Add (14)
+      End If
+   End Function
+   
+   Public Function IsMediumExempted (nMedium)
+      IsMediumExempted = mMediumExemptList.IsPresentNumber (nMedium)
+   End Function
+   
+   Public Function AddExemptDriverModel (strDriverModel)
+      mDriverModelExemptList.Add (strDriverModel)
+   End Function
+   
+   Public Function IsDriverModelExempted (strDriverModel)
+      IsDriverModelExempted = mDriverModelExemptList.IsPresentString (strDriverModel)
+   End Function
+End Class
+
+
+
+
+'
+' CLASS StringProcessor
+'
+
+Class StringProcessor
+   ' The string we are searching in
+   Private mSearchString
+   
+   ' The RegExp object
+   Private mRegExp
+   
+   ' This var contains the matches of the last query executed
+   Private mMatches
+   
+   Sub Class_Initialize
+      On Error Resume Next
+      Set mRegExp = new RegExp
+      mRegExp.IgnoreCase = True
+      
+      If err.number > 0 Then
+         call ExceptionHandler
+         WScript.Quit
+      End If
+      On Error goto 0
+   End Sub
+   
+   Sub Class_Terminate
+      Set mRegExp = Nothing
+   End Sub
+   
+   Property Let SearchString (newVal)
+      mSearchString = newVal
+   End Property
+   
+   Property Get Matches 
+      Set Matches = mMatches
+   End Property
+   
+   
+   Public Function ExtractTagToken (Key)
+      on Error Resume Next
+      mRegExp.Global = False
+      
+      mRegExp.Pattern = Key & "=(\S+[^ \]])"
+      
+      Set mMatches = mRegExp.Execute (mSearchString)
+      
+      If mMatches.Count > 0 Then          ' If there was a match found
+         Dim Match
+         Set Match = mMatches.Item (0)
+         ExtractTagToken = Match.SubMatches (0)
+      Else
+         ExtractTagToken = NULL
+      End If
+      If err.number > 0 Then
+         call ExceptionHandler
+         WScript.Quit
+      End If
+      On Error goto 0
+   End Function
+   
+   
+   
+   
+   
+   ' This function is called when DB contains unallowed function name & error msg
+   Public Function ExtractDBEntries (ByRef Key, ByRef Value)
+      On Error Resume Next
+      mRegExp.Global = True
+      
+      mRegExp.Pattern = """(.*)"",""(.*)"""
+      Set mMatches = mRegExp.Execute (mSearchString)
+      
+      If mMatches.Count = 1 Then          ' If there was a match found
+         Dim Match
+         
+         Set Match = mMatches.Item (0)         
+         
+         ' Get the key
+         Key = Match.SubMatches (0)
+         
+         ' Get the value
+         Value = Match.SubMatches (1)
+         
+         ExtractDBEntries = True
+      Else
+         ' Two matches not found
+         call oLog.Failed ("Did not find exactly two string entries on the line as expected", 20951)
+         ExtractDBEntries = False
+      End If
+      
+      If err.number > 0 Then
+         call ExceptionHandler
+         WScript.Quit
+      End If
+      On Error goto 0      
+   End Function
+   
+   
+   ' This function is called when DB contains only allowed function name
+   Public Function ExtractDBEntry (ByRef Key)
+      On Error Resume Next
+      mRegExp.Global = True
+      
+      mRegExp.Pattern = """(\w*)"""
+      Set mMatches = mRegExp.Execute (mSearchString)
+      
+      If mMatches.Count = 1 Then          ' If there was a match found
+         Dim Match
+         
+         Set Match = mMatches.Item (0)         
+         
+         ' Get the key
+         Key = Match.SubMatches (0)
+         
+         ExtractDBEntry = True
+      Else
+         ' Two matches not found
+         call oLog.Failed ("Did not find exactly one string entries on the line as expected", 20952)
+         ExtractDBEntry = False
+      End If
+      
+      If err.number > 0 Then
+         call ExceptionHandler
+         WScript.Quit
+      End If
+      On Error goto 0      
+   End Function
+   
+   
+   Public Function StartsWith (SearchPattern)
+      On Error Resume Next
+      mRegExp.Global = False
+      mRegExp.Pattern = "^" & SearchPattern & ".*"
+      
+      ' Run the query
+      Set mMatches = mRegExp.Execute (mSearchString)
+      
+      If mMatches.Count > 0 Then          ' If there was a match found
+         Dim Match
+         For Each Match in mMatches
+            If Match.FirstIndex = 0 Then  ' and match was at the first character i.e. start of string
+               StartsWith = True          ' then line starts with this pattern
+               Exit For    ' interested in only first match
+            Else
+               StartsWith = False
+               Exit For    ' interested in only first match
+            End If
+         Next
+      Else
+         StartsWith = False
+      End If
+      
+      If err.number > 0 Then
+         call ExceptionHandler
+         WScript.Quit
+      End If
+      On Error goto 0   
+   End Function
+   
+   
+   Public Function GetCount (strPattern)
+      On Error Resume Next
+      mRegExp.Global = True
+      mRegExp.Pattern = strPattern
+      
+      ' Run the query
+      Set mMatches = mRegExp.Execute (mSearchString)
+      
+      GetCount = mMatches.Count
+      
+      If err.number > 0 Then
+         call ExceptionHandler
+         WScript.Quit
+      End If
+      On Error goto 0   
+   End Function
+End Class
+
+
+
+'
+' CLASS DRIVER
+'
+
+Class Driver
+   ' This array contains the list of calls bring made by driver modules
+   Private mModuleCalls
+   Private mNDISVersion
+   Private mbIsWDMDriver
+   Private mnNdisMedium
+   
+   Public Sub Class_Initialize
+      mbIsWDMDriver = False
+      mNDISVersion = Empty
+      mnNdisMedium = CLng (oNDInfo.AdapterList(glbCurrentAdapterIndex).NdisMedium)
+   End Sub
+   
+   Property Get IsWDMDriver
+      IsWDMDriver = mbIsWDMDriver
+   End Property
+   
+   Property Get NdisMedium
+      NdisMedium = mnNdisMedium
+   end Property
+   
+   Property Get NDISVersion()
+      If IsEmpty(mNDISVersion) Then
+         ' Get the version of NDIS running for this driver
+         mNDISVersion = oNDTSession ((glbCurrentAdapterIndex) & "OID_GEN_DRIVER_VERSION")
+         If IsEmpty (mNDISVersion) Then
+            ' If session does not have this info, assume NDIS 5.0
+            mNDISVersion = NDIS_VERSION_50
+         End If
+      End If 
+      
+      NDISVersion = mNDISVersion
+   End Property    
+   
+   Property Get ModuleCalls
+      If Not IsEmpty (mModuleCalls) Then
+         ModuleCalls = mModuleCalls
+      Else
+         ' return an empty array if no modules present
+         ModuleCalls = Array ()
+      End If
+   End Property
+   
+   
+   ' This function sets up some details that are inferred
+   ' from the calls being made. Like is this a WDM driver or not
+   Public Function ProcessCalls ()
+      Dim Module
+      
+      ' Check if this is a WDM driver
+      If Not IsEmpty (mModuleCalls) Then
+         For each Module in mModuleCalls
+            If StrComp (Module.ModuleName, "NDIS.SYS", 1) = 0 Then
+               If (Not ((Module.FindCall("NdisMRegisterInterrupt") = -1) And _
+                        (Module.FindCall ("NdisMRegisterIoPortRange") = -1) And _
+                        (Module.FindCall ("NdisIMRegisterLayeredMiniport") = -1) And _
+                        (Module.FindCall ("MmMapIoSpace") = -1) And _
+                        (Module.FindCall ("IoConnectInterrupt") = -1) And _
+                        (Module.FindCall ("NdisMGetDeviceProperty") >= 0))) Then
+                  mbIsWDMDriver = False
+               Else
+                  oLog.Write ("This is a WDM driver")
+                  mbIsWDMDriver = True
+               End If
+            End If
+         Next
+      End If
+   End Function
+   
+   
+   Public Function AddModule (newModuleCalls)
+      If IsEmpty (mModuleCalls) Then
+         Redim mModuleCalls (0)
+         Set mModuleCalls (0) = newModuleCalls
+      Else
+         Dim newArraySize      
+         newArraySize = UBound (mModuleCalls) + 1
+         ReDim Preserve mModuleCalls (newArraySize)
+         Set mModuleCalls (newArraySize) = newModuleCalls
+      End If
+   End Function
+End Class
+
+
+
+
+'
+' CLASS ModuleCalls
+'
+
+Class ModuleCalls
+   Private mModuleName
+   Private mCalls
+   
+   Property Let ModuleName (newVal)
+      mModuleName = newVal
+   End Property
+   Property Get ModuleName
+      ModuleName = mModuleName
+   End Property
+   
+   
+   Property Let Calls (newVal)
+      ' Remove any extra spaces around the string
+      newVal = Trim (newVal)
+      mCalls = Split (newVal)
+   End Property
+   Property Get Calls ()
+      Calls = mCalls
+   End Property
+   
+   
+   Public Function FindCall (FunctionName)
+      Dim strCallByDriver, index
+      
+      index = 0
+      For each strCallByDriver in mCalls
+         If strcomp (strCallByDriver, FunctionName, 1) = 0 Then
+            ' if call found, return its array index
+            FindCall = index
+            Exit Function
+         End If
+         
+         index = index + 1
+      Next
+      
+      ' If call not found, return -1   
+      FindCall = -1
+   End Function
+   
+   
+   Public Function PrintCalls ()
+      Dim strCallByDriver, outputstr, Count, RowSize, length, gap
+      Count = 0
+      RowSize = 30
+      
+      For each strCallByDriver in mCalls
+         If Count mod 3 = 0 Then
+            outputstr = outputstr & vbLF
+         End If   
+         
+         length = len(strCallByDriver)
+         
+         If length >= RowSize Then
+            If (Count mod 3 = 0) Then
+               gap = Space ( (RowSize * 2) - length)
+            Else
+               gap = " "
+            End If
+            Count = Count + 1
+         Else
+            gap = space (RowSize - length)
+         End If
+         
+         outputstr = outputstr & strCallByDriver & gap
+         Count = Count + 1
+      Next
+      
+      oLog.Write (outputstr & vbLF)
+   End Function
+   
+   
+   
+   Public Function PrintFormattedCalls (failedDB)
+      Dim strCallByDriver, outputstr, Count, RowSize, length, gap, failmodule
+      Count = 0
+      RowSize = 30
+      
+      For each strCallByDriver in mCalls
+         If Count mod 3 = 0 Then
+            outputstr = outputstr & vbLF
+         End If   
+         
+         length = len(strCallByDriver)
+         
+         If length >= RowSize Then
+            If (Count mod 3 = 0) Then
+               gap = Space ( (RowSize * 2) - length)
+            Else
+               gap = " "
+            End If
+            Count = Count + 1
+         Else
+            gap = space (RowSize - length)
+         End If
+         
+         failModule = failedDB.Find (strCallByDriver)
+         If failModule = "" Then
+            outputstr = outputstr & strCallByDriver & gap
+         ElseIf StrComp (failModule, mModuleName, 1) = 0  Then
+            outputstr = outputstr & "<b>" & strCallByDriver & "</b>" & gap
+         Else     ' being cautious
+            outputstr = outputstr & strCallByDriver & gap
+         End if
+         
+         Count = Count + 1
+      Next
+      
+      oLog.Write (outputstr & vbLF)
+   End Function
+   
+End Class
+
+
+
+
+'
+' CLASS ExemptList
+'
+Class ExemptList
+   Private mList ()
+   Private mnListSize
+   
+   Sub Class_Initialize ()
+      mnListSize = 0
+   End Sub
+   
+   ' Adds an element to the exempt list
+   Public Function Add (ByRef element)
+      ReDim mList (mnListSize)
+      
+      mList (mnListSize) = element
+      
+      mnListSize = mnListSize + 1      
+   End Function
+   
+   ' This function checks to see if numberToCheck exists
+   ' in the exempt list and returns true if that is the case
+   Public Function IsPresentNumber (numberToCheck)
+      Dim element
+      
+      IsPresentNumber = False
+      
+      If mnListSize = 0 Then
+         Exit Function
+      End If
+      
+      For Each element in mList
+         If (element = numberToCheck) Then
+            IsPresentNumber = True
+            Exit Function
+         End If
+      Next
+   End Function
+   
+   
+   ' This function checks to see if numberToCheck exists
+   ' in the exempt list and returns true if that is the case
+   Public Function IsPresentString (stringToCheck)
+      Dim element
+      
+      IsPresentString = False
+      
+      If mnListSize = 0 Then
+         Exit Function
+      End If
+      
+      For Each element in mList
+         If (StrComp (element, stringToCheck) = 0) Then
+            IsPresentString = True
+            Exit Function
+         End If
+      Next
+      
+   End Function   
+   
+End Class
+
+'--------------------------------------------------------------------------
+'==========================================================================
+'++++++++++++++++++++++++++++  END TEST  ++++++++++++++++++++++++++++++++++
+'==========================================================================
+</script>
+</job>
+</package>
+
+<!--- CRC = 0x0d037210 --->

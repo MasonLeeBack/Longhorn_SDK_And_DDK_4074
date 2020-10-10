@@ -1,0 +1,153 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<schema xmlns="http://www.w3.org/2001/XMLSchema" 
+		xmlns:maml="http://schemas.microsoft.com/maml/2003/5" 
+		xmlns:doc="http://schemas.microsoft.com/maml/internal"
+		targetNamespace="http://schemas.microsoft.com/maml/2003/5" 
+		elementFormDefault="qualified"
+        attributeFormDefault="unqualified"
+        >
+
+	<!-- Schema documentation -->
+	<annotation>
+		<documentation>
+			This schema definition defines common structure types for the CS Schema.
+			This schema is part of the base layer.			
+		</documentation>
+	</annotation>
+
+	<!-- include and import declarations -->
+	<include schemaLocation="base.xsd"/>
+	<include schemaLocation="structureTable.xsd"/>
+	<include schemaLocation="structureList.xsd"/>
+	<include schemaLocation="structureProcedure.xsd"/>
+	<include schemaLocation="structureGlossary.xsd"/>
+
+	<!-- element declarations -->
+	<element name="example" type="maml:structureType">
+		<annotation>
+			<documentation>
+				The example element describes an example within a topic.
+			</documentation>
+		</annotation>
+	</element>
+
+	<element name="introduction" type="maml:structureSimpleType"/>
+	<element name="transition" type="maml:structureSimpleType"/>
+
+    <element name="summary" type="maml:structureType">
+        <annotation>
+            <documentation>
+            This element contains a summary, introduction, or short description of the current item.
+            This text typically appears in a topic and may also be used as the description of the topic
+            that appears in a jump table when the topic is being linked to.
+            </documentation>
+            <appinfo><doc:localizable>n/a</doc:localizable></appinfo>
+        </annotation>
+    </element>
+
+    
+	<!-- complexType declarations -->
+	<complexType name="structureType">
+		<annotation>
+			<documentation>
+				This type describes the common structure elements.
+				It is intended for use in page types and structure
+				elements.
+			</documentation>
+		</annotation>
+		<group ref="maml:structureGroup" minOccurs="0" maxOccurs="unbounded"/>
+		<attributeGroup ref="maml:contentIdentificationSharingAndConditionGroup"/>
+	</complexType>
+
+	<complexType name="structureSimpleType">
+		<annotation>
+			<documentation>
+				The structureSimple type is intended for cases where both
+				structure and block elements are needed; however, a limited
+				set of elements is desired.
+			</documentation>
+		</annotation>
+		<group ref="maml:structureSimpleGroup" minOccurs="0" maxOccurs="unbounded"/>
+		<attributeGroup ref="maml:contentIdentificationSharingAndConditionGroup"/>
+	</complexType>
+	
+	<attributeGroup name="expandCollapseGroup">
+		<attribute name="expandCollapse" use="optional">
+			<annotation>
+				<documentation>
+					The expandCollapse attribute indicates the default expand or collapse state
+					of the element.
+				</documentation>
+			</annotation>
+			<simpleType>
+				<restriction base="string">
+					<enumeration value="expand"/>
+					<enumeration value="collapse"/>
+				</restriction>
+			</simpleType>
+		</attribute>
+	</attributeGroup>
+
+	<group name="structureGroup">
+		<choice>
+			<group ref="maml:blockGroup"/>
+			<group ref="maml:structureListGroup"/>
+			<element ref="maml:definitionTable"/>
+			<element ref="maml:table"/>
+			<element ref="maml:procedure"/>
+			<element ref="maml:example"/>
+			<element ref="maml:glossaryList"/>
+		</choice>
+	</group>
+	
+	<group name="structureBasicGroup">
+		<choice>
+			<group ref="maml:blockGroup"/>
+			<group ref="maml:structureListGroup"/>
+		</choice>
+	</group>
+	
+	<group name="structureSimpleGroup">
+		<choice>
+			<element ref="maml:para"/>
+			<element ref="maml:list"/>
+		</choice>
+	</group>
+	
+	<simpleType name="codeEntityReferenceStringType">
+		<restriction base="token"/>
+	</simpleType>
+	<complexType name="codeEntityReferenceType" mixed="false">
+		<simpleContent>
+			<extension base="maml:codeEntityReferenceStringType">
+				<attribute name="qualifyHint" type="boolean"/>
+			</extension>
+		</simpleContent>
+	</complexType>
+	<element name="codeEntityReference" type="maml:codeEntityReferenceType">
+		<annotation>
+			<documentation>
+	        This element holds a reference to a code entity.
+	        </documentation>
+			<appinfo>
+				<doc:localizable>false</doc:localizable>
+			</appinfo>
+		</annotation>
+	</element>
+
+	<complexType name="textBlockType">
+		<annotation>
+			<documentation>This type describes the schema for any block of text that can occur in an ACW panel.</documentation>
+		</annotation>
+		<choice maxOccurs="unbounded">
+			<element ref="maml:para" minOccurs="0" maxOccurs="unbounded"/>
+			<element ref="maml:list" minOccurs="0" maxOccurs="unbounded"/>
+			<element ref="maml:table" minOccurs="0" maxOccurs="unbounded"/>
+			<element ref="maml:example" minOccurs="0" maxOccurs="unbounded"/>
+			<element ref="maml:alert" minOccurs="0" maxOccurs="unbounded"/>
+			<element ref="maml:quote" minOccurs="0" maxOccurs="unbounded"/>
+			<element ref="maml:definitionTable" minOccurs="0" maxOccurs="unbounded"/>
+		</choice>
+	</complexType>
+	
+</schema>

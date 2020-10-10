@@ -1,0 +1,442 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, 802_5
+</MEDIA>
+<WHQL>
+802_3, 802_5
+</WHQL>
+<CARDMACH>
+2C,1M
+</CARDMACH>
+<RUNORDER>
+1600
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[
+This script tests miniport functionality to send 802.1p priority packets by following
+variations:
+1. Send mechanism with DIRECTED packets
+2. SendPacket mechanism with DIRECTED packets
+3. SendPacket mechanism with BROADCAST packets
+4. SendPacket mechanism with MULTICAST packets (802.3)
+5. SendPacket mechanism with FUNCTIONAL packets (802.5)
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="2c_Priority" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      
+        <!-- Begin Wireless Specific Includes -->
+        <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	     <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	     <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	     <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	     <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+        <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+        <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+        <!-- End Wireless Specific Includes -->
+        
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/> 
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script language="VBScript" src="..\inc\ConstLAN.vbs"/>
+      <script id="2c_Priority" language="VBScript">
+'==========================================================================
+' Script Name: 2c_Priority
+'==========================================================================
+Option Explicit 
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0), GetSupportAdapterIndex (oNDInfo.AdapterList, 0)) 
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard, oTestOpen
+   Private oSuppCard, oSuppOpen
+   Private m_lTestAdapterIndex, m_lSuppAdapterIndex
+   
+   Private Sub Class_Initialize
+      
+   End Sub
+   
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+      Set oTestOpen = Nothing
+      
+      Set oSuppCard = Nothing
+      Set oSuppOpen = Nothing
+   End Sub
+   
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+
+      If (UseIPHeaders) Then
+         Exit Function
+      End If      
+      
+      Set pAdapterList = oNDInfo.AdapterList
+      
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oTestOpen = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpen is Nothing) Then
+         Exit Function
+      End If
+      
+      oLog.Variation ("Setting up Support Adapter")
+      Set oSuppCard = New CLanCard
+      If (oSuppCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oSuppOpen = oSuppCard.vbSetupBasicTest(pAdapterList (m_lSuppAdapterIndex))
+      If (oSuppOpen is Nothing) Then
+         Exit Function
+      End If
+      
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+               
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")           
+         If(vbAssociateWep(oTestOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If	
+         
+         oLog.Variation ("Associating support device with " & NDTESTAP2 & " ...")       
+         If(vbAssociateWep(oSuppOpen, NDTESTAP2) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate support device with " & NDTESTAP2, 88888
+            Exit Function
+         End If	
+                           
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+      
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+   
+   Public Function RunTest (lTestAdapterIndex, lSuppAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      m_lSuppAdapterIndex = lSuppAdapterIndex
+      
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+      
+      ExecuteTestCore
+   End Function
+   
+   Private Function ExecuteTestCore
+      Dim nTestId
+      
+      Dim bResult
+      Dim AvailFilters
+      
+      Dim lSpeed
+      Dim MacOptions
+      Dim lDelay
+      
+      Dim nResultSize
+      Dim nMaxPacketSize, nTestMaxPacketSize, nSupportMaxPacketSize
+      Dim nSizeMin, nSizeMed, nSizeMax
+      Dim lNumMin
+      
+      Dim TestAddr
+      Dim MulticastAddr
+      Dim BroadcastAddr
+      Dim NullFunctAddr
+      Dim FunctionalAddr
+      
+      oLog.Variation ("Collecting device parameters")
+      nTestMaxPacketSize = oTestOpen.vbGetMaxPacketSize()
+      TestAddr = oTestOpen.vbGetCardAddress()
+      BroadcastAddr = oTestCard.vbGetBroadcastAddress()
+      
+      AvailFilters = oTestOpen.vbGetFilters()
+      
+      oLog.Variation("Check for 802.1p support" & vblf)
+      WSCript.Sleep(500)
+      
+      '----------------------------------------------------
+      ' check whether local card is capable of doing 802.1P
+      '----------------------------------------------------
+      MacOptions = 0
+      
+      nResultSize = 4
+      bResult = oTestOpen.vbFastNdisRequest(OID_GEN_MAC_OPTIONS, MacOptions, nResultSize)
+      If (Not bResult) Then
+         Call oLog.Failed ("Unable to query OID_GEN_MAC_OPTIONS on the test adapter." , 21590)
+         Exit Function
+      End If
+      
+      If ((MacOptions And &H40&) <> 0) Then ' NDIS_MAC_OPTION_8021P_PRIORITY
+         oLog.Write("Test adapter supports 802.1p." )
+      Else
+         oLog.Write("Test adapter does not support 802.1p." )
+         Exit Function
+      End If
+      
+      '----------------------------------------------------
+      ' check whether local card is capable of doing 802.1P
+      '----------------------------------------------------
+      MacOptions = 0
+      
+      nResultSize = 4
+      bResult = oSuppOpen.vbFastNdisRequest(OID_GEN_MAC_OPTIONS, MacOptions, nResultSize)
+      If (Not bResult) Then
+         Call oLog.Failed ("Unable to query OID_GEN_MAC_OPTIONS on the test adapter." , 21591)
+         Exit Function
+      End If
+      
+      If ((MacOptions And &H40&) <> 0) Then ' NDIS_MAC_OPTION_8021P_PRIORITY
+         oLog.Write("Support adapter supports 802.1p." )
+      Else
+         oLog.Write("Support adapter does not support 802.1p." )
+         Exit Function
+      End If
+      
+      '------------------------------------
+      ' set up some local variables we need
+      '------------------------------------
+      oLog.Variation("Setup Instances")
+      
+      lSpeed = 0
+      nResultSize = 4
+      bResult = oTestOpen.vbFastNdisRequest(OID_GEN_LINK_SPEED, lSpeed, nResultSize)
+      If (Not bResult) Then
+         Call oLog.Failed ("Unable to get query OID_GEN_LINK_SPEED on Test adapter." , 21592)
+         Exit Function
+      End If
+      
+      nTestId = oNDTSupp.Random(1, 32765)
+      
+      oTestOpen.vbSetChannelId(nTestId)
+      oSuppOpen.vbSetChannelId(nTestId)
+      oTestOpen.vbSetReceiveOption(RECEIVE_DEFAULT)
+      
+      '
+      ' set number of packets to send in each test
+      '
+      lNumMin = 100
+      
+      '
+      ' set size of packets to use
+      ' take maximum size of cooperating server into account..
+      '
+      nSupportMaxPacketSize = oSuppOpen.vbGetMaxPacketSize()
+      nMaxPacketSize = nSupportMaxPacketSize
+      If (nTestMaxPacketSize < nSupportMaxPacketSize) Then
+         nMaxPacketSize = nTestMaxPacketSize
+      End If
+      
+      nSizeMin  = 64
+      nSizeMed  = 512
+      nSizeMax  = nMaxPacketSize
+      If (nSizeMed > nSizeMax) Then
+         nSizeMed = (nSizeMin + nSizeMax) / 2
+      End If
+      
+      lDelay = 4
+      
+      '-----------------------------------
+      ' now, do the directed receive tests
+      '-----------------------------------
+      
+      oLog.Variation("Directed Packets - NdisSendPackets" & vblf)
+      
+      
+      If (Not oTestOpen.vbSetPacketFilter(DIRECTED)) Then
+         Call oLog.Failed ("Unable to set test card packet filter to DIRECTED." , 21593)
+         Exit Function
+      End If
+      
+      bResult = oTestOpen.vbStartPriority(oSuppOpen, TestAddr, nSizeMin, lNumMin, lDelay, PRIORITY_SEND_PACKETS)
+      If (Not bResult) Then
+         Exit Function
+      End If
+      'priority $ClientOpen $G_RemoteOpen $G_TestAddress $SizeMin $NumMin $Delay PRIORITY_TYPE_802_1P PRIORITY_SEND_PACKETS
+      
+      bResult = oTestOpen.vbWaitPriority()
+      If (Not bResult) Then
+         Exit Function
+      End If
+      
+      bResult = oTestOpen.vbGetPriorityResults()
+      If (Not bResult) Then
+         Exit Function
+      End If    
+      
+      WSCript.Sleep(5000)
+      
+      '--------------------------------------------------
+      ' now, do the directed receive tests using NdisSend
+      '--------------------------------------------------
+      
+      oLog.Variation("Directed Packets - NdisSend" & vblf)
+      
+      If (Not oTestOpen.vbSetPacketFilter(DIRECTED)) Then
+         Exit Function
+      End If
+      
+      bResult = oTestOpen.vbStartPriority(oSuppOpen, TestAddr, nSizeMin, lNumMin, lDelay, PRIORITY_SEND)
+      If (Not bResult) Then
+         Exit Function
+      End If
+      'priority $ClientOpen $G_RemoteOpen $G_TestAddress $SizeMin $NumMin $Delay PRIORITY_TYPE_802_1P PRIORITY_SEND
+      
+      bResult = oTestOpen.vbWaitPriority()
+      If (Not bResult) Then
+         Exit Function
+      End If
+      
+      bResult = oTestOpen.vbGetPriorityResults()
+      If (Not bResult) Then
+         Exit Function
+      End If    
+      
+      WSCript.Sleep(5000)
+      
+      '------------------------------------
+      ' now, do the multicast receive tests
+      '------------------------------------
+      
+      If (AvailFilters And Multicast) Then ' MEDIUM_ETHERNET
+         oLog.Variation("Multicast Packets - NdisSendPackets" & vblf)
+         
+         MulticastAddr = NetAddr(&H01&, &H02&, &H03&, &H04&, &H05&, &H06&)
+         
+         If (Not oTestOpen.vbSetPacketFilter(MULTICAST)) Then
+            Exit Function
+         End If
+         
+         bResult = oTestOpen.vbAddMulticastAddr(MulticastAddr)
+         If (Not bResult) Then
+            Exit Function
+         End If
+         
+         bResult = oTestOpen.vbStartPriority(oSuppOpen, MulticastAddr, nSizeMin, lNumMin, lDelay, PRIORITY_SEND_PACKETS)
+         If (Not bResult) Then
+            Exit Function
+         End If
+         'priority $ClientOpen $G_RemoteOpen $MulticastAddr $SizeMin $NumMin $Delay PRIORITY_TYPE_802_1P PRIORITY_SEND_PACKETS
+         
+         bResult = oTestOpen.vbWaitPriority()
+         If (Not bResult) Then
+            Exit Function
+         End If
+         
+         bResult = oTestOpen.vbGetPriorityResults()
+         If (Not bResult) Then
+            Exit Function
+         End If    
+         
+         bResult = oTestOpen.vbRemoveMulticastAddr(MulticastAddr)
+      Else ' MEDIUM_TOKENRING
+         oLog.Variation("Functional Packets - NdisSendPackets" & vblf)
+         
+         NullFunctAddr  = FunctAddr(&H00&, &H00&, &H00&, &H00&)
+         FunctionalAddr = FunctAddr(&H01&, &H02&, &H03&, &H04&)
+         
+         If (Not oTestOpen.vbSetPacketFilter(FUNCTIONAL)) Then
+            Exit Function
+         End If
+         
+         bResult = oTestOpen.vbSetFunctionalAddr(FunctionalAddr)
+         If (Not bResult) Then
+            Exit Function
+         End If
+         
+         bResult = oTestOpen.vbStartPriority(oSuppOpen, FunctionalAddr, nSizeMin, lNumMin, lDelay, PRIORITY_SEND_PACKETS)
+         If (Not bResult) Then
+            Exit Function
+         End If
+         'priority $ClientOpen $G_RemoteOpen $FunctionalAddr $SizeMin $NumMin $Delay PRIORITY_TYPE_802_1P PRIORITY_SEND_PACKETS
+         
+         bResult = oTestOpen.vbWaitPriority()
+         If (Not bResult) Then
+            Exit Function
+         End If
+         
+         bResult = oTestOpen.vbGetPriorityResults()
+         If (Not bResult) Then
+            Exit Function
+         End If    
+         
+         bResult = oTestOpen.vbSetFunctionalAddr(NullFunctAddr)
+      End If
+      
+      WSCript.Sleep(5000)
+      
+      '------------------------------------
+      ' now, do the broadcast receive tests
+      '------------------------------------
+      
+      oLog.Variation("Broadcast Packets - NdisSendPackets" & vblf)
+      
+      If (Not oTestOpen.vbSetPacketFilter(BROADCAST)) Then
+         Exit Function
+      End If        
+      
+      'priority $ClientOpen $G_RemoteOpen $G_BroadcastAddress $SizeMin $NumMin $Delay PRIORITY_TYPE_802_1P PRIORITY_SEND_PACKETS
+      bResult = oTestOpen.vbStartPriority(oSuppOpen, BroadcastAddr, nSizeMin, lNumMin, lDelay, PRIORITY_SEND_PACKETS)
+      If (Not bResult) Then
+         Exit Function
+      End If
+      
+      bResult = oTestOpen.vbWaitPriority()
+      If (Not bResult) Then
+         Exit Function
+      End If
+      
+      bResult = oTestOpen.vbGetPriorityResults()
+      If (Not bResult) Then
+         Exit Function
+      End If
+      
+   End Function
+   
+End Class
+
+</script>
+</job>
+</package>
+
+
+
+
+<!--- CRC = 0x9f39d9e1 --->

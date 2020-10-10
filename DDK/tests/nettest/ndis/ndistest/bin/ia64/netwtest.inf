@@ -1,0 +1,659 @@
+; NETWTEST.INX -- WAN Miniports Test
+;
+; Copyright (c) 1998, Microsoft Corporation
+
+[version]
+Signature   = "$Windows NT$"
+Class       = Net
+ClassGUID   = {4d36e972-e325-11ce-bfc1-08002be10318}
+Provider    = %Msft%
+LayoutFile  = layout.inf
+catalogfile = hct.cat
+
+;[ControlFlags]
+;ExcludeFromSelect =\
+;    MS_NDISTestVirtualWan
+
+[Manufacturer]
+%Msft% = Msft
+
+[Msft]
+; DisplayName                 		Section               DeviceID
+; -----------                 		-------               --------
+"NDISTestVirtualWan0"         = Ndi-Mp-WTest0,     	 "MS_NDISTestVirtualWan0"
+"NDISTestVirtualWan1"         = Ndi-Mp-WTest1,     	 "MS_NDISTestVirtualWan1"
+"NDISTestVirtualWan2"         = Ndi-Mp-WTest2,     	 "MS_NDISTestVirtualWan2"
+"NDISTestVirtualWan3"         = Ndi-Mp-WTest3,     	 "MS_NDISTestVirtualWan3"
+"NDISTestVirtualWan4"         = Ndi-Mp-WTest4,     	 "MS_NDISTestVirtualWan4"
+"NDISTestVirtualWan5"         = Ndi-Mp-WTest5,     	 "MS_NDISTestVirtualWan5"
+"NDISTestVirtualWan6"         = Ndi-Mp-WTest6,     	 "MS_NDISTestVirtualWan6"
+"NDISTestVirtualWan7"         = Ndi-Mp-WTest7,     	 "MS_NDISTestVirtualWan7"
+"NDISTestVirtualWan8"         = Ndi-Mp-WTest8,     	 "MS_NDISTestVirtualWan8"
+"NDISTestVirtualWan9"         = Ndi-Mp-WTest9,     	 "MS_NDISTestVirtualWan9"
+"NDISTestVirtualWan10"         = Ndi-Mp-WTest10,     	 "MS_NDISTestVirtualWan10"
+"NDISTestVirtualWan11"         = Ndi-Mp-WTest11,     	 "MS_NDISTestVirtualWan11"
+"NDISTestVirtualWan12"         = Ndi-Mp-WTest12,     	 "MS_NDISTestVirtualWan12"
+"NDISTestVirtualWan13"         = Ndi-Mp-WTest13,     	 "MS_NDISTestVirtualWan13"
+"NDISTestVirtualWan14"         = Ndi-Mp-WTest14,     	 "MS_NDISTestVirtualWan14"
+"NDISTestVirtualWan15"         = Ndi-Mp-WTest15,     	 "MS_NDISTestVirtualWan15"
+"NDISTestVirtualWan16"         = Ndi-Mp-WTest16,     	 "MS_NDISTestVirtualWan16"
+"NDISTestVirtualWan17"         = Ndi-Mp-WTest17,     	 "MS_NDISTestVirtualWan17"
+"NDISTestVirtualWan18"         = Ndi-Mp-WTest18,     	 "MS_NDISTestVirtualWan18"
+"NDISTestVirtualWan19"         = Ndi-Mp-WTest19,     	 "MS_NDISTestVirtualWan19"
+"NDISTestVirtualWan20"         = Ndi-Mp-WTest20,     	 "MS_NDISTestVirtualWan20"
+"NDISTestVirtualWan21"         = Ndi-Mp-WTest21,     	 "MS_NDISTestVirtualWan21"
+"NDISTestVirtualWan22"         = Ndi-Mp-WTest22,     	 "MS_NDISTestVirtualWan22"
+"NDISTestVirtualWan23"         = Ndi-Mp-WTest23,     	 "MS_NDISTestVirtualWan23"
+"NDISTestVirtualWan24"         = Ndi-Mp-WTest24,     	 "MS_NDISTestVirtualWan24"
+"NDISTestVirtualWan25"         = Ndi-Mp-WTest25,     	 "MS_NDISTestVirtualWan25"
+"NDISTestVirtualWan26"         = Ndi-Mp-WTest26,     	 "MS_NDISTestVirtualWan26"
+"NDISTestVirtualWan27"         = Ndi-Mp-WTest27,     	 "MS_NDISTestVirtualWan27"
+"NDISTestVirtualWan28"         = Ndi-Mp-WTest28,     	 "MS_NDISTestVirtualWan28"
+"NDISTestVirtualWan29"         = Ndi-Mp-WTest29,     	 "MS_NDISTestVirtualWan29"
+"NDISTestVirtualWan30"         = Ndi-Mp-WTest30,     	 "MS_NDISTestVirtualWan30"
+"NDISTestVirtualWan31"         = Ndi-Mp-WTest31,     	 "MS_NDISTestVirtualWan31"
+
+[Ndi-Mp-WTest0]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest0
+
+[Ndi-Mp-WTest1]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest1
+
+[Ndi-Mp-WTest2]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest2
+
+[Ndi-Mp-WTest3]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest3
+
+[Ndi-Mp-WTest4]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest4
+
+[Ndi-Mp-WTest5]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest5
+
+[Ndi-Mp-WTest6]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest6
+
+[Ndi-Mp-WTest7]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest7
+
+[Ndi-Mp-WTest8]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest8
+
+[Ndi-Mp-WTest9]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest9
+
+[Ndi-Mp-WTest10]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest10
+
+[Ndi-Mp-WTest11]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest11
+
+[Ndi-Mp-WTest12]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest12
+
+[Ndi-Mp-WTest13]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest13
+
+[Ndi-Mp-WTest14]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest14
+
+[Ndi-Mp-WTest15]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest15
+
+[Ndi-Mp-WTest16]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest16
+
+[Ndi-Mp-WTest17]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest17
+
+[Ndi-Mp-WTest18]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest18
+
+[Ndi-Mp-WTest19]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest19
+
+[Ndi-Mp-WTest20]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest20
+
+[Ndi-Mp-WTest21]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest21
+
+[Ndi-Mp-WTest22]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest22
+
+[Ndi-Mp-WTest23]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest23
+
+[Ndi-Mp-WTest24]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest24
+
+[Ndi-Mp-WTest25]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest25
+
+[Ndi-Mp-WTest26]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest26
+
+[Ndi-Mp-WTest27]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest27
+
+[Ndi-Mp-WTest28]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest28
+
+[Ndi-Mp-WTest29]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest29
+
+[Ndi-Mp-WTest30]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest30
+
+[Ndi-Mp-WTest31]
+Characteristics = 0x0001    ; NCF_VIRTUAL | NCF_HIDDEN | NCF_NOT_USER_REMOVABLE
+AddReg          = Ndi-Reg-Mp-WTest31
+
+[Ndi-Mp-WTest0.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest1.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest2.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest3.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest4.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest5.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest6.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest7.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest8.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest9.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest10.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest11.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest12.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest13.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest14.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest15.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest16.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest17.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest18.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest19.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest20.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest21.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest22.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest23.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest24.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest25.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest26.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest27.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest28.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest29.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest30.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+[Ndi-Mp-WTest31.Hw]
+AddReg = Reg-LowerFilter-NdisTapi
+
+;-------------------------------------------------------------------------
+; NDI AddReg sections.
+;-------------------------------------------------------------------------
+[Ndi-Reg-Mp-WTest0]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan0"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest1]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan1"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest2]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan2"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest3]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan3"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest4]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan4"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest5]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan5"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest6]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan6"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest7]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan7"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest8]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan8"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest9]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan9"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest10]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan10"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest11]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan11"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest12]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan12"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest13]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan13"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest14]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan14"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest15]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan15"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest16]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan16"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest17]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan17"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest18]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan18"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest19]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan19"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest20]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan20"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest21]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan21"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest22]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan22"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest23]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan23"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest24]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan24"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest25]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan25"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest26]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan26"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest27]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan27"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest28]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan28"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest29]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan29"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest30]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan30"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+[Ndi-Reg-Mp-WTest31]
+HKR, Ndi,            BindForm,          0,          "NDISTestVirtualWan31"
+HKR, Ndi,            Service,           0,          "NdisWan"
+HKR, Ndi\Interfaces, UpperRange,        0,          "noupper"
+HKR, Ndi\Interfaces, LowerRange,        0,          "wan"
+
+;-------------------------------------------------------------------------
+; Lower filter sections
+;-------------------------------------------------------------------------
+[Reg-LowerFilter-NdisTapi]
+HKR, ,               LowerFilters,      0x00010000, "NdisTapi"
+
+;-------------------------------------------------------------------------
+; [Services] sections.
+;   1 = SPSVCINST_TAGTOFRONT
+;   2 = SPSVCINST_ASSOCSERVICE
+;   4 = SPSVCINST_DELETEEVENTLOGENTRY
+;-------------------------------------------------------------------------
+[Ndi-Mp-WTest0.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest1.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest2.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest3.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest4.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest5.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest6.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest7.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest8.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest9.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest10.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest11.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest12.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest13.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest14.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest15.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest16.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest17.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest18.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest19.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest20.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest21.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest22.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest23.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest24.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest25.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest26.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest27.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest28.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest29.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest30.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Ndi-Mp-WTest31.Services]
+AddService = NdisWan,       2, Svc-Mp-NdisWan,   Evt-Rasmsg
+AddService = NdisTapi,      0, Svc-NdisTapi
+
+[Svc-NdisTapi]
+DisplayName     = %Svc-NdisTapi-DispName%
+ServiceType     = 1 ;SERVICE_KERNEL_DRIVER
+StartType       = 3 ;SERVICE_DEMAND_START
+ErrorControl    = 1 ;SERVICE_ERROR_NORMAL
+ServiceBinary   = %12%\ndistapi.sys
+AddReg          = Reg-NdisTapi, Reg-TextModeFlags
+
+[Reg-NdisTapi]
+HKR, Parameters, AsyncEventQueueSize, 0x00010003, 0x300
+
+[Svc-Mp-NdisWan]
+DisplayName     = %Svc-NdisWan-DispName%
+ServiceType     = 1 ;SERVICE_KERNEL_DRIVER
+StartType       = 3 ;SERVICE_DEMAND_START
+ErrorControl    = 1 ;SERVICE_ERROR_NORMAL
+ServiceBinary   = %12%\ndiswan.sys
+;Dependencies    = NdisTapi
+AddReg          = Reg-NdisWan, Reg-TextModeFlags
+
+[Reg-NdisWan]
+HKR, Parameters,, 0x10  ;FLG_ADDREG_KEYONLY
+
+[Reg-TextModeFlags]
+HKR, , TextModeFlags, 0x00010001, 0x0001
+
+
+;-------------------------------------------------------------------------
+; [Event Log] sections.
+;-------------------------------------------------------------------------
+[Evt-Rasmsg]
+AddReg = Evt-Rasmsg-AddReg
+
+[Evt-Rasmsg-AddReg]
+HKR,, EventMessageFile, 0x00020000, "%%SystemRoot%%\System32\mprmsg.dll"
+HKR,, TypesSupported,   0x00010001, 0x0000001f
+
+
+[Strings]
+Msft = "Microsoft"
+
+Svc-NdisTapi-DispName    = "Remote Access NDIS TAPI Driver"
+Svc-NdisWan-DispName     = "Remote Access NDIS WAN Driver"
+
+

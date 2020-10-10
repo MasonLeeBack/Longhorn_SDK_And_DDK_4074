@@ -1,0 +1,555 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, FDDI
+</MEDIA>
+<WHQL>
+802_3, FDDI
+</WHQL>
+<CARDMACH>
+1C,1M
+</CARDMACH>
+<RUNORDER>
+1310
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[This script tests the ability of ethernet and FDDI drivers to set
+up multiple multicast addresses. It does not test to see that the 
+card is actually able to receive on all these different addresses 
+(that comes later). It just verifies that multicast addresses can 
+be set (and deleted), and that a query will return the correct list. 
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="1c_SetMulticast" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      
+      <!-- Begin Wireless Specific Includes -->
+      <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	   <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	   <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	   <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	   <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+      <!-- End Wireless Specific Includes -->
+      
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/> 
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script language="VBScript" src="..\inc\ConstLAN.vbs"/>
+      <script id="1c_SetMulticast" language="VBScript">
+'==========================================================================
+' Script Name:    1c_SetMulticast
+'==========================================================================
+Option Explicit 
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0)) 
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard
+   Private oOpenOne, oOpenTwo     ' Two open instances of the test card
+   Private m_lTestAdapterIndex
+   Private m_ulSizeOid, m_ulListOid
+   
+   Private Sub Class_Initialize
+      
+   End Sub
+   
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+      Set oOpenOne  = Nothing
+      Set oOpenTwo  = Nothing
+   End Sub
+   
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      Dim nMedium
+      SetupTest = FALSE
+      
+      Set pAdapterList = oNDInfo.AdapterList
+      
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oOpenOne = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oOpenOne is Nothing) Then
+         Exit Function
+      End If
+      
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")           
+         If(vbAssociateWep(oOpenOne, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If	
+                   
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+      
+      Set oOpenTwo = oTestCard.vbOpenAdapter
+      If (oOpenTwo is Nothing) Then
+         Exit Function
+      End If
+      
+      Set pAdapterList = Nothing
+      
+      nMedium = oTestCard.NdisMedium
+      
+      If (nMedium = NDISMEDIUM802_3) Then
+         m_ulSizeOid = OID_802_3_MAXIMUM_LIST_SIZE
+         m_ulListOid = OID_802_3_MULTICAST_LIST
+      ElseIf (nMedium = NDISMEDIUMFDDI) Then
+         m_ulSizeOid = OID_FDDI_LONG_MAX_LIST_SIZE
+         m_ulListOid = OID_FDDI_LONG_MULTICAST_LIST
+      Else
+         Call oLog.Failed ("Card not FDDI or Ethernet" , 21234)
+         Exit Function
+      End If
+      
+      oLog.Variation("GetPacketFilters")
+      Dim AvailFilters
+      AvailFilters = oOpenOne.vbGetFilters()
+      If ((AvailFilters And MULTICAST) = 0) Then
+         Call oLog.Failed ("Multicasting is not supported by this driver" , 21239)
+         Exit Function
+      End If
+      
+      SetupTest = TRUE
+   End Function
+   
+   Public Function RunTest (lTestAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+      
+      ExecuteTestCore
+      
+      oLog.Variation("Clear Events")
+      Call oOpenOne.vbClearEvents()
+      Call oOpenTwo.vbClearEvents()
+      
+   End Function
+   
+   Private Function ExecuteTestCore
+      Dim bResult, nCount
+      Dim nMaxListSize
+      Dim nMaxListOne, nMaxListTwo, nMaxList
+      
+      Dim BytesWritten, BytesNeeded, ErrorStatus
+      Dim AddrListLen, AddrList()
+      Dim lListLength
+      
+      Dim NewAddr, NewAddr1, NewAddr2
+      
+      Dim HiByte, LowByte
+      
+      oLog.Variation("GetMaxListSize")
+      nMaxListSize = 256
+      
+      ' Get the maximum number of multicast addresses possible
+      nMaxList = CLng(0)
+      BytesWritten = CLng(0)
+      BytesNeeded = CLng(0)
+      bResult = oOpenOne.vbNdisRequest( _
+            m_ulSizeOid, _
+            nMaxList, _
+            4, _
+            REQUEST_QUERY_INFO, _
+            BytesWritten, _
+            BytesNeeded, _
+            ErrorStatus, _
+            FALSE)
+      
+      If(Not bResult Or ErrorStatus <> 0) Then
+         Call oLog.Failed ("Unable to get max multicast list size" , 21240)
+         Exit Function
+      End If
+      
+      If (nMaxList = 0) Then
+         Call oLog.Failed ("List size may not be equal to zero" , 21241)
+         Exit Function
+      End If
+      
+      AddrListLen = nMaxListSize * 6
+      If (nMaxList < 32) Then     ' requirement for PC99
+         Call oLog.Failed ("Driver must support at least 32 multicast addresses" , 21242)
+      End If
+      
+      bResult = oTestCard.vbNdisIOControl(m_ulListOid, AddrList, BytesWritten, ErrorStatus, QUERY_GLOBAL_STATS)
+      
+      ' The length of an array that holds, say 6 elements is allocated as 5 but uses 
+      ' an extra 0th element, so to get the actual length, add 1 to the length returned.
+      
+      If (bResult) Then
+         lListLength = UBound(AddrList) + 1
+         If ((lListLength \ 6) <> 0) Then
+            oLog.Write("INFO: Multicast addresses in use by other active bindings." )
+            oLog.Write("      Ndis Tester will adjust list size accordingly." )
+            nMaxList = nMaxList - (lListLength \ 6)
+         End If
+      End If
+      
+      If (nMaxList > nMaxListSize) Then
+         oLog.Write("List size greater than " & nMaxListSize & ". ")
+         oLog.Write(nMaxListSize & " will be tested" )
+         nMaxList = nMaxListSize   
+      End If
+      
+      ReDim AddrList(AddrListLen)
+      
+      '---------------------------------------------------
+      ' single-open tests
+      ' variation:   add\delete a multicast address multiple times (25)
+      '---------------------------------------------------
+      NewAddr = NetAddr(&H01&, &H02&, &H03&, &H04&, &H05&, &H06&)
+      
+      oLog.Variation("Add/Delete a multicast address multiple times")
+      
+      AddrList(0) = CByte(AddrList(0))
+      
+      lListLength = AddrListLen
+      bResult = oOpenOne.vbFastNdisRequest(m_ulListOid, AddrList, lListLength)
+      If (Not bResult) Then
+         Call oLog.Failed ("Query for multicast list failed" , 21243)
+      ElseIf ((lListLength\6) <> 0) Then
+         Call oLog.Failed ("Multicast list should be empty" , 21244)
+      End If
+      
+      For nCount = 0 to 24
+         oLog.Variation("Add/Query Multicast")
+         bResult = oOpenOne.vbAddMulticastAddr(NewAddr)
+         
+         lListLength = AddrListLen
+         bResult = oOpenOne.vbFastNdisRequest(m_ulListOid, AddrList, lListLength)
+         If (Not bResult) Then
+            Call oLog.Failed ("Query for multicast list failed" , 21246)
+         ElseIf ((lListLength\6) <> 1 ) Then
+            Call oLog.Failed ("Multicast list should only have 1 entry" , 21247)
+         ElseIf (Not NetAddrCmpI(AddrList, NewAddr, 0)) Then
+            Call oLog.Failed ("Incorrect multicast address returned" , 21248)
+         End If
+         
+         oLog.Variation("Delete/Query Multicast")
+         bResult = oOpenOne.vbRemoveMulticastAddr(NewAddr)
+         
+         lListLength = AddrListLen
+         bResult = oOpenOne.vbFastNdisRequest(m_ulListOid, AddrList, lListLength)
+         If (Not bResult) Then
+            Call oLog.Failed ("Query for multicast list failed" , 21250)
+         ElseIf ((lListLength\6) <> 0 ) Then
+            Call oLog.Failed ("Multicast list should be empty" , 21251)
+         End If
+         
+      Next
+      
+      '----------------------------------------------------
+      ' variation:   try to add as many different multicast addresses as the
+      '              driver says it supports -- then try to delete them again..
+      '--------------------------------------------------------
+      ' NOTE:  need to add check for multicast addresses--make sure they are correct
+      '----------------------------------------------------
+      nMaxListTwo = nMaxList\2      ' for later tests...
+      nMaxListOne = nMaxList - nMaxListTwo
+      
+      If (nMaxList > 256) Then
+         nMaxList = 256
+      End If
+      
+      lListLength = AddrListLen
+      bResult = oOpenOne.vbFastNdisRequest(m_ulListOid, AddrList, lListLength)
+      
+      oLog.Variation("Add as many multicast addresses as driver says it supports")
+      
+      nCount = CLng(0)
+      Do While (nCount < nMaxList)
+         
+         HiByte = nCount \ 256
+         LowByte = nCount Mod 256
+         
+         NewAddr = NetAddr(&H01&, &H02&, &H03&, &H04&, HiByte, LowByte)
+         oLog.Variation("Add/Query Multicast " & nCount)
+         bResult = oOpenOne.vbAddMulticastAddr(NewAddr)
+         
+         lListLength = AddrListLen
+         bResult = oOpenOne.vbFastNdisRequest(m_ulListOid, AddrList, lListLength)
+         If (Not bResult) Then
+            Call oLog.Failed ("Query for multicast list failed" , 21253)
+         ElseIf ((lListLength\6) <> (nCount + 1) ) Then
+            Call oLog.Failed ("Multicast list should have " & (nCount+1) &" entries" , 21254)
+         End If
+         
+         nCount = nCount + 1
+      Loop      
+      
+      oLog.Variation("Delete all these added multicast addresses")
+      nCount = 0
+      Do While (nCount < nMaxList)
+         
+         oLog.Variation("Delete/Query Multicast")
+         HiByte = nCount \ 256
+         LowByte = nCount Mod 256
+         
+         NewAddr = NetAddr(&H01&, &H02&, &H03&, &H04&, HiByte, LowByte)
+         
+         bResult = oOpenOne.vbRemoveMulticastAddr(NewAddr)
+         
+         lListLength = AddrListLen
+         bResult = oOpenOne.vbFastNdisRequest(m_ulListOid, AddrList, lListLength)
+         If (Not bResult) Then
+            Call oLog.Failed ("Query for multicast list failed" , 21256)
+         ElseIf ((lListLength\6) <> (nMaxList-(nCount + 1)) ) Then
+            Call oLog.Failed ("Multicast list should have " & (nMaxList-(nCount+1)) &" entries" , 21257)
+         End If
+         nCount = nCount + 1         
+      Loop
+      
+      
+      '---------------------------------------------------------
+      ' multiple-open tests
+      ' variation:   add/delete a multicast address multiple times (25)
+      '---------------------------------------------------------
+      NewAddr1 = NetAddr(&H01&, &H02&, &H03&, &H04&, &H05&, &H06&)
+      NewAddr2 = NetAddr(&H11&, &H02&, &H03&, &H04&, &H05&, &H06&)
+      oLog.Variation("Check Multicast List")
+      
+      lListLength = AddrListLen
+      bResult = oOpenOne.vbFastNdisRequest(m_ulListOid, AddrList, lListLength)
+      If (Not bResult) Then
+         Call oLog.Failed ("Query for open 1 multicast list failed" , 21258)
+      ElseIf ((lListLength\6) <> 0 ) Then
+         Call oLog.Failed ("Open 1 multicast list should be empty" , 21259)
+      End If
+      
+      lListLength = AddrListLen
+      bResult = oOpenTwo.vbFastNdisRequest(m_ulListOid, AddrList, lListLength)
+      If (Not bResult) Then
+         Call oLog.Failed ("Query for open 2 multicast list failed" , 21260)
+      ElseIf ((lListLength\6) <> 0 ) Then
+         Call oLog.Failed ("Open 2 multicast list should be empty" , 21261)
+      End If
+      
+      oLog.Variation("Repeatedly add/delete a multicast address on each instance")
+      
+      For nCount = 0 To 24
+         
+         oLog.Variation("Add Multicast")
+         bResult = oOpenOne.vbAddMulticastAddr(NewAddr1)
+         bResult = oOpenTwo.vbAddMulticastAddr(NewAddr2)
+         
+         oLog.Variation("Check Multicast List")
+         
+         lListLength = AddrListLen
+         bResult = oOpenOne.vbFastNdisRequest(m_ulListOid, AddrList, lListLength)
+         If (Not bResult) Then
+            Call oLog.Failed ("Query for open 1 multicast list failed" , 21264)
+         ElseIf ((lListLength\6) <> 1 ) Then
+            Call oLog.Failed ("Open 1 multicast list should have 1 entry" , 21265)
+         ElseIf (Not NetAddrCmpI(AddrList, NewAddr1, 0)) Then
+            Call oLog.Failed ("Incorrect multicast address returned" , 21266)
+         End If
+         
+         lListLength = AddrListLen
+         bResult = oOpenTwo.vbFastNdisRequest(m_ulListOid, AddrList, lListLength)
+         If (Not bResult) Then
+            Call oLog.Failed ("Query for open 2 multicast list failed" , 21267)
+         ElseIf ((lListLength\6) <> 1 ) Then
+            Call oLog.Failed ("Open 2 multicast list should have 1 entry" , 21268)
+         ElseIf (Not NetAddrCmpI(AddrList, NewAddr2, 0))Then
+            Call oLog.Failed ("Incorrect multicast address returned" , 21269)
+         End If
+         
+         oLog.Variation("Delete Multicast")
+         If ((nCount And &H01&) = &H01&) Then
+            bResult = oOpenOne.vbRemoveMulticastAddr(NewAddr1)
+         Else
+            bResult = oOpenTwo.vbRemoveMulticastAddr(NewAddr2)
+         End If
+         
+         If ((nCount And &H01&) = &H01&) Then
+            bResult = oOpenTwo.vbRemoveMulticastAddr(NewAddr2)
+         Else
+            bResult = oOpenOne.vbRemoveMulticastAddr(NewAddr1)
+         End If
+         
+         oLog.Variation("Check Multicast List")
+         
+         lListLength = AddrListLen
+         bResult = oOpenOne.vbFastNdisRequest(m_ulListOid, AddrList, lListLength)
+         If (Not bResult) Then
+            Call oLog.Failed ("Query for open 1 multicast list failed" , 21272)
+         ElseIf ((lListLength\6) <> 0 ) Then
+            Call oLog.Failed ("Open 1 multicast list should be empty" , 21273)
+         End If
+         
+         lListLength = AddrListLen
+         bResult = oOpenTwo.vbFastNdisRequest(m_ulListOid, AddrList, lListLength)
+         If (Not bResult) Then
+            Call oLog.Failed ("Query for open 2 multicast list failed" , 21274)
+         ElseIf ((lListLength\6) <> 0 ) Then
+            Call oLog.Failed ("Open 2 multicast list should be empty" , 21275)
+         End If
+         
+      Next      
+      
+      '----------------------------------------------------
+      ' variation:   try to add as many different multicast addresses as the
+      '              driver says it supports - then try to delete them again
+      '----------------------------------------------------
+      ' NOTE: need to add check that correct multicast addresses are returned
+      
+      oLog.Variation("Add half of the maximum list size multicast address to each open instance")
+      
+      nCount = CLng(0)
+      Do While (nCount<nMaxListOne)
+         
+         oLog.Variation("Add Multicast")
+         HiByte = nCount \ 256
+         LowByte = nCount Mod 256
+         
+         NewAddr1 = NetAddr(&H01&, &H02&, &H03&, &H04&, HiByte, LowByte)
+         NewAddr2 = NetAddr(&H11&, &H02&, &H03&, &H04&, HiByte, LowByte)
+         
+         If ((nCount And &H01&) = &H01&) Then
+            bResult = oOpenOne.vbAddMulticastAddr(NewAddr1)
+         Else
+            If (nCount < nMaxListTwo) Then
+               bResult = oOpenTwo.vbAddMulticastAddr(NewAddr2)
+            End If
+         End If
+         
+         If ((nCount And &H01&) = &H01&) Then
+            If (nCount < nMaxListTwo) Then
+               bResult = oOpenTwo.vbAddMulticastAddr(NewAddr2)
+            End If
+         Else
+            bResult = oOpenOne.vbAddMulticastAddr(NewAddr1)
+         End If
+         
+         oLog.Variation("Check Multicast List")
+         
+         lListLength = AddrListLen
+         bResult = oOpenOne.vbFastNdisRequest(m_ulListOid, AddrList, lListLength)
+         If (Not bResult) Then
+            Call oLog.Failed ("Query for open 1 multicast list failed" , 21278)
+         ElseIf ((lListLength\6) <> (nCount+1) ) Then
+            Call oLog.Failed ("Open 1 multicast list should have " & (nCount+1) &" entries" , 21279)
+         End If
+         
+         lListLength = AddrListLen
+         bResult = oOpenTwo.vbFastNdisRequest(m_ulListOid, AddrList, lListLength)
+         If (Not bResult) Then
+            Call oLog.Failed ("Query for open 2 multicast list failed" , 21280)
+         Else
+            If (nCount < nMaxListTwo) Then
+               If ((lListLength\6) <> (nCount+1)) Then
+                  Call oLog.Failed ("Open 2 multicast list should have " & (nCount+1) & " entries" , 21281)
+               End If
+            ElseIf ((lListLength\6) <> nMaxListTwo) Then
+               Call oLog.Failed ("Open 2 multicast list should have " & nMaxListTwo & " entries" , 21282)
+            End If
+         End If
+         
+         nCount = nCount + 1
+      Loop      
+      
+      oLog.Write("Delete all these addresses" )
+      nCount = 0
+      Do While (nCount<nMaxListOne)
+         
+         oLog.Variation("Delete Multicast")
+         HiByte = nCount \ 256
+         LowByte = nCount Mod 256
+         
+         NewAddr1 = NetAddr(&H01&, &H02&, &H03&, &H04&, HiByte, LowByte)
+         NewAddr2 = NetAddr(&H11&, &H02&, &H03&, &H04&, HiByte, LowByte)
+         
+         If ((nCount And &H01&) = &H01&) Then
+            If (nCount < nMaxListTwo) Then
+               bResult = oOpenTwo.vbRemoveMulticastAddr(NewAddr2)
+            End If
+         Else
+            bResult = oOpenOne.vbRemoveMulticastAddr(NewAddr1)
+         End If
+         
+         If ((nCount And &H01&) = &H01&) Then
+            bResult = oOpenOne.vbRemoveMulticastAddr(NewAddr1)
+         Else
+            If (nCount < nMaxListTwo) Then
+               bResult = oOpenTwo.vbRemoveMulticastAddr(NewAddr2)
+            End If
+         End If
+         
+         oLog.Variation("Check Multicast List")
+         lListLength = AddrListLen
+         bResult = oOpenOne.vbFastNdisRequest(m_ulListOid, AddrList, lListLength)
+         If (Not bResult) Then
+            Call oLog.Failed ("Query for open 1 multicast list failed" , 21285)
+         ElseIf ((lListLength\6) <> (nMaxListOne-(nCount+1)) ) Then
+            Call oLog.Failed ("Open 1 multicast list should have " & (nMaxListOne-(nCount+1)) &" entries" , 21286)
+         End If
+         
+         lListLength = AddrListLen
+         bResult = oOpenTwo.vbFastNdisRequest(m_ulListOid, AddrList, lListLength)
+         If (Not bResult) Then
+            Call oLog.Failed ("Query for open 2 multicast list failed" , 21287)
+         Else
+            If (nCount < nMaxListTwo) Then
+               If ((lListLength\6) <> (nMaxListTwo-(nCount+1))) Then
+                  Call oLog.Failed ("Open 2 multicast list should have " & (nMaxListTwo-(nCount+1)) & " entries" , 21288)
+               End If
+            ElseIf ((lListLength\6) <> 0) Then
+               Call oLog.Failed ("Open 2 multicast list should have O entries" , 21289)
+            End If
+         End If
+         nCount = nCount + 1
+      Loop      
+   End Function
+   
+End Class
+
+</script>
+</job>
+</package>
+
+
+
+
+<!--- CRC = 0xfc4050c0 --->

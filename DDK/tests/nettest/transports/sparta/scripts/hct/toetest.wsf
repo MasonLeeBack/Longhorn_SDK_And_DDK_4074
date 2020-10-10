@@ -1,0 +1,438 @@
+'*************************************************************************
+'*                                                                       *
+'* File          : TestConnection.wsf                                    *
+'* Author        : Kamil Ustuntas                                        *
+'* Created         2/28/2003   kamilu                                    *
+'* A script to test Sparta back channel communication                    *
+'*                                                                       *
+'*************************************************************************
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\common\Common.Lib"/>
+      <script id="TOETests" language="VBScript">
+
+
+option explicit
+
+dim Core, Sparta, Autosrv, pController, MediaType, IFace, ExceptionStatus, WshShell, NetmonParam, PopupParam, NetUse, HCTLogDir
+
+'
+' Start the script
+'
+StartScriptTest "TOETests", g_szLogDirectory, "A script to test TCPIP Offload Engine NIC Logo Requirements"
+
+sub Main (success)
+
+    dim MsgResponse
+
+    StartTest "testing TCPIP Offload Engine NIC Logo Requirements"
+
+    if not success then
+
+        if PopupParam then
+            MsgResponse = MsgBox ("Have you configured the machines?", vbYesNo)
+
+            if MsgResponse = vbNo then
+                Sev1 "Exiting tests due to configuration not done"
+                exit sub
+            end if
+            
+            MsgResponse = MsgBox ("Have you started Backchannel service on the server machine?", vbYesNo)
+
+            if MsgResponse = vbNo then
+                Sev1 "Exiting tests due to backchannel service not started"
+                exit sub
+            end if
+        end if
+
+        Sev1 "Back Channel Check failed"
+        exit sub
+
+    end if
+
+    if not g_fTOENic then
+        Shout "Nic does not support TCP/IP Offload Engine"
+    end if
+
+    set WshShell = WScript.CreateObject("WScript.Shell")
+    if WshShell is Nothing then 
+        Sev1 "Cannot create Shell object to run the scripts"
+        Exit sub
+    end if
+
+    if NetUseRemoteMachine then 
+        Shout "Access to SUT has been granted"
+    else
+        Sev1 "Access to SUT has been denied. Please check the user/password and access privileges."
+    end if
+
+    '
+    ' v4 scripts
+    '
+    if g_fTOESupportIPv4 then
+        ExecuteScript "..\attacks\TCPHalfClose.wsf -offload -autosrv" & NetmonParam, "TCPHalfClose.log"
+        ExecuteScript "..\attacks\TCPReassembly.wsf -offload -autosrv" & NetmonParam, "TCPReassembly.log"
+        ExecuteScript "..\attacks\TCPWinnuke.wsf -offload -autosrv" & NetmonParam, "TCPWinnuke.log"
+        ExecuteScript "..\Security\IP_TTL_SockOpt.wsf -offload" & NetmonParam, "IP_TTL_SockOpt.log"
+        ExecuteScript "..\Security\RouteAndAddressChange.wsf -offload" & NetmonParam, "RouteAndAddressChange.log"
+        ExecuteScript "..\Security\TCP_Options.wsf -offload" & NetmonParam, "TCP_Options.log"
+        ExecuteScript "..\Security\TCP_PendingRecvsOnClose.wsf -offload" & NetmonParam, "TCP_PendingRecvsOnClose.log"
+        ExecuteScript "..\Security\TCP_StateChanges_FinWait2.wsf -offload" & NetmonParam, "TCP_StateChanges_FinWait2.log"
+        ExecuteScript "..\Security\TCP_TcpAckFrequency.wsf -offload" & NetmonParam, "TCP_TcpAckFrequency.log"
+        ExecuteScript "..\Security\TCP_BadHeaderAfterConnection.wsf -offload" & NetmonParam, "TCP_BadHeaderAfterConnection.log"
+        ExecuteScript "..\TCP\DelayedAck\TCP_DelayedAck_AckTimeout.wsf -offload" & NetmonParam, "TCP_DelayedAck_AckTimeout.log"
+        ExecuteScript "..\TCP\DelayedAck\TCP_DelayedAck_Rexmit.wsf -offload" & NetmonParam, "TCP_DelayedAck_Rexmit.log"
+        ExecuteScript "..\TCP\DelayedAck\TCP_DelayedAck_WindowUpdate.wsf -offload" & NetmonParam, "TCP_DelayedAck_WindowUpdate.log"
+        ExecuteScript "..\TCP\FlowControl\TCP_FlowControl_SS_FR_CA.wsf -offload" & NetmonParam, "TCP_FlowControl_SS_FR_CA.log"
+        ExecuteScript "..\TCP\FlowControl\TCP_FlowControl_SS_FR_DupAck_CA.wsf -offload" & NetmonParam, "TCP_FlowControl_SS_FR_DupAck_CA.log"
+        ExecuteScript "..\TCP\FlowControl\TCP_FlowControl_SS_FR_FR_CA.wsf -offload" & NetmonParam, "TCP_FlowControl_SS_FR_FR_CA.log"
+        ExecuteScript "..\TCP\FlowControl\TCP_FlowControl_SS_TO_SS_CA.wsf -offload" & NetmonParam, "TCP_FlowControl_SS_TO_SS_CA.log"
+        ExecuteScript "..\TCP\TCP_OutOfOrder.wsf -offload" & NetmonParam, "TCP_OutOfOrder.log"
+        ExecuteScript "..\TCP\StateChanges\TCP_StateConformance.wsf -offload" & NetmonParam, "TCP_StateConformance.log"
+        ExecuteScript "..\TCP\StateChanges\TCP_StateNonConformance_CLOSE_WAIT.wsf -offload" & NetmonParam, "TCP_StateNonConformance_CLOSE_WAIT.log"
+        ExecuteScript "..\TCP\StateChanges\TCP_StateNonConformance_CLOSING.wsf -offload" & NetmonParam, "TCP_StateNonConformance_CLOSING.log"
+        ExecuteScript "..\TCP\StateChanges\TCP_StateNonConformance_FIN_WAIT1.wsf -offload" & NetmonParam, "TCP_StateNonConformance_FIN_WAIT1.log"
+        ExecuteScript "..\TCP\StateChanges\TCP_StateNonConformance_FIN_WAIT2.wsf -offload" & NetmonParam, "TCP_StateNonConformance_FIN_WAIT2.log"
+        ExecuteScript "..\TCP\StateChanges\TCP_StateNonConformance_LAST_ACK.wsf -offload" & NetmonParam, "TCP_StateNonConformance_LAST_ACK.log"
+        ExecuteScript "..\TCP\TCP_DelAckTicks.wsf -offload" & NetmonParam, "TCP_DelAckTicks.log"
+        ExecuteScript "..\TCP\TCP_Nagle.wsf -offload" & NetmonParam, "TCP_Nagle.log"
+        ExecuteScript "..\TCP\TCP_RetransmitTimeout.wsf -offload" & NetmonParam, "TCP_RetransmitTimeout.log"
+        ExecuteScript "..\TCP\tcp_rttmeasurement.wsf -offload" & NetmonParam, "tcp_rttmeasurement.log"
+        ExecuteScript "..\TCP\TCP_SeqNumberWrapping.wsf -offload" & NetmonParam, "TCP_SeqNumberWrapping.log"
+        ExecuteScript "..\TCP\TimeStamp\TCP_TS_Wrapping.wsf -offload" & NetmonParam, "TCP_TS_Wrapping.log"
+        ExecuteScript "..\TCP\ZeroWindow\TCP_ZeroWindow_ActiveProbe.wsf -offload" & NetmonParam, "TCP_ZeroWindow_ActiveProbe.log"
+        ExecuteScript "..\TCP\ZeroWindow\TCP_ZeroWindow_ConnectEx.wsf -offload" & NetmonParam, "TCP_ZeroWindow_ConnectEx.log"
+        ExecuteScript "..\TCP\ZeroWindow\TCP_ZeroWindow_FINProbe.wsf -offload" & NetmonParam, "TCP_ZeroWindow_FINProbe.log"
+        ExecuteScript "..\TCP\ZeroWindow\TCP_ZeroWindow_NoData.wsf -offload" & NetmonParam, "TCP_ZeroWindow_NoData.log"
+        ExecuteScript "..\TCP\ZeroWindow\TCP_ZeroWindow_PassiveProbe.wsf -offload" & NetmonParam, "TCP_ZeroWindow_PassiveProbe.log"
+        ExecuteScript "..\TCP\ZeroWindow\TCP_ZeroWindow_ProbeInterval.wsf -offload" & NetmonParam, "TCP_ZeroWindow_ProbeInterval.log"
+        ExecuteScript "..\TCP\ZeroWindow\TCP_ZeroWindow_ProbeRetry.wsf -offload" & NetmonParam, "TCP_ZeroWindow_ProbeRetry.log"
+        ExecuteScript "..\TCP\ZeroWindow\TCP_ZeroWindow_UnsentData.wsf -offload" & NetmonParam, "TCP_ZeroWindow_UnsentData.log"
+    end if
+
+    '
+    ' v6 scripts
+    '
+    if g_fTOESupportIPv6 then
+        ExecuteScript "..\TCPv6\StateChanges\TCPv6_StateConformance.wsf -offload" & NetmonParam, "TCPv6_StateConformance.log"
+        ExecuteScript "..\TCPv6\StateChanges\TCPv6_StateNonConformance_CLOSE_WAIT.wsf -offload" & NetmonParam, "TCPv6_StateNonConformance_CLOSE_WAIT.log"
+        ExecuteScript "..\TCPv6\StateChanges\TCPv6_StateNonConformance_CLOSING.wsf -offload" & NetmonParam, "TCPv6_StateNonConformance_CLOSING.log"
+        ExecuteScript "..\TCPv6\StateChanges\TCPv6_StateNonConformance_FIN_WAIT1.wsf -offload" & NetmonParam, "TCPv6_StateNonConformance_FIN_WAIT1.log"
+        ExecuteScript "..\TCPv6\StateChanges\TCPv6_StateNonConformance_FIN_WAIT2.wsf -offload" & NetmonParam, "TCPv6_StateNonConformance_FIN_WAIT2.log"
+        ExecuteScript "..\TCPv6\StateChanges\TCPv6_StateNonConformance_LAST_ACK.wsf -offload" & NetmonParam, "TCPv6_StateNonConformance_LAST_ACK.log"
+        ExecuteScript "..\TCPv6\TCPv6_DelAckTicks.wsf -offload" & NetmonParam, "TCPv6_DelAckTicks.log"
+        ExecuteScript "..\TCPv6\TCPv6_DelayedAck.wsf -offload" & NetmonParam, "TCPv6_DelayedAck.log"
+        ExecuteScript "..\TCPv6\TCPv6_FlowControl.wsf -offload" & NetmonParam, "TCPv6_FlowControl.log"
+        ExecuteScript "..\TCPv6\TCPv6_Nagle.wsf -offload" & NetmonParam, "TCPv6_Nagle.log"
+        ExecuteScript "..\TCPv6\TCPv6_RetransmitTimeout.wsf -offload" & NetmonParam, "TCPv6_RetransmitTimeout.log"
+        ExecuteScript "..\TCPv6\TCPv6_RTTMeasurement.wsf -offload" & NetmonParam, "TCPv6_RTTMeasurement.log"
+        ExecuteScript "..\TCPv6\TCPv6_SeqNumberWrapping.wsf -offload" & NetmonParam, "TCPv6_SeqNumberWrapping.log"
+        ExecuteScript "..\TCPv6\TCPv6_ZeroWindow.wsf -offload" & NetmonParam, "TCPv6_ZeroWindow.log"
+        ExecuteScript "..\icmpv6\PMTU\ICMPv6_PMTU_ExistTCPSessions.wsf -offload" & NetmonParam, "ICMPv6_PMTU_ExistTCPSessions.log"
+    end if
+
+    if PopupParam then
+        MsgBox "Please do not forget to stop the backchannel service on the server machine"
+    end if 
+
+    EndTest
+
+    StartVariation
+    
+    if CopyLogFile ("TOETests.log") then
+        Shout "Log file TOETests.log has been copied to SUT"
+    else
+        Sev2 "Failed to copy log file TOETests.log to SUT"
+    end if
+
+    set WshShell = nothing
+
+    Core.Sleep(2500)
+
+end sub
+
+function CreateLogDir()
+    dim ulStatus
+
+    ulStatus = pController.System("md " & HCTLogDir)
+    if ulStatus <> 0 then
+        Sev2 "Failed to create the logs directory"
+    end if
+end function
+
+function NetUseRemoteMachine()
+    dim oExec, drive, pos, command
+    NetUseRemoteMachine = false
+
+    if IsEmpty(HCTLogDir) then
+        pos = InStr(g_szLogDirectory, ":")
+        drive = Mid(g_szLogDirectory, pos-1, 1)
+    else
+        pos = InStr(HCTLogDir, ":")
+        drive = Mid(HCTLogDir, pos-1, 1)
+    end if
+    command = "net use \\" & g_szRemoteNBName & "\" & drive & "$ /u:" & g_szRemoteNBName & "\" & g_szAdminUsername & " " & g_szAdminPassword
+    Shout "Executing " & command
+    Set oExec = WshShell.Exec (command)
+    if oExec is nothing then
+        Sev1 "Could not execute!..."
+        exit function
+    end if
+    Do While oExec.Status = 0
+        WScript.Sleep 3000
+    Loop
+    Shout "Executed. Exit code is " & oExec.ExitCode
+    if not oExec.StdOut.AtEndOfStream then
+        Shout "NetUseRemoteMachine : " & oExec.StdOut.ReadAll
+        NetUseRemoteMachine = true
+    elseif not oExec.StdErr.AtEndOfStream then
+        Sev1 "NetUseRemoteMachine : " & oExec.StdErr.ReadAll
+    end if
+end function
+
+function CopyLogFile(LogFile)
+    dim fso, Source, Destination, Status, LogDir
+    CopyLogFile = false
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    if fso is nothing then 
+        Sev1 "Could not create fso"
+        Exit function
+    end if
+    if IsEmpty(HCTLogDir) then
+        LogDir = Replace(g_szLogDirectory, ":", "$")
+    else
+        LogDir = Replace(HCTLogDir, ":", "$")
+    end if
+    Source = g_szLogDirectory & "\" & LogFile
+    Destination = "\\" & g_szRemoteNBName & "\" & LogDir & "\"
+    Shout Source & " is being copied to " & Destination
+    On Error Resume Next
+    Err.Clear
+    fso.CopyFile Source, Destination
+    Shout "Status of copy file is " & Err.Number
+    if (Err.Number <> 0) then
+        Sev1 "CopyLogFile : " & Err.Description
+    else
+        CopyLogFile = true
+    end if
+    Set fso = nothing
+end function
+
+function ExecuteScript(ScriptName, LogFile)
+    dim oExec, fso, theFile, retstring, testFailed, testComplete
+    
+    StartVariation
+    Shout "---------------------------------------------------------"
+    Shout "Executing script " & ScriptName & " ..."
+    WshShell.Run "cscript.exe .\" & ScriptName, 1, true
+    Shout "Executed."
+    Set fso = CreateObject("Scripting.FileSystemObject")
+    if fso is nothing then 
+        Sev1 "Could not create fso"
+        Exit function
+    end if
+    Shout "Openning log file " & g_szLogDirectory & "\" & LogFile & " ..."
+    Set theFile = fso.OpenTextFile(g_szLogDirectory & "\" & LogFile, 1, False)
+    if theFile is nothing then
+        Sev1 "Could not open the log file"
+        Exit function
+    end if
+    testFailed = false
+    testComplete = false
+    Do While theFile.AtEndOfStream <> True
+        retstring = theFile.ReadLine
+        if InStr(retstring, "+TEST+SEV") > 0 then
+            Shout "   ! " & retstring
+            testFailed = true
+        end if
+        if InStr(retstring, "NTLOG REPORT") > 0 then
+            testComplete = true
+        end if
+    Loop
+    theFile.Close
+    Shout "Closed log file."
+
+    if testFailed then
+        Sev1 ScriptName & " FAILED. See " & g_szLogDirectory & "\" & LogFile & " for details"
+    elseif not testComplete then
+        Sev1 ScriptName & " did NOT complete. See " & g_szLogDirectory & "\" & LogFile & " for details"
+    else
+        Shout ScriptName & " PASSED." 
+    end if
+    Shout ""
+    if CopyLogFile (LogFile) then
+        Shout "Log file " & LogFile & " has been copied to SUT"
+    else
+        Sev2 "Failed to copy log file " & LogFile & " to SUT"
+    end if
+
+end function
+
+sub StartScriptTest (szLogName, szLogDirectory, szDisplayTitle)
+    dim netmon, ulStatus, fStop, CurrentValue
+    dim StartTime, EndTime, success, ValueArray
+
+    PopupParam = false
+    ValueArray = Array(False)
+    ParseArguments Array("-popup"), Array(vbBoolean), ValueArray
+    PopupParam = ValueArray(0)
+
+    success = true
+    set core = CreateObject ("Testcore.base.1")
+    core.SetLogDirectory szLogDirectory
+    core.OpenLog szLogName, TLS_REFRESH
+
+    core.LogLevel = (Core.LogLevel) - TLS_COMMANDS
+    core.Log "***** Date and time of execution:  "  & Now
+
+    set sparta = CreateObject ("Spartacom.base.1")
+    sparta.InitLogging Core
+    sparta.SetExceptionCallback GetRef ("ErrorHandler")
+
+    fStop = false
+    
+    set netmon = CreateObject ("Netmoncom.base.1")
+    set netmon = nothing
+    if (netmon is nothing) then
+        Shout "Failed to create Netmon object"
+    else
+        netmon.InitLogging Core
+
+        ' Specify the capture interface & capture file name
+        '
+        NetmonParam = ""
+        ulStatus = netmon.InitNetmon (g_szLocalMacAddress, szLogDirectory & "\" & szLogName & ".cap")
+        if (ulStatus <> 0) then
+            NetmonParam = " -nocap"
+            Shout "Failed to initialize netmon - " & ulStatus
+            if PopupParam then
+                MsgBox "Netmon is not installed on this machine" & Chr(13) & Chr(10) & _
+                       "This will disable network captures which can be quite useful in debugging failures" & Chr(13) & Chr(10) & _
+                       "But tests will not fail because of this" & Chr(13) & Chr(10) & _
+                       Chr(13) & Chr(10) & _
+                       "It can be installed from " & Chr(13) & Chr(10) & _
+                       "Control Panel -> Add or Remove Programs -> Add New Programs -> Microsoft Network Monitor"
+            end if
+        else
+            '
+            ' Start the capture
+            '
+            fStop = true
+            ulStatus = ulStatus + netmon.SetETypeFilter (&H0800)
+            ulStatus = ulStatus + netmon.SetETypeFilter (&H0806)
+            ulStatus = ulStatus + netmon.SetETypeFilter (&H86DD)
+            ulStatus = ulStatus + netmon.SetSrcMacAddressFilter (g_szLocalMacAddress)
+            ulStatus = ulStatus + netmon.SetDestMacAddressFilter (g_szLocalMacAddress)
+            ulStatus = ulStatus + netmon.SetSrcMacAddressFilter (g_szRemoteMacAddress)
+            ulStatus = ulStatus + netmon.SetDestMacAddressFilter (g_szRemoteMacAddress)
+            if (not IsEmpty (g_szRemoteMacAddress2)) then
+                ulStatus = ulStatus + netmon.SetSrcMacAddressFilter (g_szRemoteMacAddress2)
+                ulStatus = ulStatus + netmon.SetDestMacAddressFilter (g_szRemoteMacAddress2)
+            end if
+            if (ulStatus <> 0) then
+                Shout "Failed to set netmon filters - " & ulStatus
+            end if
+
+            ulStatus = netmon.StartCapture
+            if (ulStatus <> 0) then
+                Shout "Failed to start netmon capture - " & ulStatus
+            end if
+        end if
+    end if
+
+    set IFace = sparta.DriverInterface (g_szLocalMacAddress)
+    if (IFace is nothing) then
+        Shout ("Unable to start driver interface")
+        exit sub
+    end if
+    MediaType=IFace.MediaType
+
+    core.OpenDisplay false
+    core.SetDisplayTitle szDisplayTitle
+
+    set autosrv = CreateObject ("AutoSrvcom.base.1")
+    autosrv.InitLogging Core
+    on error resume next
+    set pController = autosrv.InitController (g_szControllerIp, g_usControllerPort, g_szAutoSrvIp, g_usAutoSrvPort)
+    if pController is Nothing then
+        Success = false
+        if PopupParam then
+            MsgBox "Test mahine can not be contacted at this time. " & Chr(13) & Chr(10) & _
+                   Chr(13) & Chr(10) & _
+                   "Please check " & Chr(13) & Chr(10) & _
+                   " 1. Controller and test machines' network connections. " & Chr(13) & Chr(10) & _
+                   " 2. Make sure Server Backchannel service is running " & Chr(13) & Chr(10) & _
+                   Chr(13) & Chr(10) & _
+                   "if everything is right upto this point then repeat the configuration steps."
+        else
+            Shout "Test mahine can not be contacted at this time. " & Chr(13) & Chr(10) & _
+                   Chr(13) & Chr(10) & _
+                   "Please check " & Chr(13) & Chr(10) & _
+                   " 1. Controller and test machines' network connections. " & Chr(13) & Chr(10) & _
+                   " 2. Make sure Server Backchannel service is running " & Chr(13) & Chr(10) & _
+                   Chr(13) & Chr(10) & _
+                   "if everything is right upto this point then repeat the configuration steps."
+        end if
+    end if
+
+    '
+    ' Get the parameters for offload testing
+    '
+    GetOffloadParameters g_fTOENic, g_fTestOffload
+
+    ulStatus = pController.GetRegistryValue (HKEY_CURRENT_USER, "Software\Microsoft\HCT", "InstallPath", CurrentValue)
+    if ulStatus = 0 then
+        HCTLogDir = CurrentValue & "testbin\sparta\scripts\logs"
+        Shout "HCTLogDir is : " & HCTLogDir
+    else
+        Shout "HCTLogDir registry InstallPath is not found, trying DeviceFile... - " & ulStatus
+        ulStatus = pController.GetRegistryValue (HKEY_LOCAL_MACHINE, "Software\Microsoft\HCT", "DeviceFile", CurrentValue)
+        if ulStatus = 0 then
+            'CurrentValue = "C:\HCT\devscan.ini"
+            if InStr(CurrentValue, "devscan.ini") then
+                'CurrentValue = Left(CurrentValue, Len(CurrentValue) - Len("devscan.ini"))
+                CurrentValue = Replace(CurrentValue, "devscan.ini", "")
+                HCTLogDir = CurrentValue & "testbin\sparta\scripts\logs"
+                Shout "HCTLogDir is : " & HCTLogDir
+            else
+                Shout "HCTLogDir registry DeviceFile contains error" 
+            end if
+        else
+            Shout "HCTLogDir registry DeviceFile is not found either - " & ulStatus
+        end if
+    end if
+
+    CreateLogDir
+
+    set pController = nothing
+
+    StartTime = Timer
+    Main Success
+    EndTime   = Timer
+
+    LogDurationofExecution(EndTime - StartTime)
+    ' Stop the capture
+    '
+    if (fStop) then
+        ulStatus = netmon.StopCapture
+        if (ulStatus <> 0) then
+            Shout "Failed to stop netmon capture - " & ulStatus
+        end if
+    end if
+
+    core.CloseDisplay
+    core.CloseLog
+
+end sub
+
+
+
+
+      </script>
+   </job>
+</package>

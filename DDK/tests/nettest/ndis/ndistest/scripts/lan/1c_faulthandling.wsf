@@ -1,0 +1,312 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, 802_5, FDDI, Irda, WAN, COWAN
+</MEDIA>
+<WHQL>
+802_3, 802_5, FDDI, Irda
+</WHQL>
+<CARDMACH>
+1C,1M
+</CARDMACH>
+<RUNORDER>
+1170
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[This test uses a fault injection feature of NDIS.  Each loop will set bits in the
+registry for the driver under test.  These bits will cause NDIS to fail specific NDIS
+calls.  The registry value name is NdisDriverVerifyFlags.  The loop, value, and NDIS call
+are listed below:
+Loop  Value  NDIS call
+  0   0x001  NdisMAllocateMapRegisters
+  1   0x002  NdisMRegisterInterrupt
+  2   0x004  NdisMAllocateSharedMemory
+  3   0x010  NdisMMapIoSpace
+  4   0x020  NdisMRegisterIoPortRange
+  5   0x040  Read NdisGetSetBusConfigSpace
+  6   0x080  Write NdisGetSetBusConfigSpace
+  7   0x100  NdisMInitializeScatterGatherDma
+
+The driver should not load unless it doesn't call the particular function.
+This test is successful as long the driver doesn't crash the system.
+During each test loop, after the driver fails to load the registry is cleared
+and the driver is loaded normally to be sure it still works.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="1c_FaultHandling" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oPNPPower" progid="NDTSupp.Setup.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+
+      <!-- Begin Wireless Specific Includes -->
+      <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	   <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	   <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	   <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	   <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+      <!-- End Wireless Specific Includes -->
+
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CIrdaCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CIrdaOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script id="1c_FaultHandling" language="VBScript">
+'==========================================================================
+' Script Name:    1c_FaultHandling
+'==========================================================================
+
+Option Explicit
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0))
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard, oTestOpen
+   Private m_lTestAdapterIndex
+   Private TestCardGUID
+
+   Private Sub Class_Initialize
+
+   End Sub
+
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+      Set oTestOpen = Nothing
+   End Sub
+
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList, bResult
+      Dim nResult
+
+      SetupTest = FALSE
+      Set pAdapterList = oNDInfo.AdapterList
+
+      TestCardGUID = pAdapterList(m_lTestAdapterIndex).GUID
+
+      '
+      ' This script is valid only for NT and NDIS 5, since the
+      ' start and stip driver commands are only for them
+      '
+
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = CreateCardObject(pAdapterList (m_lTestAdapterIndex))
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+
+      bResult = oTestCard.vbCreateAdapter(pAdapterList (m_lTestAdapterIndex))
+      If (Not bResult) Then
+         Exit Function
+      End If
+
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then
+
+         Dim oOpen : Set oOpen = oTestCard.vbOpenAdapter()
+
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")
+         If(vbAssociateWep(oOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If
+
+         Set oOpen = Nothing
+
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+
+   Public Function RunTest (lTestAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+
+      ExecuteTestCore
+
+      CleanUpAndReload
+   End Function
+
+
+   Private Sub ExecuteTestCore
+      Dim lLoops, Flags(8)
+      Dim nCount, bResult, nResult
+
+      lLoops = 7
+
+      Flags(0) = CLng(&H001&)
+      Flags(1) = CLng(&H002&)
+      Flags(2) = CLng(&H004&)
+      Flags(3) = CLng(&H010&)
+      Flags(4) = CLng(&H020&)
+      Flags(5) = CLng(&H040&)
+      Flags(6) = CLng(&H080&)
+      Flags(7) = CLng(&H100&)
+
+
+      oLog.Variation("StopDriver")
+      nResult = oPNPPower.StopDriver(TestCardGUID)
+      If (nResult <> 0) Then
+         call oLog.Failed ("Unable to stop driver" , 21619)
+         Exit Sub
+      End If
+
+
+      nCount = CLng(0)
+      For nCount = 0 To (lLoops)
+         bResult = oNDTSupp.WriteDriverRegValue(TestCardGUID, "NdisDriverVerifyFlags", Flags(nCount))
+         If (Not bResult) Then
+            call oLog.Failed ("Unable to write NdisDriverVerifyFlags in registry" , 21620)
+         End If
+
+         oLog.Variation("StartDriver")
+         Select Case nCount
+            Case 0
+               oLog.Write("Ndis will fail NdisMallocateMapRegisters")
+            Case 1
+               oLog.Write("Ndis will fail NdisMRegisterInterrupt")
+            Case 2
+               oLog.Write("Ndis will fail NdisMAllocateSharedMemory")
+            Case 3
+               oLog.Write("Ndis will fail NdisMMapIoSpace")
+            Case 4
+               oLog.Write("Ndis will fail NdisMRegisterIoPortRange")
+            Case 5
+               oLog.Write("Ndis will fail Read NdisGetSetBusConfigSpace")
+            Case 6
+               oLog.Write("Ndis will fail Write NdisGetSetBusConfigSpace")
+            Case 7
+               oLog.Write("Ndis will fail NdisMInitializeScatterGatherDma")
+            Case Else
+               oLog.Write("This line should never by executed")
+         End Select
+         nResult = oPNPPower.StartDriver(TestCardGUID)
+         WScript.Sleep 2000
+
+         ' to delete a key, we need to pass a Long 0 to the function
+         bResult = oNDTSupp.WriteDriverRegValue(TestCardGUID, "NdisDriverVerifyFlags", CLng(0))
+         If (Not bResult) Then
+            oLog.Write("Unable to erase NdisDriverVerifyFlags in registry")
+            MsgBox "PROBLEM: The NdisDriverVerifyFlags must be manually removed from your drivers registry entry", vbOKOnly or vbExclamation or vbSystemModal, _
+                  "NDIS tester problem in " & Wscript.ScriptName
+            Exit Sub
+         End If
+
+         If (nResult <> 0) Then
+            oLog.Write("Driver failed to load.  This is expected because of the failed NDIS call." )
+            oLog.Write("The driver will now be loaded without any values written into the")
+            oLog.Write("just to make sure it still works.")
+
+            oLog.Variation("Stopping/Restarting driver")
+            ' Stop the driver to cleanup bad state
+            oLog.Variation("Stopping Driver")
+            nResult = oPNPPower.StopDriver(TestCardGUID)
+            If (nResult <> 0) Then
+               ' This is not a problem
+               call oLog.Write("Unable to stop driver after it failed to load")
+            End If
+
+            ' Now, attempt to start the driver
+            nResult = oPNPPower.StartDriver(TestCardGUID)
+            If (nResult <> 0) Then
+               oLog.Write("Unable to restart driver at the middle of " & Wscript.ScriptName)
+               MsgBox "PROBLEM: The driver did not load in the middle of " & Wscript.ScriptName, vbOKOnly or vbExclamation or vbSystemModal, _
+                     "NDIS tester problem in " & Wscript.ScriptName
+            End If
+         Else
+            oLog.Write("Driver loaded.  It must not require the NDIS call that failed in this loop of the test." )
+         End If
+         
+         oLog.Write("Stopping the driver in preparation for the next loop.")
+         oLog.Variation("Stopping Driver")
+         nResult = oPNPPower.StopDriver(TestCardGUID)
+         If (nResult <> 0) Then
+            call oLog.Failed ("Unable to stop driver" , 21622)
+            Exit Sub
+         End If
+
+         WScript.Sleep 1000
+      Next
+   End Sub
+
+   Private Sub CleanUpAndReload
+      '
+      ' cleanup
+      '
+      Dim nResult
+      oLog.Variation("StartDriver")
+      nResult = oPNPPower.StartDriver(TestCardGUID)
+      If (nResult <> 0) Then
+         oLog.Write("Unable to restart driver at the end of " & Wscript.ScriptName)
+         MsgBox "PROBLEM: The driver did not load after " & Wscript.ScriptName & " was completed", vbOKOnly or vbExclamation or vbSystemModal, _
+               "NDIS tester problem in " & Wscript.ScriptName
+         oLog.Variation("Reattempting to start driver")
+         nResult = oPNPPower.StartDriver(TestCardGUID)
+      Else
+
+         '-------------------- Begin 802.11 Association Routine --------------------'
+         If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then
+
+            Dim oOpen : Set oOpen = oTestCard.vbOpenAdapter()
+
+            oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")
+            If(vbAssociateWep(oOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+               oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            End If
+
+            Set oOpen = Nothing
+
+         End If
+         '-------------------- End 802.11 Association Routine --------------------'
+
+         oLog.Variation("Waiting for link to be established")
+         Call oTestCard.vbWaitForLinkWithDelay(90, glWaitForLinkExtraDelay)
+      End If
+
+   End Sub
+End Class
+
+</script>
+</job>
+</package>
+
+
+
+
+<!--- CRC = 0xf8a9ac30 --->

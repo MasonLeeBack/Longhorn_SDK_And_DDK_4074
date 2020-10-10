@@ -1,0 +1,118 @@
+<?xml version="1.0" encoding="utf-8"?>
+<schema targetNamespace="http://schemas.microsoft.com/maml/2003/5" xmlns="http://www.w3.org/2001/XMLSchema" xmlns:maml="http://schemas.microsoft.com/maml/2003/5" xmlns:doc="http://schemas.microsoft.com/maml/internal" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<!-- Schema documentation -->
+	<annotation>
+		<documentation>
+			This schema definition defines common structure types for the CS Schema.
+			This schema is part of the base layer.			
+		</documentation>
+	</annotation>
+	<!-- include and import declarations -->
+	<include schemaLocation="base.xsd"/>
+	<!-- element declarations -->
+	<element name="list">
+		<annotation>
+			<documentation>
+				The list element describes content that should be displayed as a list.
+			</documentation>
+		</annotation>
+		<complexType>
+			<sequence>
+				<element ref="maml:listItem" maxOccurs="unbounded"/>
+			</sequence>
+			<attribute name="class" use="required">
+				<annotation>
+					<documentation>
+						The class attribute describes the type of list.
+					</documentation>
+				</annotation>
+				<simpleType>
+					<restriction base="string">
+						<enumeration value="bullet"/>
+						<enumeration value="nobullet"/>
+						<enumeration value="ordered"/>
+						<enumeration value="checklist"/>
+						<enumeration value="radiobutton"/>
+					</restriction>
+				</simpleType>
+			</attribute>
+			<attributeGroup ref="maml:contentIdentificationSharingAndConditionGroup"/>
+		</complexType>
+	</element>
+	<element name="listItem">
+		<annotation>
+			<documentation>
+				The listItem element describes an item within a list. The 
+				content of the listItem element will be treated as a unit.
+			</documentation>
+		</annotation>
+		<complexType>
+			<complexContent>
+				<extension base="maml:structureType">
+					<attribute name="selectionDefault" use="optional">
+						<annotation>
+							<documentation>
+								The selectionDefault attribute is used by listItems in checklists and 
+								radiobutton lists to indicate whether or not the list item in question is 
+								selected in a default rendering.
+							</documentation>
+						</annotation>
+						<simpleType>
+							<restriction base="string">
+								<enumeration value="selected"/>
+								<enumeration value="unselected"/>
+							</restriction>
+						</simpleType>
+					</attribute>
+				</extension>
+			</complexContent>
+		</complexType>
+	</element>
+	<element name="alertSet">
+		<annotation>
+			<documentation>
+				The alert element describes content that is of elevated importance.
+				The content might be a warning of bodily harm.
+			</documentation>
+		</annotation>
+		<complexType>
+			<sequence>
+				<element ref="maml:title" minOccurs="0"/>
+				<element name="alert" maxOccurs="unbounded">
+					<annotation>
+						<documentation>
+							The alert element describes an slim alert structure
+							that largely mimicks the block alert structure.
+						</documentation>
+					</annotation>
+					<complexType>
+						<group ref="maml:structureGroup" maxOccurs="unbounded"/>
+						<attributeGroup ref="maml:contentIdentificationSharingAndConditionGroup"/>
+					</complexType>
+				</element>
+			</sequence>
+			<attribute name="class" type="maml:alertTypesType" use="required">
+				<annotation>
+					<documentation>
+						The class attribute describes the type of alert.
+					</documentation>
+				</annotation>
+			</attribute>
+			<attributeGroup ref="maml:expandCollapseGroup"/>
+			<attributeGroup ref="maml:contentIdentificationSharingAndConditionGroup"/>
+		</complexType>
+	</element>
+	<!-- group declarations -->
+	<group name="structureListGroup">
+		<annotation>
+			<documentation>
+				This group describes the common lists that can be used to describe
+				list data. 
+			</documentation>
+		</annotation>
+		<choice>
+			<element ref="maml:list"/>
+			<element ref="maml:alertSet"/>
+		</choice>
+	</group>
+</schema>

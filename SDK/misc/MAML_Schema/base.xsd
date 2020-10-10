@@ -1,0 +1,210 @@
+<?xml version="1.0" encoding="utf-8"?>
+<schema targetNamespace="http://schemas.microsoft.com/maml/2003/5"  xmlns:doc="http://schemas.microsoft.com/maml/internal" xmlns:maml="http://schemas.microsoft.com/maml/2003/5" xmlns="http://www.w3.org/2001/XMLSchema" elementFormDefault="qualified" attributeFormDefault="unqualified">
+	<!-- Schema documentation -->
+	<annotation>
+		<documentation>
+			This schema defines attributes and simpleTypes that can be referenced
+			from any other part of MAML.			
+		</documentation>
+	</annotation>
+	<!-- simpleType declarations -->
+	<simpleType name="mediaFileFormatsType">
+		<annotation>
+			<documentation>
+				The mediaFileFormatsType simpleType provides a list of commonly
+				used media formats.
+			</documentation>
+		</annotation>
+		<restriction base="token">
+			<enumeration value="asx"/>
+			<enumeration value="bmp"/>
+			<enumeration value="eps"/>
+			<enumeration value="flash"/>
+			<enumeration value="gif"/>
+			<enumeration value="png"/>
+			<enumeration value="jpeg"/>
+			<enumeration value="shockwave"/>
+			<enumeration value="quicktime"/>
+			<enumeration value="wma"/>
+			<enumeration value="wmf"/>
+			<enumeration value="mpeg"/>
+			<enumeration value="mp3"/>
+			<enumeration value="other"/>
+		</restriction>
+	</simpleType>
+	<simpleType name="alertTypesType">
+		<annotation>
+			<documentation>
+				The alertTypesType simpleType provides a list of the various types
+				of alerts that can be used to describe alerts.
+			</documentation>
+		</annotation>
+		<restriction base="string">
+			<enumeration value="tip"/>
+			<enumeration value="note"/>
+			<enumeration value="caution"/>
+			<enumeration value="important"/>
+			<enumeration value="warning"/>
+			<enumeration value="bestpractice"/>
+			<enumeration value="other"/>
+		</restriction>
+	</simpleType>
+	<simpleType name="devLanguagesType">
+		<restriction base="token">
+			<enumeration value="cpp"/>
+			<enumeration value="vb"/>
+			<enumeration value="vbs"/>
+			<enumeration value="js"/>
+			<enumeration value="c#"/>
+			<enumeration value="j#"/>
+			<enumeration value="jscript#"/>
+			<enumeration value="cpp#"/>
+			<enumeration value="vb#"/>
+			<enumeration value="other"/>
+			<enumeration value="other#"/>
+		</restriction>
+	</simpleType>
+	<!-- attribute declarations -->
+	<attributeGroup name="contentFlavourGroup">
+		<annotation>
+			<documentation>
+				The contentFlavourGroup attribute group provides a set of attributes for describing the 
+				general flavour of content.
+			</documentation>
+		</annotation>
+		<attribute name="language" type="token">
+			<annotation>
+				<documentation>
+					The language attribute describes the natural language of a particular part of a document.
+				</documentation>
+				<documentation>
+					This attribute should eventually use a simpleType that provides the list of natural languages.
+				</documentation>
+			</annotation>
+		</attribute>
+		<attribute name="userLevel" type="token">
+			<annotation>
+				<documentation>
+					The userLevel attribute describes the level of user that is appropriate for a
+					particular part of a document. The level may map to personas or to levels of
+					knowledge.
+				</documentation>
+			</annotation>
+		</attribute>
+		<attribute name="technology" type="token">
+			<annotation>
+				<documentation>
+					The technology attribute describes one or more technologies to which the 
+					content applies. 
+				</documentation>
+			</annotation>
+		</attribute>
+		<attribute name="textType" default="normal">
+			<annotation>
+				<documentation>
+					The class attribute is used to select the type of content.
+				</documentation>
+			</annotation>
+			<simpleType>
+				<restriction base="token">
+					<enumeration value="normal"/>
+					<enumeration value="overview"/>
+					<enumeration value="prescriptive"/>
+					<enumeration value="abstract"/>
+					<enumeration value="conclusion"/>
+					<enumeration value="legal"/>
+					<enumeration value="prerequesite"/>
+					<enumeration value="advertisement"/>
+				</restriction>
+			</simpleType>
+		</attribute>
+	</attributeGroup>
+	<simpleType name="conditionStringType">
+		<restriction base="anyURI"/>
+	</simpleType>
+	<attributeGroup name="addressAttributeGroup">
+		<attribute name="address" type="ID">
+			<annotation>
+				<documentation>
+					The address attribute describes the attached content with a unique ID/GUID/URI that 
+					can be referenced for sharing, hyperlinking or other purposes.
+				</documentation>
+			</annotation>
+		</attribute>
+	</attributeGroup>
+	<attributeGroup name="contentIdentificationSharingAndConditionGroup">
+		<annotation>
+			<documentation>
+				The contentIdentificationSharingAndConditionGroup provides a set of attributes for 
+				identifying content and for marking it for sharing and conditional filtering.				
+			</documentation>
+		</annotation>
+		<attributeGroup ref="maml:addressAttributeGroup"/>
+		<attribute name="condition" type="token">
+			<annotation>
+				<documentation>
+                    The value of this attribute is a reference to a condition set that holds one
+                    or more conditions that must be met if the element to which this attribute is applied
+                    is to be considered 'relevant'. (Relevance may be a build-time or a run-time concept).
+                </documentation>
+			</annotation>
+		</attribute>
+		<attribute name="replaceWith" type="anyURI">
+			<annotation>
+				<documentation>
+					The replaceWith attribute specifies the content fragment, either a MAMLPart, a MAMLResource
+					or a fragment within an existing MAML document instance, with which the parent element 
+					should be replaced at some later time (build time, rendering time).
+				</documentation>
+				<documentation>
+					There is not a particular element that enables authors to point to content fragments
+					with the expectation a content fragment would be embedded in place of the reference
+					at build time. The approach used in this schema is that a copy of the desired embedable content 
+					fragment should be embedded in the document and that a fresh copy of the content fragment 
+					should be retrieved prior to presenting the instance to end users. This approach has two 
+					main benefits: authors can see all the content inline and there is no negative impact
+					to schema content models.
+				</documentation>
+			</annotation>
+		</attribute>
+		<attribute name="conditionalDelete" type="anyURI">
+			<annotation>
+				<documentation>
+					When the item being replaced consists of multiple root elements, the
+					first element uses the replaceWith attribute and subsequent elements
+					use the conditionalDelete attribute.
+				</documentation>
+			</annotation>
+		</attribute>
+	</attributeGroup>
+	
+	
+	<attributeGroup name="linkingGroup">
+		<attribute name="href" type="anyURI"/>
+		<attribute name="uri" type="anyURI"/>
+		<attribute name="summary" type="string"/>
+		<attributeGroup ref="maml:contentIdentificationSharingAndConditionGroup"/>
+	</attributeGroup>
+	
+	<!-- complexType declarations -->
+	<complexType name="textType">
+		<annotation>
+			<documentation>
+				This type includes the common attributes and allows character data. 
+			</documentation>
+		</annotation>
+		<simpleContent>
+			<extension base="normalizedString">
+				<attributeGroup ref="maml:contentIdentificationSharingAndConditionGroup"/>
+			</extension>
+		</simpleContent>
+	</complexType>
+	<complexType name="emptyType">
+		<annotation>
+			<documentation>
+				The emptyType type is intended for empty element w/o attributes.
+				There is no schema type for empty.
+			</documentation>
+		</annotation>
+	</complexType>
+</schema>

@@ -1,0 +1,129 @@
+﻿<?xml version="1.0" encoding="utf-8" ?>
+<xs:schema id="NewDataSet" targetNamespace="WiaSchema.xsd" xmlns:mstns="WiaSchema.xsd" xmlns="WiaSchema.xsd" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:msdata="urn:schemas-microsoft-com:xml-msdata" attributeFormDefault="qualified" elementFormDefault="qualified">
+    <xs:element name="WIA_PROPERTY_DATABASE">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element name="TITLE" type="xs:string" minOccurs="0" />
+                <xs:element name="PROP" minOccurs="0" maxOccurs="unbounded">
+                    <xs:complexType>
+                        <xs:sequence>
+                            <xs:element name="PROP_ID" type="xs:string" minOccurs="0" msdata:Ordinal="0" />
+                            <xs:element name="PROP_STRING_NAME" type="xs:string" minOccurs="0" msdata:Ordinal="1" />
+                            <xs:element name="PROP_CONSTANT_NAME" type="xs:string" minOccurs="0" msdata:Ordinal="2" />
+                            <xs:element name="PROP_DESCRIPTION" type="xs:string" minOccurs="0" msdata:Ordinal="3" />
+                            <xs:element name="PROP_VARTYPE" minOccurs="0" maxOccurs="unbounded">
+                                <xs:complexType>
+                                    <xs:sequence>
+                                        <xs:element name="ELEMENT_LIST" type="xs:string" minOccurs="0" />
+                                    </xs:sequence>
+                                </xs:complexType>
+                            </xs:element>
+                            <xs:element name="PROP_ACCESS" minOccurs="0" maxOccurs="unbounded">
+                                <xs:complexType>
+                                    <xs:sequence>
+                                        <xs:element name="ELEMENT_LIST" type="xs:string" minOccurs="0" />
+                                        <xs:element name="CAMERA_ACCESS" minOccurs="0" maxOccurs="unbounded">
+                                            <xs:complexType>
+                                                <xs:sequence>
+                                                    <xs:element name="ELEMENT_LIST" type="xs:string" minOccurs="0" />
+                                                </xs:sequence>
+                                            </xs:complexType>
+                                        </xs:element>
+                                        <xs:element name="SCANNER_ACCESS" minOccurs="0" maxOccurs="unbounded">
+                                            <xs:complexType>
+                                                <xs:sequence>
+                                                    <xs:element name="ELEMENT_LIST" type="xs:string" minOccurs="0" />
+                                                </xs:sequence>
+                                            </xs:complexType>
+                                        </xs:element>
+                                    </xs:sequence>
+                                </xs:complexType>
+                            </xs:element>
+                            <xs:element name="PROP_CONTAINERS" minOccurs="0" maxOccurs="unbounded">
+                                <xs:complexType>
+                                    <xs:sequence>
+                                        <xs:element name="ELEMENT_LIST" type="xs:string" minOccurs="0" />
+                                        <xs:element name="CAMERA_CONTAINERS" minOccurs="0" maxOccurs="unbounded">
+                                            <xs:complexType>
+                                                <xs:sequence>
+                                                    <xs:element name="ELEMENT_LIST" type="xs:string" minOccurs="0" />
+                                                </xs:sequence>
+                                            </xs:complexType>
+                                        </xs:element>
+                                        <xs:element name="SCANNER_CONTAINERS" minOccurs="0" maxOccurs="unbounded">
+                                            <xs:complexType>
+                                                <xs:sequence>
+                                                    <xs:element name="ELEMENT_LIST" type="xs:string" minOccurs="0" />
+                                                </xs:sequence>
+                                            </xs:complexType>
+                                        </xs:element>
+                                    </xs:sequence>
+                                </xs:complexType>
+                            </xs:element>
+                            <xs:element name="PROP_VALUES" minOccurs="0" maxOccurs="unbounded">
+                                <xs:complexType>
+                                    <xs:sequence>
+                                        <xs:element name="ELEMENT_LIST" type="xs:string" minOccurs="0" />
+                                    </xs:sequence>
+                                </xs:complexType>
+                            </xs:element>
+                            <xs:element name="PROP_RANGE" minOccurs="0" maxOccurs="unbounded">
+                                <xs:complexType>
+                                    <xs:sequence>
+                                        <xs:element name="MINIMUM" type="xs:string" minOccurs="0" />
+                                        <xs:element name="MAXIMUM" type="xs:string" minOccurs="0" />
+                                        <xs:element name="INCREMENT" type="xs:string" minOccurs="0" />
+                                    </xs:sequence>
+                                </xs:complexType>
+                            </xs:element>
+                            <xs:element name="PROP_TEST_ASSERTION_NO" type="xs:string" minOccurs="0" msdata:Ordinal="5" />
+                        </xs:sequence>
+                        <xs:attribute name="type" form="unqualified" type="xs:string" />
+                    </xs:complexType>
+                </xs:element>
+                <xs:element name="ITEM" minOccurs="0" maxOccurs="unbounded">
+                    <xs:complexType>
+                        <xs:sequence>
+                            <xs:element name="ITEM_NAME" type="xs:string" minOccurs="0" />
+                            <xs:element name="REQUIRED_ITEM_FLAGS" minOccurs="0" maxOccurs="unbounded">
+                                <xs:complexType>
+                                    <xs:sequence>
+                                        <xs:element name="ELEMENT_LIST" type="xs:string" minOccurs="0" />
+                                    </xs:sequence>
+                                </xs:complexType>
+                            </xs:element>
+                            <xs:element name="OPTIONAL_ITEM_FLAGS" minOccurs="0" maxOccurs="unbounded">
+                                <xs:complexType>
+                                    <xs:sequence>
+                                        <xs:element name="ELEMENT_LIST" type="xs:string" minOccurs="0" />
+                                    </xs:sequence>
+                                </xs:complexType>
+                            </xs:element>
+                            <xs:element name="REQUIRED_PROPS" minOccurs="0" maxOccurs="unbounded">
+                                <xs:complexType>
+                                    <xs:sequence>
+                                        <xs:element name="ELEMENT_LIST" type="xs:string" minOccurs="0" />
+                                    </xs:sequence>
+                                </xs:complexType>
+                            </xs:element>
+                            <xs:element name="OPTIONAL_PROPS" minOccurs="0" maxOccurs="unbounded">
+                                <xs:complexType>
+                                    <xs:sequence>
+                                        <xs:element name="ELEMENT_LIST" type="xs:string" minOccurs="0" />
+                                    </xs:sequence>
+                                </xs:complexType>
+                            </xs:element>
+                        </xs:sequence>
+                    </xs:complexType>
+                </xs:element>
+            </xs:sequence>
+        </xs:complexType>
+    </xs:element>
+    <xs:element name="NewDataSet" msdata:IsDataSet="true">
+        <xs:complexType>
+            <xs:choice maxOccurs="unbounded">
+                <xs:element ref="WIA_PROPERTY_DATABASE" />
+            </xs:choice>
+        </xs:complexType>
+    </xs:element>
+</xs:schema>

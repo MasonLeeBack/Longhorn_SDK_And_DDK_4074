@@ -1,0 +1,710 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, 802_5, FDDI
+</MEDIA>
+<WHQL>
+802_3, 802_5, FDDI
+</WHQL>
+<CARDMACH>
+2C,1M, 2M
+</CARDMACH>
+<RUNORDER>
+1120
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[This script requires manual intervention to disconnect/connect the network cable.
+
+It verifies that the initialization time for a network card is not too long. For init time,
+it will stop and start the driver with the cable disconnected and then with the cable 
+connected. It also verifies the ability to detect media connects/disconnects.
+It verifies the reconnect is detected properly with long (>30 seconds)
+disconnects and that communication with the server is restored.
+In all, there are 4 major passes completed in this test:
+  Pass 0 : check init time of network card
+  Pass 1 : short disconnect event
+  Pass 2 : long disconnect event (>30 seconds)
+  Pass 3 : disconnect/unload/load/connect
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="2c_LinkCheck" prompt="no">
+      <reference guid="{97B1B574-D0D4-4896-93B6-A2679336A8E1}" version="1.0"/>
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oPNPPower" progid="NDTSupp.Setup.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      
+      <!-- Begin Wireless Specific Includes -->
+      <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	   <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	   <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	   <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	   <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+      <!-- End Wireless Specific Includes -->
+      
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/> 
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script id="2c_LinkCheck" language="VBScript">
+'==========================================================================
+' Script Name:    2c_LinkCheck
+Option Explicit 
+
+' OID_GEN_MEDIA_CONNECT_STATUS
+Const CONNECTED = 0
+Const DISCONNECTED = 1
+Const VALID_CONNECT_STATUS = 3
+
+' Whether to use NdisIOControl or NdisRequest to check above OID
+Const CardInstance = 0
+Const OpenInstance = 1
+
+' Whether currently the driver is halted or running
+Const LOADED = 0
+Const HALTED = 1
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0), GetSupportAdapterIndex (oNDInfo.AdapterList, 0)) 
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard, oTestOpen
+   Private oSuppCard, oSuppOpen
+   Private m_lTestAdapterIndex, m_lSuppAdapterIndex
+   Private TestCardGUID
+   Private PopupTimeout, oWshShell
+   Private m_LinkStatus, m_DriverStatus
+   
+   Private Sub Class_Initialize
+      m_LinkStatus = CONNECTED
+      m_DriverStatus = LOADED
+   End Sub
+   
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+      Set oTestOpen = Nothing
+      
+      Set oSuppCard = Nothing
+      Set oSuppOpen = Nothing
+      
+      If (m_LinkStatus = DISCONNECTED) Then
+         oLog.Warned ("NdisTest unsure if the test card is connected to the network at the end of the test.")
+         oLog.Write ("If it is not connected, then the following tests may fail")
+      End If
+      
+      If (m_DriverStatus = HALTED) Then
+         oLog.Warned ("NdisTest unsure if the driver was correctly loaded during the test.")
+         oLog.Write ("If it was not loaded corrected, then the following tests may fail")
+      End If
+      
+      Set oWshShell = Nothing
+   End Sub
+   
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+      
+      Set pAdapterList = oNDInfo.AdapterList
+      
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oTestOpen = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpen is Nothing) Then
+         Exit Function
+      End If
+      
+      If (oTestCard.vbGetPhysicalMedium() = NDISPHYSICALMEDIUMCABLEMODEM) Then
+         oLog.Write("This test is not supported for cable modems since Cable modem drivers are not supposed to detect media sense.")
+         Exit Function
+      End If
+      
+      oLog.Variation ("Setting up Support Adapter")
+      Set oSuppCard = New CLanCard
+      If (oSuppCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oSuppOpen = oSuppCard.vbSetupBasicTest(pAdapterList (m_lSuppAdapterIndex))
+      If (oSuppOpen is Nothing) Then
+         Exit Function
+      End If
+      
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+               
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")           
+         If(vbAssociateWep(oTestOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If	
+         
+         oLog.Variation ("Associating support device with " & NDTESTAP2 & " ...")       
+         If(vbAssociateWep(oSuppOpen, NDTESTAP2) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate support device with " & NDTESTAP2, 88888
+            Exit Function
+         End If	
+                           
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+      
+      TestCardGUID = pAdapterList(m_lTestAdapterIndex).GUID
+      Set pAdapterList = Nothing
+      
+      PopupTimeout = oNdtSession.Variable ("PopupTimeout")
+      Set oWshShell = Wscript.CreateObject("WScript.Shell")
+      If (oWshShell is Nothing) Then
+         Call oLog.Failed ("Unable to create WScript.Shell object", 88888)
+         Exit Function
+      End If
+      
+      SetupTest = TRUE
+   End Function
+   
+   Public Function RunTest (lTestAdapterIndex, lSuppAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      m_lSuppAdapterIndex = lSuppAdapterIndex
+      
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+      
+      wsfInitTimeCheck
+      
+      wsfMediaStatusCheck
+      
+      Call oTestCard.vbWaitForLinkWithDelay(90, glWaitForLinkExtraDelay)
+   End Function
+   
+   
+   Private Sub wsfDisconnectPopup(strMsgTitle)
+      Dim sDisconnectMsg
+      Dim PopupResponse
+      
+      sDisconnectMsg = "Disconnect test card from the network, then click OK."
+      If (PopupTimeout = 0) Then
+         oWshShell.Popup sDisconnectMsg, PopupTimeout, "NDIS Tester - " & strMsgTitle, vbSystemModal
+      Else
+         PopupResponse = oWshShell.Popup (sDisconnectMsg, PopupTimeout, "Media Disconnect Detection (timeout after " & PopupTimeout & " seconds)", vbSystemModal)
+         If (PopupResponse = -1) Then
+            oLog.Write("Popup timedout.  Pressing on.")
+         End If
+      End If
+   End Sub
+   
+   Private Sub wsfReConnectPopup(strMsgTitle)
+      Dim sConnectMsg
+      Dim PopupResponse
+      
+      sConnectMsg = "Re-connect test card to the network, then click OK."
+      If (PopupTimeout = 0) Then
+         oWshShell.Popup sConnectMsg, PopupTimeout, "NDIS Tester - " & strMsgTitle, vbSystemModal
+      Else
+         PopupResponse = oWshShell.Popup (sConnectMsg, PopupTimeout, "Media Connect Detection (timeout after " & PopupTimeout & " seconds)", vbSystemModal)
+         If (PopupResponse = -1) Then
+            oLog.Write("Popup timedout.  Pressing on.")
+         End If
+      End If
+   End Sub
+   
+   Private Function wsfCheckConnectStatus(ExpectedStatus, Object)
+      Dim bResult, CurrentConnectStatus
+      Dim WrongStatus, WrongString
+      wsfCheckConnectStatus = FALSE
+      
+      If (ExpectedStatus = CONNECTED) Then
+         WrongStatus = DISCONNECTED
+         WrongString = "disconnected"
+      ElseIf (ExpectedStatus = DISCONNECTED) Then
+         WrongStatus = CONNECTED
+         WrongString = "connected"
+      End If
+      
+      If (Object = CardInstance) Then
+         bResult = oTestCard.vbFastNdisIOControl(OID_GEN_MEDIA_CONNECT_STATUS, CurrentConnectStatus, QUERY_GLOBAL_STATS)
+      Else
+         Dim nResultSize
+         nResultSize = 4
+         CurrentConnectStatus = CLng(0)
+         bResult = oTestOpen.vbFastNdisRequest(OID_GEN_MEDIA_CONNECT_STATUS, CurrentConnectStatus, nResultSize)
+      End If
+      
+      If (Not bResult) Then
+         call oLog.Failed ("Unable to query media connect status" , 21363)
+      Else
+         ' First check if valid (may not be what we expected) value was returned
+         If (CurrentConnectStatus <> CONNECTED And CurrentConnectStatus <> DISCONNECTED) Then
+            call oLog.Failed ("Invalid media status returned from driver" , 21365)
+            m_LinkStatus = CurrentConnectStatus
+         ' Next, check if it is not the wrong value
+         ElseIf (CurrentConnectStatus = WrongStatus) Then
+            call oLog.Failed ("Media status detected as " & WrongString , 21364)
+            m_LinkStatus = CurrentConnectStatus
+         ' If it is not invalid and not the unexpected value, it must be the expected value
+         Else
+            wsfCheckConnectStatus = TRUE
+            ' Okay, we found that the link status is as we expected
+            m_LinkStatus = CurrentConnectStatus
+         End If
+      End If      
+   End Function
+   
+   Private Function wsfStopStartDriver (bFail)
+      Dim nResult
+      Dim nLogMask
+      
+      If (Not bFail) Then
+         nLogMask = oLog.Mask
+         oLog.Mask = DO_NOTHING
+      End If
+      
+      nResult = oPNPPower.StopDriver(TestCardGUID)
+      If (nResult <> 0) Then
+         Call oLog.SafeFailed ("Unable to stop driver." , 21639)
+      Else
+         m_DriverStatus = HALTED
+         WScript.Sleep(5000)
+         
+         nResult = oPNPPower.StartDriver(TestCardGUID)
+         If (nResult <> 0) Then
+            Call oLog.SafeFailed ("Unable to restart driver after stopping." , 21640)
+         Else
+            m_DriverStatus = LOADED
+         End If
+      End If
+      
+      If (Not bFail) Then
+         oLog.Mask = nLogMask
+      End If
+      
+   End Function
+   
+   Private Function wsfVerifyEvents(lDisconnectsMin, lDisconnectsMax, lConnectsMin, lConnectsMax)
+      Dim nResets, nDisconnects, nConnects
+      
+      oLog.Variation("GetEvents")
+      
+      If (oTestOpen.vbGetEvents(nResets, nDisconnects, nConnects)) Then
+         If (nResets <> 0) Then
+            oLog.Warned ("Unexpected resets. (Some devices reset when the cable is remoted. This is OK")
+         End If
+         
+         If (lDisconnectsMin = lDisconnectsMax) Then         
+            If (nDisconnects <> lDisconnectsMin) Then
+               call oLog.Failed ("Incorrect number of disconnect events " & nDisconnects & ". Should have been " & lDisconnectsMin, 21349)
+            End If
+         Else
+            If (nDisconnects > lDisconnectsMax) Then
+               call oLog.Failed ("Incorrect number of disconnect events " & nDisconnects & ". Should have been " & lDisconnectsMin & " Or " & lDisconnectsMax, 21349)
+            End If
+         End If
+         
+         If (lConnectsMin <> -1) Then
+            If (lConnectsMin = lConnectsMax) Then         
+               If (nConnects <> lConnectsMin) Then
+                  call oLog.Failed ("Incorrect number of connect events " & nConnects & ". Should have been " & lConnectsMin, 21350)
+               End If
+            Else
+               If (nConnects > lConnectsMax) Then
+                  call oLog.Failed ("Incorrect number of connect events " & nConnects & ". Should have been " & lConnectsMin & " Or " & lConnectsMax, 21349)
+               End If
+            End If
+         End If
+      End If
+      
+   End Function
+   
+   Private Function wsfCheckNonZeroLinkSpeed
+      Dim nLinkSpeed
+
+      ' Now make sure the link speed of the NIC has NOT gone down to zero on disconnect
+      nLinkSpeed = oTestCard.vbGetLinkSpeed ()
+      If (nLinkSpeed = -1) Then
+         call oLog.Failed ("Query to OID_GEN_LINK_SPEED failed!" , 88888)
+      ElseIf (nLinkSpeed <= 0) Then
+         call oLog.Failed ("Link speed reported by the NIC while disconnected = " & nLinkSpeed, 88888)
+         oLog.Write ("OID_GEN_LINK_SPEED should return the actual speed even when disconnected!")
+         oLog.Write ("For a 10/100 adapter, a useful default speed like 10 Mbps should have been reported")
+      End If      
+   End Function
+
+   Private Function wsfOpenAdapterLoop
+      Dim nOpenLoopCnt, nOpenLogMask, bOpenSuccess
+
+      wsfOpenAdapterLoop = FALSE
+      
+      nOpenLogMask = oLog.Mask
+      oLog.Mask = DO_NOTHING
+      bOpenSuccess = FALSE
+
+      For nOpenLoopCnt = 0 To 9
+         Set oTestOpen = oTestCard.vbOpenAdapter()
+         If(oTestOpen is Nothing) Then
+            ' Try again
+            WScript.Sleep 1000
+         Else
+            bOpenSuccess = TRUE
+            Exit For
+         End If
+      Next
+
+      oLog.Mask = nOpenLogMask
+      If (oTestOpen is Nothing) Then
+         Call oLog.Failed ("NdisOpen Failed after repeated attempts", 23406)
+         Exit Function
+      End If
+
+      wsfOpenAdapterLoop = TRUE
+   End Function
+   
+   Private Sub wsfInitTimeCheck
+      Dim bResult, nResult
+      Dim InitTime
+      Dim InitTimeOid
+      Dim nResets, nDisconnects, nConnects
+      
+      InitTimeOid = OID_GEN_INIT_TIME_MS
+      
+      '---------------------------------------------------------------------
+      ' Disconnect the cable
+      '---------------------------------------------------------------------
+      
+      oLog.Variation("Checking disconnection of card")
+      bResult = oTestOpen.vbStartWaitForEvent(NDIS_STATUS_MEDIA_DISCONNECT)
+      If (Not bResult) Then
+         Exit Sub
+      End If
+      
+      ' Ask user to disconnect cable
+      Call wsfDisconnectPopup("Disconnected Init Time Check")
+      
+      bResult = oTestOpen.vbEndWaitForEvent(10)
+      If (bResult) Then
+         oLog.Write("NDIS_STATUS_MEDIA_DISCONNECT indication received" )
+         Call wsfCheckNonZeroLinkSpeed
+      Else
+         call oLog.Failed ("No disconnect indication received" , 21348)
+      End If
+      
+      ' No Resets, Exactly one disconnect and No Connects
+      Call wsfVerifyEvents (1, 1, 0, 0)
+      
+      oLog.Variation ("Ndis Close")
+      bResult = oTestOpen.vbNdisClose()
+      Set oTestOpen = Nothing
+      
+      ' Query the cable status
+      oLog.Variation("Querying cable status: expect disconnected")
+      
+      Call wsfCheckConnectStatus(DISCONNECTED, CardInstance)
+      
+      ' unload/load the driver if possible (disconnected)
+      oLog.Variation("Stop/Start driver: Disconnected")
+      If (wsfStopStartDriver (FALSE) = 0) Then
+         Wscript.Sleep 1000
+      End If
+      
+      ' query the NIC init time (disconnected)
+      oLog.Variation("Open Adapter")
+      If (Not wsfOpenAdapterLoop()) Then
+         Exit Sub
+      End If
+      
+      oLog.Variation("Query NIC init time: Disconnected")
+      bResult = oTestCard.vbFastNdisIOControl(InitTimeOid, InitTime, QUERY_SELECTED_STATS)
+      If (Not bResult) Then
+         oNDTCore.PrintOidName(InitTimeOid)
+         oLog.Warned("Unable to query OID" )
+      Else
+         oLog.Write("NIC init time (cable disconnected) = " & InitTime & " ms" )
+         If (InitTime > 1000) Then
+            oLog.Warned("NIC init time is too long (> 1 sec) when cable is disconnected" )
+         End If
+      End If
+
+      ' Query OID_GEN_MINIPORT_INFO and check if the MEDIA_SENSE bit is set
+      Dim MiniportInfoVal, bShouldIndicate
+
+      bShouldIndicate = False      ' Default is allowing driver to not indicate event
+
+      ' Need to requery to obtain the current value
+      MiniportInfoVal = CLng(0)
+      bResult = oTestCard.vbFastNdisIOControl(OID_GEN_MINIPORT_INFO, MiniportInfoVal, QUERY_SELECTED_STATS)
+      oLog.Write ("Miniport Info : 0x" & Hex(MiniportInfoVal))
+      If (bResult) Then
+         If ((MiniportInfoVal AND NDIS_MINIPORT_SUPPORTS_MEDIA_SENSE) <> 0) Then
+            ' It has already sent the event
+            oLog.Write ("Media Disconnect event might already have been indicated")
+         Else
+            ' has not yet indicated the event, since we are already waiting for the event, if
+            ' it does indicate, we should receive it
+            bShouldIndicate = True
+         End If
+      End If    
+
+      ' Wait so that the disconnect event is not missed. 
+      oLog.Variation("Waiting for disconnect event (30 sec)")    
+      WScript.Sleep 30000
+    
+      ' No Resets, 0 or 1 Disconnect and don't care about connects
+      oLog.Variation("GetEvents")
+      
+      If (oTestOpen.vbGetEvents(nResets, nDisconnects, nConnects)) Then
+         If (nResets <> 0) Then
+            oLog.Warned ("Unexpected resets. (Some devices reset when the cable is remoted. This is OK")
+         End If
+
+         If (bShouldIndicate) Then
+            If (nDisconnects <> 1) Then
+               oLog.Warned ("Incorrect number of disconnect events " & nDisconnects & _
+                            ". After loading should have indicated media is disconnected")
+            End If
+         End If
+ 
+         If (nDisconnects > 1) Then
+            call oLog.Failed ("Incorrect number of disconnect events " & nDisconnects & ". Should have been 0 or 1" , 21356)
+         End If
+      End If
+      
+      '------------------------------------------------------
+      ' Re-connect the cable 
+      '------------------------------------------------------
+      
+      oLog.Variation("Checking reconnection of card")   
+      bResult = oTestOpen.vbStartWaitForEvent(NDIS_STATUS_MEDIA_CONNECT)
+      If (Not bResult) Then
+         Exit Sub
+      End If
+      
+      ' Ask user to reconnect
+      Call wsfReConnectPopup("Disconnected Init Time Check")
+      
+      bResult = oTestOpen.vbEndWaitForEvent(30)
+      If (bResult) Then
+         oLog.Write("NDIS_STATUS_MEDIA_CONNECT indication received" )
+      Else
+         call oLog.Failed ("No connect indication received" , 21360)
+      End If
+      
+      ' 0 resets, 0 disconnects and 1 connect
+      Call wsfVerifyEvents (0, 0, 1, 1)
+      
+      oLog.Variation("NdisClose")   
+      bResult = oTestOpen.vbNdisClose()
+      Set oTestOpen = Nothing
+      
+      ' Query the cable status
+      oLog.Variation("Querying cable status: expect connected")
+      Call wsfCheckConnectStatus(CONNECTED, CardInstance)
+      
+      ' unload/load the driver if possible (Connected)
+      oLog.Variation("Stop/Start driver: Connected")
+      Call wsfStopStartDriver (FALSE)
+      
+      ' query the NIC init time (connected)
+      oLog.Variation("Open Adapter")
+      If (Not wsfOpenAdapterLoop()) Then
+         Exit Sub
+      End If
+      
+      oLog.Variation("Waiting for link to be established")
+      Call oTestCard.vbWaitForLinkWithDelay(90, glWaitForLinkExtraDelay)
+      
+      oLog.Variation("Query NIC init time: Connected")
+      bResult = oTestCard.vbFastNdisIOControl(InitTimeOid, InitTime, QUERY_SELECTED_STATS)
+      If (Not bResult) Then
+         oLog.Warned("Unable to query OID" )
+         oNDTCore.PrintOidName(InitTimeOid)
+      Else
+         oLog.Write("NIC init time (cable connected) = " & InitTime & " ms" )
+         If (InitTime > 1000) Then
+            oLog.Warned("NIC init time is too long (> 1 sec) when cable is connected" )
+         End If
+      End If      
+      
+      ' 0 resets, 0 disconnects and 0 or 1 connects
+      Call wsfVerifyEvents (0, 0, 0, 1)
+      
+   End Sub
+   
+   Private Sub wsfMediaStatusCheck
+      Dim lPasses, nCount      
+      Dim bResult
+      
+      '----------------------
+      ' Pass 0 = short disconnect event
+      ' Pass 1 = long disconnect event (long enough for timeout)
+      ' Pass 2 = disconnect/unload/load/connect
+      '----------------------
+      lPasses = 3
+      
+      nCount = 0
+      Do While (nCount < lPasses)
+         '---------------------------------------------------------------------
+         ' Disconnect the cable
+         '---------------------------------------------------------------------
+         oLog.Variation("Checking disconnection of card")
+         
+         bResult = oTestOpen.vbStartWaitForEvent(NDIS_STATUS_MEDIA_DISCONNECT)
+         If (Not bResult) Then
+            Exit Do
+         End If
+         
+         ' Ask user to disconnect cable
+         Call wsfDisconnectPopup ("Media Connect Status")
+         
+         bResult = oTestOpen.vbEndWaitForEvent(10)
+         If (bResult) Then
+            oLog.Write("NDIS_STATUS_MEDIA_DISCONNECT indication received." )
+         Else
+            Call oLog.Failed ("No disconnect indication received." , 21632)
+         End If
+         
+         oLog.Variation("Querying cable status: expect disconnected")
+         Call wsfCheckConnectStatus(DISCONNECTED, OpenInstance)
+         
+         If (nCount = 0) Then
+            oLog.Variation("Immediate media reconnect test.")
+         ElseIf (nCount = 1) Then
+            oLog.Variation("Delayed media reconnect test: 30 Seconds")
+            WScript.Sleep(30000)
+         ElseIf (nCount = 2) Then 
+            oLog.Variation("Unload/Load prior to reconnect test.")
+            
+            ' 0 Resets, 1 disconnect and dont care about connects
+            Call wsfVerifyEvents (1, 1, -1, -1)
+            
+            bResult = oTestOpen.vbNdisClose()
+            Set oTestOpen = Nothing
+            
+            oLog.Variation("Stop/Start driver: Disconnected")
+            If (wsfStopStartDriver(TRUE) <> 0) Then
+               Exit Do
+            End If
+            
+            WScript.Sleep(glWaitForLinkExtraDelay) ' leave time for media event
+            
+            oLog.Variation("Open Adapter")
+            If (Not wsfOpenAdapterLoop()) Then
+               Exit Do
+            End If
+
+            ' If we managed to open the adapter, check that the media connect
+            ' status is either connected or disconnected
+            Call wsfCheckConnectStatus(VALID_CONNECT_STATUS, OpenInstance)
+            
+         End If
+         
+         '------------------------------------------------------
+         ' Re-connect the cable 
+         '------------------------------------------------------
+         oLog.Variation("Checking reconnection of card")
+         bResult = oTestOpen.vbStartWaitForEvent(NDIS_STATUS_MEDIA_CONNECT)
+         If (Not bResult) Then
+            Exit Do
+         End If
+         
+         ' Ask user to reconnect
+         Call wsfReConnectPopup ("Media Connect Status")
+         bResult = oTestOpen.vbEndWaitForEvent(30)
+         If (bResult) Then
+            oLog.Write("NDIS_STATUS_MEDIA_CONNECT indication received." )
+         Else
+            Call oLog.Failed ("No connect indication received." , 21644)
+         End If
+         
+         ' Query the cable status
+         oLog.Variation("Querying cable status: expect connected")
+         Call wsfCheckConnectStatus(CONNECTED, OpenInstance)
+         
+         If (nCount = 2) Then
+            ' 0 resets, 0 disconnects and 0 or 1 connects
+            Call wsfVerifyEvents (0, 0, 0, 1)
+         Else
+            ' 0 resets, 1 disconnect and 1 connect
+            Call wsfVerifyEvents (1, 1, 1, 1)
+         End If
+         
+         Call wsfSendReceive
+         nCount = nCount + 1
+      Loop
+      
+   End Sub
+   
+   Private Function wsfSendReceive
+      Dim TestAddr, SuppAddr
+      Dim bResult
+      
+      TestAddr = oTestOpen.vbGetCardAddress
+      SuppAddr = oSuppOpen.vbGetCardAddress
+      
+      
+      oLog.Variation("Setup IP Related Information for Test and support Card")
+      bResult = SetupTestForIP(oTestOpen, m_lTestAdapterIndex, oSuppOpen, m_lSuppAdapterIndex)
+      If(Not bResult) Then
+         Exit Function
+      End If
+      
+      '
+      ' verIfy that communication works..
+      '
+      oLog.Variation ("Verifying that communication works")
+      If (oSuppOpen.vbSimpleSendReceive(oTestOpen) <> 0) Then
+         Call oLog.Failed ("Test-Support adapter communication failed", 88888)
+      End If
+            
+      oLog.Write("Get Events from the Test adapter." )
+      bResult = oTestOpen.vbClearEvents()
+      If (Not bResult) Then
+         Call oLog.Failed ("Unable to get events from test adapter." , 21667)
+      End If
+      
+      oLog.Write("Get Events from the Support adapter." )
+      bResult = oSuppOpen.vbClearEvents()
+      If (Not bResult) Then
+         Call oLog.Failed ("Unable to get events from support adapter." , 21668)
+      End If
+      
+   End Function
+   
+End Class
+
+</script>
+</job>
+</package>
+
+'==========================================================================
+
+<!--- CRC = 0x640524b6 --->

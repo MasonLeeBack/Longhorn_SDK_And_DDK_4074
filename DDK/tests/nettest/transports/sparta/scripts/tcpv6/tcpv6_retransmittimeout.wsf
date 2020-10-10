@@ -1,0 +1,446 @@
+'
+' File          : TCPv6_RetransmitTimeout.wsf
+' Author        : Sandeep Prabhu [5/8/01]
+'
+' A script to test the retransmission functionality
+'
+
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\common\IPv6Common.Lib"/>
+      <script language="VBScript" src="..\common\TCPv6Helper.Lib"/>
+      <script id="TCPv6_RetransmitTimeout" language="VBScript">
+
+
+option explicit
+    
+Dim Core, Sparta, Autosrv, MediaType, AutoArpObject, IFace, pControllerObj, ExceptionStatus
+
+Const SYN_CONNECT             =  "SYN_CONNECT"
+Const SYN_CONNECTEX           =  "SYN_CONNECTEX"
+const SYN_ACK                 =  "SYN_ACK"
+const DATA_SEND               =  "DATA_SEND"
+const DATA_CONNECTEX          =  "DATA_CONNECTEX"
+const DATA_SENDANDDISCONNECT  =  "DATA_SENDANDDISCONNECT"
+const FIN_CLOSE               =  "FIN_CLOSE"
+const FIN_SENDANDDISCONNECT   =  "FIN_SENDANDDISCONNECT"
+
+ 
+'
+' Start the script
+'           
+StartScript "TCPv6_RetransmitTimeout", g_szLogDirectory, "Tests for TCP packet rexmits and exponential backoff" 
+
+
+
+' ==================================================================================================
+' Main routine
+' ==================================================================================================
+Sub Main
+   Core.SetAssertionTracking "50300"
+   Dim ulStatus, ulTcpInitialRTT, ulTcpMaxConnectRetransmissions
+   Dim ulTcpMaxConnectResponseRetransmissions, ulTcpMaxDataRetransmissions, fFixed348579 
+
+   
+   '/**                                                                                   
+   ' @area name="Offload Compliance Test Assertions"
+   ' @group name="TCP Retransmission Assertions"
+   ' @group name="TCPv6 Retransmission Timeout Assertions" 
+   ' @define name="Offload" Offload Compliance Test Assertions
+   ' @define name="TCPR" TCP Retransmission Assertions
+   ' @define name="TCPRTTv6" TCPv6 Retransmission Timeout Assertions
+   ' @hierarchy Offload TCPR TCPRTTv6
+   ' @key Reference="WLP# - x.x.x.x; RFC-1122 Section 4.2.2.15"
+   ' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+   ' @key TestName="TCPv6 Retransmition Timeout Tests"
+   ' @key TestLog="TCPv6_RetransmitTimeout.log"
+   '*/
+
+   '/**
+   
+   '
+   ' Alter the registry settings
+   '
+    '/**
+   ' @config conf="Change the following registry values:TcpInitialRTT = 5000, TcpMaxConnectRetransmissions = 1,TcpMaxConnectResponseRetransmissions =1, TcpMaxDataRetransmissions =3"
+   '*/
+   
+   
+   '
+   ' Alter the registry settings
+   '
+   
+   
+   
+   ulTcpInitialRTT = DEFAULT_TcpInitialRTT
+   ulTcpMaxConnectRetransmissions = 1
+   ulTcpMaxDataRetransmissions = 3
+   
+   '
+   ' do loop used to get around using goto
+   '
+   do  
+      ulStatus = pControllerObj.SetRegistryValue(HKEY_LOCAL_MACHINE, TCPPARAMPATH, "TcpMaxConnectRetransmissions", ulTcpMaxConnectRetransmissions)
+      if (ulStatus <> 0) then
+         Core.Log "SetRegistryValue - " & ulStatus
+         exit do
+      end if
+      
+      ulStatus = pControllerObj.SetRegistryValue(HKEY_LOCAL_MACHINE, TCPPARAMPATH, "TcpMaxDataRetransmissions", ulTcpMaxDataRetransmissions)
+      if (ulStatus <> 0) then
+         Core.Log "SetRegistryValue - " & ulStatus
+         exit do      
+      end if
+      
+      ulStatus = Reboot(TRUE)   
+      if (ulStatus <> 0) then
+         Core.Log "Reboot - " & ulStatus
+         exit do
+      end if
+   
+      '
+      ' Verify the new settings have taken effect
+      '
+      DoRexmitTests ulTcpInitialRTT, ulTcpMaxConnectRetransmissions, ulTcpMaxConnectRetransmissions, ulTcpMaxDataRetransmissions, FALSE
+   loop while (FALSE)
+
+   '
+   ' Restore the defaults
+   '
+   
+   ulStatus = pControllerObj.DeleteRegistryValue(HKEY_LOCAL_MACHINE, TCPPARAMPATH, "TcpMaxConnectRetransmissions")
+   if (ulStatus <> 0) then
+      Core.Log "DeleteRegistryValue - " & ulStatus
+      exit sub
+   end if
+         
+   ulStatus = pControllerObj.DeleteRegistryValue(HKEY_LOCAL_MACHINE, TCPPARAMPATH, "TcpMaxDataRetransmissions")
+   if (ulStatus <> 0) then
+      Core.Log "DeleteRegistryValue - " & ulStatus
+      exit sub      
+   end if
+   
+   ulStatus = Reboot(TRUE)   
+   if (ulStatus <> 0) then
+      Core.Log "Reboot - " & ulStatus
+      exit sub
+   end if
+
+   '
+   ' Verify the default stack settings for the SYN/SYN-ACK/Data/FIN rexmit counts
+   '
+   ulTcpMaxConnectRetransmissions = DEFAULT_TcpMaxConnectRetransmissions
+   ulTcpMaxDataRetransmissions = DEFAULT_TcpMaxDataRetransmissions
+   
+   DoRexmitTests ulTcpInitialRTT, ulTcpMaxConnectRetransmissions, ulTcpMaxConnectRetransmissions, ulTcpMaxDataRetransmissions, FALSE
+   
+   '
+   ' Tests to ensure the packet rexmits stop on receiving a response 
+   '                                                                                 
+   DoRexmitTests ulTcpInitialRTT, ulTcpMaxConnectRetransmissions, ulTcpMaxConnectRetransmissions, ulTcpMaxDataRetransmissions, TRUE   
+      
+End Sub
+
+Sub DoRexmitTests(ulRTT, ulSynRexmit, ulSynAckRexmit, ulDataRexmit, fRespond)
+   Dim szText
+   
+   szText = " [No response]"
+   if (fRespond) then
+      szText = " [response]"
+   end if
+
+   '/**
+   ' @test name="Stack must rexmit correct number of SYNs in the correct interval when Connect is called" Autosrv issue a connect we grab the first SYN the stack must retransmit the correct number of the SYNs in the correct interval
+   ' 
+   ' Verify that stack has retransmit the correct number of the SYNs in the correct interval
+   ' script must reset the connection
+   '*/
+
+
+   Core.StartTest "SYN rexmit count test using connect" & szText
+   RexmitCountAndInterval SYN_CONNECT, ulSynRexmit, ulRTT, fRespond
+   Core.EndTest
+   Core.Sleep(2500)
+   
+   '/**
+   ' @test name="Stack must rexmit correct number of SYNs in the correct interval when ConnectEx is called" Autosrv issue a ConnectEx we grab the first SYN the stack must retransmit the correct number of the SYNs in the correct interval
+   ' 
+   ' Verify that stack has retransmit the correct number of the SYNs in the correct interval
+   ' script must reset the connection
+   '*/
+   
+   Core.StartTest "SYN rexmit count test using ConnectEx" & szText
+   RexmitCountAndInterval SYN_CONNECTEX, ulSynRexmit, ulRTT, fRespond 
+   Core.EndTest
+   Core.Sleep(2500)
+   
+   
+   '/**
+   ' @test name="Stack must rexmit correct number of SYN-ACKs in the correct interval when ConnectEx is called" Autosrv issues an accept, script sends the SYN. Stack must retransmit the correct number of the SYN-ACKs in the correct interval
+   ' Verify that stack has retransmit the correct number of the SYN-ACKs in the correct interval
+   ' script must reset the connection 
+   '*/
+   
+   Core.StartTest "SYN-ACK rexmit count test" & szText 
+   RexmitCountAndInterval SYN_ACK, ulSynAckRexmit, ulRTT, fRespond
+   Core.EndTest
+   Core.Sleep(2500)
+   
+   '/**
+   ' @test name="Stack must rexmit correct number of the Data packets in the correct interval when send is called" Esatablish a TCP connection, issue a send and start receiving the data packets
+   'stop acking the data. Check that the connection goes to a closed state by sending a data packet and receving a reset
+   ' Verify that stack has retransmit the correct number of the retransmitt Datapackets in the correct interval
+   ' 
+   '*/
+   
+   Core.StartTest "Data rexmit count test using send" & szText 
+   RexmitCountAndInterval DATA_SEND, ulDataRexmit, ulRTT, fRespond
+   Core.EndTest
+   Core.Sleep(2500)
+   
+   '/**
+   ' @test name="Stack must rexmit correct number of the Data packets in the correct interval when ConnectEx is called" Esatablish a TCP connection, issue a send and start receiving the data packets
+   'stop acking the data Check that the connection goes to a closed state by sending a data packet and receving a reset
+   ' Verify that stack has retransmit the correct number of the retransmitt Datapackets in the correct interval
+   ' 
+   '*/
+   
+   
+   Core.StartTest "Data rexmit count test using ConnectEx" & szText 
+   RexmitCountAndInterval DATA_CONNECTEX, ulDataRexmit, ulRTT, fRespond
+   Core.EndTest
+   Core.Sleep(2500)
+   
+   '/**
+   ' @test name="Stack must rexmit correct number of the Data packets in the correct interval when SendAndDisconnect is called" Esatablish a TCP connection, issue a send and start receiving the data packets
+   'stop acking the data 
+   'Check that the connection goes to a closed state by sending a data packet and receving a reset
+   ' Verify that stack has retransmit the correct number of the retransmitted Datapackets in the correct interval
+   ' 
+   '*/
+   
+   Core.StartTest "Data rexmit count test using SendAndDisconnect" & szText 
+   RexmitCountAndInterval DATA_SENDANDDISCONNECT, ulDataRexmit, ulRTT, fRespond
+   Core.EndTest
+   Core.Sleep(2500)
+   
+   '/**
+   ' @test name="Stack must rexmit correct number of the FINs in the correct interval when SendAndDisconnect is called" Esatablish a TCP connection uisng connectEX, issue a clos and start receiving the FINs
+   'Check that the connection goes to a closed state by sending a data packet and receving a reset
+   ' Verify that stack has retransmit the correct number of the FINs in the correct interval
+   ' 
+   '*/
+
+   Core.StartTest "FIN rexmit count test using SendAndDisconnect" & szText 
+   RexmitCountAndInterval FIN_SENDANDDISCONNECT, ulDataRexmit, ulRTT, fRespond
+   Core.EndTest
+   Core.Sleep(2500)
+   
+   '/**
+   ' @test name="Stack must rexmit correct number of the FINs in the correct interval after Close is called" Esatablish a TCP connection uisng connectEX, issue a clos and start receiving the FINs
+   'Check that the connection goes to a closed state by sending a data packet and receving a reset
+   ' Verify that stack has retransmit the correct number of the FINs in the correct interval
+   ' 
+   '*/
+      
+   Core.StartTest "FIN rexmit count test using close" & szText 
+   RexmitCountAndInterval FIN_CLOSE, ulDataRexmit, ulRTT, fRespond
+   Core.EndTest
+   Core.Sleep(2500)
+
+End Sub
+
+'
+' Routine to test the rexmit count & interval of various packet types
+'     
+Sub RexmitCountAndInterval(PacketType, ulRexmitCount, ulInterval, fRespond)
+   Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim pTCPPacket, ulBytesRcvd, ulNumTransmits, ulTimeout, ulStartTime, ulElapsedTime
+   Dim pIFace, AutoNDObject, pSYNPacket, bFlags, bResponseFlags
+   
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 15000
+   usDestPort = 15001
+   ulStatus = 0
+   
+   Set AutoNDObject = Sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, g_szLocalSpoofIp6Address, FALSE)    
+   Set pIFace = CreateInterface(TRUE, g_szRemoteMacAddress, g_szRemoteIp6Address, g_szLocalSpoofIp6Address)
+   pIFace.StartListening
+ 
+   Core.StartVariation
+                                                                  
+   if (PacketType = SYN_ACK) then   
+      '
+      ' Ask Autosrv to issue an accept, send a SYN and grab the first SYN-ACK
+      '
+      bFlags = TCP_SYN or TCP_ACK
+      Set pSYNPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_SYN, 0)
+      Set pTCPPacket = RecvSynAck(pSYNPacket, usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, pIFace, ulTID)
+   elseif ((PacketType = SYN_CONNECTEX) OR (PacketType = DATA_CONNECTEX)) then
+      '
+      ' Ask Autosrv to issue a ConnectEx and grab the first SYN
+      '      
+      bFlags = TCP_SYN
+      Set pTCPPacket = RecvSynEx(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, 100, ulSeqNumber, ulAckNumber, ulSessionId, pIFace, ulTID)
+      
+      if (PacketType = DATA_CONNECTEX) then
+         if (pTCPPacket is Nothing) then
+            Core.BlockVariation "RexmitCountAndInterval: Failed to receive a SYN"
+            exit sub
+         end if
+         
+         '
+         ' Send a SYN-ACK
+         '
+         Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_SYN or TCP_ACK, 0)
+         pIFace.Send(pTCPPacket)
+         
+         '
+         ' Receive the data packet
+         '
+         bFlags = TCP_ACK or TCP_PUSH
+         Set pTCPPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, bFlags, 2000, pIFace) 
+      end if
+   elseif (PacketType = SYN_CONNECT) then
+      '
+      ' Ask Autosrv to issue a Connect and grab the first SYN
+      '            
+      bFlags = TCP_SYN
+      Set pTCPPacket = RecvSyn(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId, pIFace, ulTID)
+   elseif ((PacketType = DATA_SEND) or (PacketType = DATA_SENDANDDISCONNECT) or (PacketType = FIN_CLOSE) or (PacketType = FIN_SENDANDDISCONNECT)) then
+      '
+      ' Establish a TCP connection
+      '
+      ulStatus = ActiveConnect(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "RexmitCountAndInterval: ActiveConnect - " & ulStatus
+         exit sub
+      end if
+      
+      '
+      ' Ask Autosrv to issue a send/sendanddisconnect
+      '
+      if (PacketType = DATA_SEND) then 
+         bFlags = TCP_ACK or TCP_PUSH                         
+         ulStatus = pControllerObj.Send(ulSessionId, 1, 0, 100, ulTID)
+      elseif (PacketType = DATA_SENDANDDISCONNECT) then
+         bFlags = TCP_ACK or TCP_PUSH
+         ulStatus = pControllerObj.SendAndDisconnect(ulSessionId, DEFAULT_MSS, ulTID)
+      elseif (PacketType = FIN_CLOSE) then
+         bFlags = TCP_FIN or TCP_ACK
+         ulStatus = pControllerObj.Shutdown(ulSessionId, ulTID)
+      elseif (PacketType = FIN_SENDANDDISCONNECT) then
+         bFlags = TCP_FIN or TCP_ACK
+         ulStatus = pControllerObj.SendAndDisconnect(ulSessionId, 0, ulTID)
+      end if
+      if (ulStatus = 0) then
+         '
+         ' Receive the first data packet
+         '
+         Set pTCPPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, bFlags, 2000, pIFace) 
+      else
+         Core.BlockVariation "RexmitCountAndInterval: " & PacketType & " - " & ulStatus
+      end if
+   end if
+   if (ulStatus <> 0) then
+      ulStatus = ResetConnectionEx(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId)
+      exit sub
+   elseif (pTCPPacket is Nothing) then
+      Core.BlockVariation "RexmitCountAndInterval: Failed to receive the first packet"
+      ulStatus = ResetConnectionEx(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId)
+      exit sub   
+   end if 
+   
+   bResponseFlags = TCP_ACK   
+   if (bFlags = TCP_SYN) then
+      bResponseFlags = TCP_SYN or TCP_ACK
+   end if      
+
+   '
+   ' do loop used to get around using goto
+   '   
+   do
+      '
+      ' Start receiving the rexmits, verifying the interval between them 
+      '
+      ulTimeout = ulInterval
+      ulNumTransmits = 1
+      do 
+         ulStartTime = Timer
+         Set pTCPPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, bFlags, Clng(1.2*ulTimeout), pIFace) 
+         if not (pTCPPacket is Nothing) then
+            ulNumTransmits = ulNumTransmits + 1
+            ulElapsedTime = (Timer - ulStartTime)*1000
+            if (ulElapsedTime < 0.8*ulTimeout) then
+               Core.FailSev1Variation "RexmitCountAndInterval: Incorrect timeout interval - " & ulElapsedTime & " <> " & ulTimeout
+               exit do   
+            end if
+            
+            '
+            ' Send a response if we are testing rexmits stop on receiving a response
+            '      
+            if (fRespond AND (ulNumTransmits = 2)) then
+               Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, bResponseFlags, 0)
+               pIFace.Send(pTCPPacket)
+               ulRexmitCount = 1
+            end if
+         end if 
+         ulTimeout = ulTimeout * 2
+      loop while not(pTCPPacket is Nothing)
+      
+      '
+      ' Verify the rexmit count
+      '
+      Core.StartVariation 
+      if (ulNumTransmits <> (ulRexmitCount+1)) then
+         Core.FailSev1Variation "RexmitCountAndInterval: Incorrect number of rexmits - " & ulNumTransmits & " <> " & (ulRexmitCount+1)
+         exit do   
+      end if
+            
+      '
+      ' If we let all the rexmits go thru and didn't respond, verify connection has 
+      ' gone to a closed state by sending the response and receiving a RST. If we 
+      ' responded, send a data packet and ensue we get an ACK
+      '
+      Core.StartVariation
+      if Not(fRespond) then
+         Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, bResponseFlags, 0)
+         pIFace.Send(pTCPPacket)
+         
+         Set pTCPPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_RST, 300, pIFace) 
+         if (pTCPPacket is Nothing) then
+            Core.FailSev1Variation "RexmitCountAndInterval: Connection not transitioned to CLOSED state"
+            exit do
+         end if        
+      else 
+         Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK or TCP_PUSH, 0)
+         pTCPPacket.UserData 100, "This is a test"
+         pIFace.Send(pTCPPacket)
+         
+         Set pTCPPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 300, pIFace) 
+         if (pTCPPacket is Nothing) then
+            Core.FailSev1Variation "RexmitCountAndInterval: Data packet not acknowledged"
+            exit do
+         end if              
+      end if
+   loop while (FALSE)
+      
+   '
+   ' Reset the connection
+   '
+   ulStatus = ResetConnectionEx(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.log "ERROR: RexmitCountAndInterval: ResetConnectionEx - " & ulStatus
+   end if
+   
+End Sub
+
+      </script>
+   </job>
+</package>

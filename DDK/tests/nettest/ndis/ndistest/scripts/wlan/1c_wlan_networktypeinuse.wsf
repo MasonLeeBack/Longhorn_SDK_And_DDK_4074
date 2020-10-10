@@ -1,0 +1,404 @@
+<package>
+<SCRIPTDEF>
+<RUNORDER>
+1903
+</RUNORDER>
+<MEDIA>
+802_3
+</MEDIA>
+<PHYMEDIA>
+WIRELESSLAN
+</PHYMEDIA>
+<WHQL>
+802_3
+</WHQL>
+<CARDMACH>
+2C,1M,2M
+</CARDMACH>
+<DESCRIPTION>
+<![CDATA[]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+	<job id="Job" prompt="no">
+		<?job error="true" debug="true"?>
+		<reference guid="{97B1B574-D0D4-4896-93B6-A2679336A8E1}" version="1.0"/>
+		<reference object="NDInfo.Info.1" version="1.0"/>
+		<reference object="NDTCore.base.1" version="1.0"/>
+		<object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+		<object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+		<object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+		<object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+		<object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+		<!-- Begin Wireless Specific Includes -->
+		<script language="VBScript" src="..\inc\CNDTStructMngr.vbs"/>
+		<script language="VBScript" src="..\inc\WlanConstants.vbs"/>
+		<script language="VBScript" src="..\inc\WlanLibrary.vbs"/>
+		<script language="VBScript" src="..\inc\CNDT1XSupp.vbs"/>
+		<script language="VBScript" src="..\inc\CWlanOpen.vbs"/>
+		<script language="VBScript" src="..\inc\CWlanCard.vbs"/>
+		<!-- End Wireless Specific Includes -->
+		<script language="VBScript" src="..\inc\Events.vbs"/>
+		<script language="VBScript" src="..\inc\clog.vbs"/>
+		<script language="VBScript" src="..\inc\Constants.vbs"/>
+		<script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+		<script language="VBScript" src="..\inc\utilities.vbs"/>
+		<script language="VBScript" src="..\inc\devchars.vbs"/>
+		<script language="VBScript" src="..\inc\general.vbs"/>
+		<script language="VBScript">
+Option Explicit 
+Dim oTest : Set oTest = Nothing
+
+Initialize()
+
+Do
+
+   Set oTest = New CTest
+   If(oTest.SetupTest(GetTestAdapterIndex(oNDInfo.AdapterList, 0)) = False) Then
+      Exit Do
+   End If
+   
+   oTest.RunTest()
+   
+Loop While(False)
+
+oTest.CleanupTest()
+Set oTest = Nothing
+
+Terminate()
+
+Class CTest
+   
+   Private m_testCard
+   Private m_testOpen
+   Private m_testIndex
+   Private m_testGUID
+    
+   Private m_adapterList
+     
+   '================================================================================================='
+   Private Sub Class_Initialize
+      
+      Set m_adapterList    = oNDInfo.AdapterList
+      
+   End Sub
+   
+   '================================================================================================='
+   Private Sub Class_Terminate
+   
+      Set m_testCard       = Nothing
+      Set m_testOpen       = Nothing
+         
+   End Sub
+      
+   '================================================================================================='
+   Public Function SetupTest(byval testIndex)
+   Dim result        : result       = -1
+   Dim ndisStatus    : ndisStatus   = -1
+   
+      SetupTest = False
+
+      m_testIndex = testIndex
+      
+      m_testGUID  = m_adapterList(m_testIndex).GUID
+
+      '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+      oLog.VariationEx "Setup test", Null
+      Do
+      
+         Set m_testCard = New CWlanCard
+         If (m_testCard is Nothing) Then
+            oLog.FailedEx "Failed to create CWlanCard class", Null, 88888
+            Exit Do
+         End If
+                  
+         Set m_testOpen = m_testCard.vbSetupBasicTest(m_adapterList(m_testIndex))
+         If (m_testOpen is Nothing) Then
+            Exit Do
+         End If
+           
+         If(m_testOpen.vbIsWPASupported = False) Then
+            SetupTest = True
+            oLog.Write "<b>" & m_testCard.vbAdapterName & " does not support WPA, aborting script</b>"
+            Exit Function
+         End If
+                 
+         If(m_testOpen.vbInitializeSupplicant(m_testGUID) = False) Then
+            oLog.Failed "vbInitializeSupplicant() failed for " & m_testCard.vbAdapterName, 88888
+            Exit Function
+         End If
+                
+         SetupTest = True 
+      
+      Loop While(False)
+                       
+   End Function
+   
+   '================================================================================================='
+   Public Function CleanupTest()
+   Dim ndisStatus    : ndisStatus   = -1
+	   
+	   m_testOpen.vbWlanReset(True)
+	   
+	   oLog.Write ""
+	   oLog.Write "<b>TEST DEVICE TYPE:    " & vbDeviceTypeToString(m_testOpen.vbDeviceType) & "</b>"
+	   oLog.Write ""
+                           
+   End Function
+  
+   '================================================================================================='
+   Function RunTest()
+   
+      If(ExecuteTest(WLAN_WPA_AP1) = False) Then
+      End If
+                         
+   End Function
+   
+   '================================================================================================='
+   Function ExecuteTest(byval testSsid)
+   Dim ndisStatus         : ndisStatus          = -1
+   Dim packetsReceived    : packetsReceived     = 0
+   Dim packetsToSend      : packetsToSend       = 50
+   Dim packetsSent        : packetsSent         = 0
+   Dim minDirectedPass    : minDirectedPass     = (WLAN_PERCENT_TO_PASS_DIRECTED * packetsToSend) / 100
+   Dim minBroadcastPass   : minBroadcastPass    = (WLAN_PERCENT_TO_PASS_BROADCAST * packetsToSend) / 100
+   Dim networkType        : networkType        = -1
+       
+      '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+      oLog.VariationEx  "Set OID_802_11_NETWORK_TYPE_IN_USE and verify success", _
+                        "This test will set OID_802_11_NETWORK_TYPE_IN_USE and verify the request succeeds"
+      Do
+      
+         ndisStatus = m_testOpen.vbSetWlanNetworkTypeInUse(Ndis802_11DS)
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.FailedEx  "Failed to set OID_802_11_NETWORK_TYPE_IN_USE", _
+                           "WPA drivers must support setting OID_802_11_NETWORK_TYPE_IN_USE", 88888
+            Exit Do
+         End If
+      
+      Loop While(False)
+      
+      '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+      oLog.VariationEx  "Set OID_802_11_NETWORK_TYPE_IN_USE with invalid value", _
+                        "This test will set OID_802_11_NETWORK_TYPE_IN_USE with an invalid value and verify the request fails"
+      Do
+      
+         ndisStatus = m_testOpen.vbSetWlanNetworkTypeInUse(255)
+         If(ndisStatus <> NDIS_STATUS_INVALID_DATA) Then
+            oLog.FailedEx  "Should have returned NDIS_STATUS_INVALID_DATA", _
+                           "Driver must return NDIS_STATUS_INVALID_DATA when OID_802_11_NETWORK_TYPE_IN_USE is set with an invalid value", 88888
+            Exit Do
+         End If
+      
+      Loop While(False)
+      
+      '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+      oLog.VariationEx  "Query OID_802_11_NETWORK_TYPE_IN_USE and verify", _
+                        "This test will query OID_802_11_NETWORK_TYPE_IN_USE and verify a valid value is returned"
+      Do
+         
+         Dim list : Set list = CreateObject("Scripting.Dictionary")
+         
+         list.Add Ndis802_11FH,     Ndis802_11FH
+         list.Add Ndis802_11DS,     Ndis802_11DS
+         list.Add Ndis802_11OFDM5,  Ndis802_11OFDM5
+         list.Add Ndis802_11OFDM24, Ndis802_11OFDM24
+         
+         ndisStatus = m_testOpen.vbGetWlanNetworkTypeInUse(networkType)
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to query OID_802_11_NETWORK_TYPE_IN_USE", 88888
+            Exit Do
+         End If
+         
+         If(list.Exists(networkType) = False) Then
+            oLog.FailedEx  "Invalid network type returned", _
+                           "Driver must return a valid network type", 88888
+            Exit Do
+         End If
+         
+      Loop While(False)
+      
+      
+      'AP MATRIX     |  AP1      AP2      AP3   AP4
+      '--------------------------------------------
+      '802.11b       |  11b      11b      N/A   
+      '802.11g       |  11b      11g      N/A
+      '802.11a/b     |  11b      11a      N/A
+      '802.11a/g     |  11b      11a      11g
+         
+      If(m_testOpen.vbDeviceType = WLAN_DEVICE_TYPE_802_11B) Then
+     
+         '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+         oLog.VariationEx  "Verify Ndis802_11DS is returned when associated with an 802.11b AP", _
+                           "This test will associate with the 802.11b AP and then verify " & _
+                           "OID_802_11_NETWORK_TYPE_IN_USE returns Ndis802_11DS"
+         Verify80211B(WLAN_WEP_AP1)
+         
+      End If
+      
+      If(m_testOpen.vbDeviceType = WLAN_DEVICE_TYPE_802_11G) Then
+     
+         '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+         oLog.VariationEx  "Verify Ndis802_11DS is returned when associated with an 802.11b AP", _
+                           "This test will associate with the 802.11b AP and then verify " & _
+                           "OID_802_11_NETWORK_TYPE_IN_USE returns Ndis802_11DS"
+         Verify80211B(WLAN_WEP_AP1)
+         
+         '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+         oLog.VariationEx  "Verify Ndis802_11OFDM24 is returned when associated with an 802.11g AP", _
+                           "This test will associate with the 802.11g AP and then verify " & _
+                           "OID_802_11_NETWORK_TYPE_IN_USE returns Ndis802_11OFDM24"
+         Verify80211G(WLAN_WEP_AP2)
+         
+      End If
+      
+      If(m_testOpen.vbDeviceType = WLAN_DEVICE_TYPE_802_11AB) Then
+     
+         '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+         oLog.VariationEx  "Verify Ndis802_11DS is returned when associated with an 802.11b AP", _
+                           "This test will associate with the 802.11b AP and then verify " & _
+                           "OID_802_11_NETWORK_TYPE_IN_USE returns Ndis802_11DS"
+         Verify80211B(WLAN_WEP_AP1)
+         
+         '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+         oLog.VariationEx  "Verify Ndis802_11OFDM5 is returned when associated with an 802.11a AP", _
+                           "This test will associate with the 802.11a AP and then verify " & _
+                           "OID_802_11_NETWORK_TYPE_IN_USE returns Ndis802_11OFDM5"
+         Verify80211A(WLAN_WEP_AP2)
+         
+      End If
+      
+      If(m_testOpen.vbDeviceType = WLAN_DEVICE_TYPE_802_11AG) Then
+     
+         '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+         oLog.VariationEx  "Verify Ndis802_11DS is returned when associated with an 802.11b AP", _
+                           "This test will associate with the 802.11b AP and then verify " & _
+                           "OID_802_11_NETWORK_TYPE_IN_USE returns Ndis802_11DS"
+         Verify80211B(WLAN_WEP_AP1)
+         
+         '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+         oLog.VariationEx  "Verify Ndis802_11OFDM24 is returned when associated with an 802.11g AP", _
+                           "This test will associate with the 802.11g AP and then verify " & _
+                           "OID_802_11_NETWORK_TYPE_IN_USE returns Ndis802_11OFDM24"
+         Verify80211G(WLAN_WEP_AP2)
+         
+         '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+         oLog.VariationEx  "Verify Ndis802_11OFDM5 is returned when associated with an 802.11a AP", _
+                           "This test will associate with the 802.11a AP and then verify " & _
+                           "OID_802_11_NETWORK_TYPE_IN_USE returns Ndis802_11OFDM5"
+         Verify80211A(WLAN_WEP_AP3)
+         
+      End If
+            
+   End Function
+   
+   '=============================================================================================='
+   Public Function Verify80211B(byval ssid)
+   Dim ndisStatus    : ndisStatus   = -1
+   Dim networkType   : networkType  = -1 
+   
+   
+      ndisStatus = m_testOpen.vbAssociate(Ndis802_11Infrastructure,  _
+                                          Ndis802_11AuthModeOpen,    _
+                                          Ndis802_11WEPEnabled,      _
+                                          &H80000000&,               _
+                                          WLAN_KEY_WEP,              _
+                                          Null,                      _
+                                          ssid,              _
+                                          WLAN_ASSOCIATE_TIMEOUT)      
+      If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+         oLog.FailedEx  "Failed to associate with " & ssid, _
+                        "Device supports 802.11b therefore " & ssid & " must be present in the test environment", 88888
+         Exit Function
+      End If	 
+   
+      ndisStatus = m_testOpen.vbGetWlanNetworkTypeInUse(networkType)
+      If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+         oLog.FailedEx  "Failed to query OID_802_11_NETWORK_TYPE_IN_USE", _
+                        "Driver must support querying OID_802_11_NETWORK_TYPE_IN_USE", 88888
+         Exit Function
+      End If	
+   
+      If(Not networkType = Ndis802_11DS) Then
+         oLog.FailedEx  "Invalid network type returned for " & ssid & " (Returned: " & vbNetworkTypeToString(networkType) & ")", _
+                        "Driver must return Ndis802_11DS when associated with an 802.11b access point", 88888
+         Exit Function
+      End If
+            
+   End Function
+   
+   '=============================================================================================='
+   Public Function Verify80211G(byval ssid)
+   Dim ndisStatus    : ndisStatus   = -1
+   Dim networkType   : networkType  = -1 
+   
+   
+      ndisStatus = m_testOpen.vbAssociate(Ndis802_11Infrastructure,  _
+                                          Ndis802_11AuthModeOpen,    _
+                                          Ndis802_11WEPEnabled,      _
+                                          &H80000000&,               _
+                                          WLAN_KEY_WEP,              _
+                                          Null,                      _
+                                          ssid,              _
+                                          WLAN_ASSOCIATE_TIMEOUT)      
+      If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+         oLog.FailedEx  "Failed to associate with " & ssid, _
+                        "Device supports 802.11g therefore " & ssid & " must be present in the test environment", 88888
+         Exit Function
+      End If	 
+   
+      ndisStatus = m_testOpen.vbGetWlanNetworkTypeInUse(networkType)
+      If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+         oLog.FailedEx  "Failed to query OID_802_11_NETWORK_TYPE_IN_USE", _
+                        "Driver must support querying OID_802_11_NETWORK_TYPE_IN_USE", 88888
+         Exit Function
+      End If	
+   
+      If(Not networkType = Ndis802_11OFDM24) Then
+         oLog.FailedEx  "Invalid network type returned for " & ssid & " (Returned: " & vbNetworkTypeToString(networkType) & ")", _
+                        "Driver must return Ndis802_11OFDM24 when associated with an 802.11g access point", 88888
+         Exit Function
+      End If
+            
+   End Function
+   
+   '=============================================================================================='
+   Public Function Verify80211A(byval ssid)
+   Dim ndisStatus    : ndisStatus   = -1
+   Dim networkType   : networkType  = -1 
+   
+   
+      ndisStatus = m_testOpen.vbAssociate(Ndis802_11Infrastructure,  _
+                                          Ndis802_11AuthModeOpen,    _
+                                          Ndis802_11WEPEnabled,      _
+                                          &H80000000&,               _
+                                          WLAN_KEY_WEP,              _
+                                          Null,                      _
+                                          ssid,              _
+                                          WLAN_ASSOCIATE_TIMEOUT)      
+      If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+         oLog.FailedEx  "Failed to associate with " & ssid, _
+                        "Device supports 802.11a therefore " & ssid & " must be present in the test environment", 88888
+         Exit Function
+      End If	 
+   
+      ndisStatus = m_testOpen.vbGetWlanNetworkTypeInUse(networkType)
+      If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+         oLog.FailedEx  "Failed to query OID_802_11_NETWORK_TYPE_IN_USE", _
+                        "Driver must support querying OID_802_11_NETWORK_TYPE_IN_USE", 88888
+         Exit Function
+      End If	
+   
+      If(Not networkType = Ndis802_11OFDM5) Then
+         oLog.FailedEx  "Invalid network type returned for " & ssid & " (Returned: " & vbNetworkTypeToString(networkType) & ")", _
+                        "Driver must return Ndis802_11OFDM5 when associated with an 802.11a access point", 88888
+         Exit Function
+      End If
+            
+   End Function
+       
+End Class
+
+	</script>
+</job>
+</package>
+<!--- CRC = 0xca958fa7 --->

@@ -1,0 +1,76 @@
+Test Assertion_A13445
+
+Var p:Property, root:Item
+Var lVal:Int, dt
+{
+    PrintDescriptionFromXML('13.4.4.5')
+    StartWia()
+    GetRoot(root)
+    GetDeviceType(dt)
+
+    GetNextItem(root)
+
+    While ( root ) Do
+    {
+        If ( !GetProperty(root, p, WIA_IPA_ACCESS_RIGHTS) )
+        Then 
+        {
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+
+        If (!CheckPropertyAccessFromXML(p) )
+        Then 
+        {
+            Writeln '\tIncorrect access'
+            Exit Failed
+        }
+
+        If (!CheckPropertyTypeFromXML(p) )
+        Then
+        {
+            Writeln '\tIncorrect vartype'
+            Exit Failed
+        }
+
+        If(!CheckPropertyCurrentValueFromXML(p))
+        Then 
+        {
+            Writeln '\tInvalid image type flag'
+            Exit Failed
+        }
+
+        If ( dt == StiDeviceTypeScanner ) 
+        Then
+        {
+           #For scanner Access type is Read-only
+           If (SetPropertyValidValue(root,p) Or SetPropertyInvalidValue(root,p) )
+           Then 
+           {
+                Writeln '\tSetting a read-only property value succeeded'
+                Exit Failed
+           }
+        }
+        Else
+        {
+            #For Camera Access type is ReadWrite
+            If ( SetPropertyInvalidValue(root, p) )
+            Then
+            {
+                Writeln '\tSetting invalid property value succeeded'
+                Exit Failed
+            }
+
+            If (!CheckSuppValues(root, p))
+            Then
+            {
+                Writeln '\tChecking supported property values failed'
+                Exit Failed
+            }
+        }
+
+        GetNextItem(root)
+    }
+
+StopWia()
+}

@@ -1,0 +1,63 @@
+Test Assertion_A13413
+
+Var p:Property, root:Item
+{
+    PrintDescriptionFromXML('13.4.1.3')
+
+    StartWia()
+    GetRoot(root)
+
+    If ( !GetProperty(root, p, WIA_DPA_DEVICE_TIME) )
+    Then Exit Passed
+
+    If (!CheckPropertyAccessFromXML(p))
+    Then 
+    {
+        Writeln '\tIncorrect access'
+        Exit Failed
+    }
+
+    If (!CheckPropertyTypeFromXML(p) )
+        Then
+    {
+        Writeln '\tIncorrect vartype'
+        Exit Failed
+    }
+
+    If ( !CheckValueSYSTEMTIME(p) )
+    Then 
+    {
+        Writeln '\tInvalid SYSTEMTIME value'
+        Exit Failed
+    }
+
+    If( IsPropertyReadWrite(p) )
+    Then
+    {
+        If ( !SetPropertySYSTEMTIME(root, WIA_DPA_DEVICE_TIME) )
+        Then 
+        {
+            Writeln '\tSetting property value failed'
+            Exit Failed
+        }
+
+        If ( !GetProperty(root, p, WIA_DPA_DEVICE_TIME) )
+        Then 
+        {
+            Writeln '\tFailed to get the property value'
+            Exit Failed
+        }
+    }
+
+    Else
+    {
+       If ( SetPropertySYSTEMTIME(root, WIA_DPA_DEVICE_TIME) )
+       Then 
+       {
+            Writeln '\tSetting a read-only property value succeeded'
+            Exit Failed
+       }
+    }
+
+    StopWia()
+}

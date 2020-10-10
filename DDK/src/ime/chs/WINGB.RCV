@@ -1,0 +1,24 @@
+/********************************************************************/
+/*        WINGB.RCV                                                 */
+/********************************************************************/
+
+//
+// Version info.
+//
+
+#include <ntverp.h>
+
+#define VER_FILETYPE                VFT_DRV
+#define VER_FILESUBTYPE             VFT2_DRV_INPUTMETHOD
+
+#define VER_FILEDESCRIPTION_STR     "区位输入法 5.0 版"
+#define VER_INTERNALNAME_STR        "WINGB.IME"
+#define VER_ORIGINALFILENAME_STR    "WINGB.IME"
+
+#define VER_VERSION_UNICODE_LANG    "080403a8"
+#define VER_VERSION_TRANSLATION     0x804, 936
+
+#include <winver.h>
+#include <common.ver>
+
+

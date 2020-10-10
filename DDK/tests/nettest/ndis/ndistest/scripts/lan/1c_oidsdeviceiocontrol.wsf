@@ -1,0 +1,452 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, 802_5, FDDI, Irda
+</MEDIA>
+<CARDMACH>
+1C,1M
+</CARDMACH>
+<RUNORDER>
+1220
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[This script gets the list of OIDs supported for QueryGlobalStatistics, and
+proceeds to query all of them. It then proceeds to do a QueryAllGlobalStatistics
+The Ndis Tester is not able to verify the values returned by most of these OIDs.  
+The user should check this log carefully for problems.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="1c_OidsDeviceIOControl" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      
+      <!-- Begin Wireless Specific Includes -->
+      <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	   <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	   <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	   <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	   <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+      <!-- End Wireless Specific Includes -->
+      
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/> 
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CIrdaCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CIrdaOpen.vbs"/>      
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script id="1c_OidsDeviceIOControl" language="VBScript">
+'==========================================================================
+' Script Name:    1c_OidsDeviceIOControl
+'==========================================================================
+
+Option Explicit 
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0)) 
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard
+   Private m_lTestAdapterIndex
+   Private m_LocMedia
+   Private RequiredOidsLength, RequiredOids()
+   
+   Private Sub Class_Initialize
+      ReDim RequiredOids(50)
+   End Sub
+   
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+   End Sub
+   
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+      
+      Set pAdapterList = oNDInfo.AdapterList
+      
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+      
+      If (Not oTestCard.vbCreateAdapter(pAdapterList(m_lTestAdapterIndex))) Then
+         Exit Function
+      End If
+      
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+         
+         Dim oOpen : Set oOpen = oTestCard.vbOpenAdapter()
+         
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")           
+         If(vbAssociateWep(oOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If	
+         
+         Set oOpen = Nothing
+                                    
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+      
+      Set pAdapterList = Nothing
+      
+      Dim bResult, arrLocMedia(4)
+      bResult = oTestCard.vbFastNdisIOControl(OID_GEN_MEDIA_SUPPORTED, arrLocMedia, QUERY_GLOBAL_STATS)
+      If (Not bResult) Then
+         call oLog.Failed ("Unable to query for media supported list." , 88888)
+         Exit Function
+      Else
+         m_LocMedia = arrLocMedia(0)
+      End If
+      
+      SetupTest = TRUE
+   End Function
+   
+   Public Function RunTest (lTestAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+      
+      wsfPrepareOidList
+      
+      wsfCheckSupportedOids
+   End Function
+   
+   Private Sub wsfPrepareOidList
+      Dim nMedium, nPhysicalMedium
+      
+      nMedium = oTestCard.NdisMedium
+      nPhysicalMedium = oTestCard.vbGetPhysicalMedium
+      '
+      ' set up an array containing the OIDs that must be supported by
+      ' the current media type
+      '
+      RequiredOids(0)  = OID_GEN_SUPPORTED_LIST
+      RequiredOids(1)  = OID_GEN_HARDWARE_STATUS
+      RequiredOids(2)  = OID_GEN_MEDIA_SUPPORTED
+      RequiredOids(3)  = OID_GEN_MEDIA_IN_USE
+      RequiredOids(4)  = OID_GEN_MAXIMUM_LOOKAHEAD
+      RequiredOids(5)  = OID_GEN_MAXIMUM_FRAME_SIZE
+      RequiredOids(6)  = OID_GEN_LINK_SPEED
+      RequiredOids(7)  = OID_GEN_TRANSMIT_BUFFER_SPACE
+      RequiredOids(8)  = OID_GEN_RECEIVE_BUFFER_SPACE
+      RequiredOids(9)  = OID_GEN_TRANSMIT_BLOCK_SIZE
+      RequiredOids(10) = OID_GEN_RECEIVE_BLOCK_SIZE
+      RequiredOids(11) = OID_GEN_VENDOR_DESCRIPTION
+      RequiredOids(12) = OID_GEN_CURRENT_LOOKAHEAD
+      RequiredOids(13) = OID_GEN_DRIVER_VERSION
+      RequiredOids(14) = OID_GEN_MAXIMUM_TOTAL_SIZE
+      RequiredOids(15) = OID_GEN_MAC_OPTIONS
+      RequiredOids(16) = OID_GEN_MAXIMUM_SEND_PACKETS
+      RequiredOids(17) = OID_GEN_VENDOR_DRIVER_VERSION
+
+      '
+      ' OID_GEN_SUPPORTED_GUIDS and OID_GEN_NETWORK_LAYER_ADDRESSES
+      ' not tested for as required at this point
+
+      If (nMedium = NDISMEDIUMIRDA) Then
+         ' OID_IRDA_RECEIVING may be pulled out 
+
+         RequiredOids(18) = OID_IRDA_RECEIVING
+         RequiredOids(19) = OID_IRDA_TURNAROUND_TIME
+         RequiredOids(20) = OID_IRDA_SUPPORTED_SPEEDS
+         RequiredOids(21) = OID_IRDA_LINK_SPEED
+         RequiredOids(22) = OID_IRDA_MEDIA_BUSY
+         RequiredOids(23) = OID_IRDA_EXTRA_RCV_BOFS
+
+         RequiredOidsLength = 24
+      Else
+         RequiredOids(18) = OID_GEN_VENDOR_ID
+         RequiredOids(19) = OID_GEN_CURRENT_PACKET_FILTER
+         RequiredOids(20) = OID_GEN_MEDIA_CONNECT_STATUS
+         
+         ' most stats not required for Irda
+         RequiredOids(21) = OID_GEN_XMIT_OK
+         RequiredOids(22) = OID_GEN_RCV_OK
+         RequiredOids(23) = OID_GEN_XMIT_ERROR
+         RequiredOids(24) = OID_GEN_RCV_ERROR
+         RequiredOids(25) = OID_GEN_RCV_NO_BUFFER
+         
+         If (nMedium = NDISMEDIUM802_3) Then
+            RequiredOids(26) = OID_802_3_PERMANENT_ADDRESS
+            RequiredOids(27) = OID_802_3_CURRENT_ADDRESS
+            RequiredOids(28) = OID_802_3_MULTICAST_LIST
+            RequiredOids(29) = OID_802_3_MAXIMUM_LIST_SIZE
+            RequiredOids(30) = OID_802_3_RCV_ERROR_ALIGNMENT
+            RequiredOids(31) = OID_802_3_XMIT_ONE_COLLISION
+            RequiredOids(32) = OID_802_3_XMIT_MORE_COLLISIONS
+            RequiredOidsLength = 33
+         ElseIf (nMedium = NDISMEDIUM802_5) Then
+            RequiredOids(26) = OID_802_5_PERMANENT_ADDRESS
+            RequiredOids(27) = OID_802_5_CURRENT_ADDRESS
+            RequiredOids(28) = OID_802_5_CURRENT_FUNCTIONAL
+            RequiredOids(29) = OID_802_5_CURRENT_GROUP
+            RequiredOids(30) = OID_802_5_LAST_OPEN_STATUS
+            RequiredOids(31) = OID_802_5_CURRENT_RING_STATUS
+            RequiredOids(32) = OID_802_5_CURRENT_RING_STATE
+            RequiredOids(33) = OID_802_5_LINE_ERRORS
+            RequiredOids(34) = OID_802_5_LOST_FRAMES
+            RequiredOidsLength = 35
+         ElseIf (nMedium = NDISMEDIUMFDDI) Then
+            RequiredOids(26) = OID_FDDI_LONG_PERMANENT_ADDR
+            RequiredOids(27) = OID_FDDI_LONG_CURRENT_ADDR
+            RequiredOids(28) = OID_FDDI_LONG_MULTICAST_LIST
+            RequiredOids(29) = OID_FDDI_LONG_MAX_LIST_SIZE
+            RequiredOids(30) = OID_FDDI_ATTACHMENT_TYPE
+            RequiredOids(31) = OID_FDDI_UPSTREAM_NODE_LONG
+            RequiredOids(32) = OID_FDDI_DOWNSTREAM_NODE_LONG
+            RequiredOids(33) = OID_FDDI_FRAME_ERRORS
+            RequiredOids(34) = OID_FDDI_FRAMES_LOST
+            RequiredOids(35) = OID_FDDI_RING_MGT_STATE
+            RequiredOids(36) = OID_FDDI_LCT_FAILURES
+            RequiredOids(37) = OID_FDDI_LEM_REJECTS
+            RequiredOids(38) = OID_FDDI_LCONNECTION_STATE
+            RequiredOidsLength = 39
+         End If
+         
+         ' The wireless oids would be moved to scripts in wlan directory
+         ' Some of the 802_11 Oids are mandatory
+         If (nPhysicalMedium = NDISPHYSICALMEDIUMWIRELESSLAN) Then
+            RequiredOids(RequiredOidsLength) = OID_802_11_BSSID     
+            RequiredOidsLength = RequiredOidsLength + 1
+            RequiredOids(RequiredOidsLength) = OID_802_11_SSID      
+            RequiredOidsLength = RequiredOidsLength + 1
+            RequiredOids(RequiredOidsLength) = OID_802_11_NETWORK_TYPE_IN_USE
+            RequiredOidsLength = RequiredOidsLength + 1
+            RequiredOids(RequiredOidsLength) = OID_802_11_RSSI
+            RequiredOidsLength = RequiredOidsLength + 1
+            RequiredOids(RequiredOidsLength) = OID_802_11_INFRASTRUCTURE_MODE
+            RequiredOidsLength = RequiredOidsLength + 1
+            RequiredOids(RequiredOidsLength) = OID_802_11_SUPPORTED_RATES
+            RequiredOidsLength = RequiredOidsLength + 1
+            RequiredOids(RequiredOidsLength) = OID_802_11_CONFIGURATION
+            RequiredOidsLength = RequiredOidsLength + 1
+            RequiredOids(RequiredOidsLength) = OID_802_11_ADD_WEP
+            RequiredOidsLength = RequiredOidsLength + 1
+            RequiredOids(RequiredOidsLength) = OID_802_11_REMOVE_WEP
+            RequiredOidsLength = RequiredOidsLength + 1
+            RequiredOids(RequiredOidsLength) = OID_802_11_WEP_STATUS
+            RequiredOidsLength = RequiredOidsLength + 1
+            RequiredOids(RequiredOidsLength) = OID_802_11_DISASSOCIATE
+            RequiredOidsLength = RequiredOidsLength + 1
+            RequiredOids(RequiredOidsLength) = OID_802_11_BSSID_LIST
+            RequiredOidsLength = RequiredOidsLength + 1
+            RequiredOids(RequiredOidsLength) = OID_802_11_BSSID_LIST_SCAN
+            RequiredOidsLength = RequiredOidsLength + 1
+            RequiredOids(RequiredOidsLength) = OID_802_11_AUTHENTICATION_MODE 
+            RequiredOidsLength = RequiredOidsLength + 1
+            RequiredOids(RequiredOidsLength) = OID_802_11_RELOAD_DEFAULTS
+            RequiredOidsLength = RequiredOidsLength + 1
+         End If
+
+      End If
+
+   End Sub
+   
+   Private Function wsfCheckSupportedOids
+      Dim OidListLength, OidList()
+      Dim nCount, bResult
+      
+      '
+      ' now get the supported list, and compare with the required list
+      '
+      
+      ReDim OidList(1)
+      
+      OidList(0) = CLng(OidList(0))
+      OidListLength = CLng(0)
+      
+      oLog.Variation("Get Supported OID List")   
+      bResult = oTestCard.vbFastNdisIOControl(OID_GEN_SUPPORTED_LIST, OidList, QUERY_GLOBAL_STATS)
+      If (Not bResult) Then
+         call oLog.Failed ("Unable to get list of supported OIDs." , 21477)
+         Exit Function
+      End If
+      
+      '
+      ' The length of an array that holds, say 6 elements is allocated as 5 but uses 
+      ' an extra 0th element, so to get the actual length, add 1 to the length returned.
+      '
+      OidListLength = UBound(OidList) + 1
+      
+      Dim Found
+      '
+      ' and compare with our expected list, to make sure all the required ones are there..
+      '
+      oLog.Variation("Check for all required oids")
+      nCount = CLng(0)
+      Do While (nCount < RequiredOidsLength)
+         If (RequiredOids(nCount) <> 0) Then
+            Found = isItemInList(RequiredOids(nCount), OidList, OidListLength)
+            If (Not Found ) Then
+               oNDTCore.PrintOidName(RequiredOids(nCount))
+               call oLog.Failed ("Supported list does not contain required Oid" , 21478)
+            End If
+         End If
+         nCount = nCount + 1
+      Loop
+      
+      '
+      ' the following OIDS are technically required, but will be
+      ' warned instead of generating a failure if they are not supported
+      ' (no protocol uses them as of this date)
+      ' At some later date this may be changed to a failure
+      '
+      Dim FddiOids(4)  
+      If (oTestCard.NdisMedium = NDISMEDIUMFDDI) Then
+         FddiOids(0) = OID_FDDI_SHORT_PERMANENT_ADDR
+         FddiOids(1) = OID_FDDI_SHORT_CURRENT_ADDR
+         FddiOids(2) = OID_FDDI_SHORT_MULTICAST_LIST
+         FddiOids(3) = OID_FDDI_SHORT_MAX_LIST_SIZE
+         
+         For nCount = 0 To 3
+            Found = isItemInList(FddiOids(nCount), OidList, OidListLength)
+            If (Not Found) Then
+               oNDTCore.PrintOidName(FddiOids(nCount))
+               oLog.Warned("Supported list does not contain required Oid" )
+            End If
+         Next
+      Else
+         ' as the array is going to be used later on, initialize to zero
+         FddiOids(0) = CLng(0)
+         FddiOids(1) = CLng(0)
+         FddiOids(2) = CLng(0)
+         FddiOids(3) = CLng(0)
+      End If
+      
+      '
+      ' some oids we cant currently test (or dont want to)
+      ' put them in a list that we scan before doing actual test
+      '
+      Dim SkipLength, OidsToSkip(14)
+      
+      OidsToSkip(0)  = OID_GEN_SUPPORTED_LIST            ' already tested
+      OidsToSkip(1)  = OID_GEN_PROTOCOL_OPTIONS          ' set only
+      OidsToSkip(2)  = OID_GEN_NETWORK_LAYER_ADDRESSES   ' set only
+      OidsToSkip(3)  = OID_PNP_SET_POWER                 ' set only
+      OidsToSkip(4)  = OID_PNP_QUERY_POWER               ' set only
+      OidsToSkip(5)  = OID_PNP_ADD_WAKE_UP_PATTERN       ' set only
+      OidsToSkip(6)  = OID_PNP_REMOVE_WAKE_UP_PATTERN    ' set only
+      OidsToSkip(7)  = OID_PNP_ENABLE_WAKE_UP            ' set only
+      OidsToSkip(8)  = OID_GEN_PHYSICAL_MEDIUM           ' tricky for multifunction devices
+      OidsToSkip(9)  = OID_802_11_ADD_WEP				      ' set only
+      OidsToSkip(10) = OID_802_11_REMOVE_WEP			      ' set only
+      OidsToSkip(11) = OID_802_11_BSSID_LIST_SCAN		   ' set only
+      OidsToSkip(12) = OID_802_11_DISASSOCIATE 		      ' set only
+      OidsToSkip(13) = OID_802_11_RELOAD_DEFAULTS 		   ' set only
+      OidsToSkip(14) = OID_GEN_RNDIS_CONFIG_PARAMETER    ' set only
+      
+      SkipLength = 15
+      
+      oLog.Variation("Check that listed OIDs really are supported")
+      Dim ThisOid, arrOidData()
+      Dim BytesWritten, ErrStatus
+      
+      nCount = CLng(0)
+      Do While (nCount < OidListLength)
+         ThisOid = OidList(nCount)
+         nCount = nCount + 1
+         oLog.Variation("Checking/Querying OIDs")      
+         
+         '
+         ' if this oid is in our skip list, then skip it
+         '
+         Found = isItemInList(ThisOid, OidsToSkip, SkipLength)
+         If (Found) Then
+            oNDTCore.PrintOidName(ThisOid)
+            oLog.Write("OID skipped" )
+         ElseIf (isItemInList(ThisOid, RequiredOids, RequiredOidsLength) _
+                  Or isItemInList(ThisOid, FddiOids, 4)) Then
+            '
+            ' We check for an OID returned by the supported list query, only
+            ' if it is a recognized oid. Checking for unknown oids causes
+            ' problems, as some of the unrecognized oids may be set only, 
+            ' and queries for them may result in incorrect failures
+            '
+            ReDim ArrOidData(1)
+            arrOidData(0) = CBYTE(0)
+            bResult = oTestCard.vbNdisIOControl(ThisOid, arrOidData, BytesWritten, ErrStatus, QUERY_GLOBAL_STATS)
+            If (Not bResult) Then
+               If ((BytesWritten <> 0) Or (ErrStatus <> NDIS_STATUS_SUCCESS)) Then
+                  ' If Miniport returned NOT_SUPPORTED, NDIS might translate it
+                  ' to success under certain circumstances. NDISTest would then
+                  ' translate that to bResult false, but return actual status
+                  oNDTCore.PrintOidName(ThisOid)
+                  If (ThisOid = OID_PNP_ADD_WAKE_UP_PATTERN Or _
+                      ThisOid = OID_PNP_REMOVE_WAKE_UP_PATTERN Or _
+                      ThisOid = OID_PNP_QUERY_POWER Or _
+                      ThisOid = OID_PNP_SET_POWER) Then
+                      Call oLog.Warned ("Unable to query OID")
+                  Else
+                     call oLog.Failed ("Unable to query OID" , 21479)
+                  End If
+               End If
+            End If
+         Else
+            oLog.Write("Oid 0x" & Hex(ThisOid) & " not required, and hence not checked" )
+         End If
+      Loop
+      
+      '
+      ' finally, query all global statistics
+      '
+      ReDim ArrOidData(1)
+      arrOidData(0) = CBYTE(0)
+      BytesWritten = CLng(0)      
+      bResult = oTestCard.vbNdisIOControl(0, arrOidData, BytesWritten, ErrStatus, QUERY_ALL_STATS)
+      If (Not bResult) Then
+        If (BytesWritten <> 0) Then
+           ' Some device types may not support stat oids. In that case, the BytesWritten
+           ' is zero, but the return status would be failed. Only if bytes written
+           ' is non zero should we claim failure (note this means we allow a lot of 
+           ' legitimate failures to pass)         
+           call oLog.Failed ("Unable to query all statistics" , 21480)
+        End If
+      End If
+      
+   End Function
+   
+End Class
+
+</script>
+</job>
+</package>
+
+
+
+
+<!--- CRC = 0xa625dc0d --->

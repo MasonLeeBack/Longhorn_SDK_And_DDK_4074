@@ -1,0 +1,175 @@
+'*************************************************************************
+'*                                                                       *
+'* File          : TOEDetect.wsf                                         *
+'* Author        : Kamil Ustuntas                                        *
+'* Created         11/26/2003   kamilu                                   *
+'* A script to detect TOE card on the remote machine and reconfigure     *
+'*                                                                       *
+'*************************************************************************
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\common\Common.Lib"/>
+      <script id="TOETests" language="VBScript">
+
+
+option explicit
+
+dim Core, Sparta, Autosrv, pController, MediaType, IFace, ExceptionStatus, WshShell
+
+'
+' Start the script
+'
+StartScriptTest "TOEDetect", g_szLogDirectory, "A script to detect TOE and reconfigure"
+
+sub Main (success)
+
+    Dim ValueArray, ulAdapterIndex, szRemoteIpAddress, ulStatus, fTOENic, fVersion6, ulNumOfXface, szIPAddress, ulCounter
+    dim MsgResponse
+    StartTest "detecting TOE and reconfiguring"
+    
+    if not success then
+        Sev1 "Back Channel Check failed"
+        exit sub
+    end if
+
+    ulStatus = pController.GetNumInterfaces(ulNumOfXface)
+    if (ulStatus <> 0) then
+        Sev1 "GetNumInterfaces returned error - " & ulStatus
+        exit sub
+    end if
+
+    if (ulNumOfXface < 2) then
+        Sev1 "Remote machine has to have at least two network cards"
+        exit sub
+    end if
+
+    szIPAddress = g_szRemoteIpAddress
+    fTOENic = GetOffloadParametersForAdapter(szIPAddress)
+
+    ulCounter = 2
+    Do while (not fTOENic) and (ulCounter <= ulNumOfXface)
+        Execute "szIPAddress = g_szRemoteIpAddress" & ulCounter
+        fTOENic = GetOffloadParametersForAdapter(szIPAddress)
+        ulCounter = ulCounter + 1
+    Loop
+
+    if (not fTOENic) then
+        Sev1 "Remote machine does not have a TOE nic"
+        exit sub
+    end if
+
+    set WshShell = WScript.CreateObject("WScript.Shell")
+    if WshShell is Nothing then 
+        Sev1 "Cannot create Shell object to run the scripts"
+        Exit sub
+    end if
+
+    szIPAddress = g_szRemoteIpAddress2
+    WshShell.Run "c:\sparta\bin\config.exe /n " & g_szRemoteNBName & " /u " & g_szRemoteNBName & "\" & g_szAdminUsername & " /p " & g_szAdminPassword & " /1 " & szIPAddress, 1, true
+    Shout "Configuration done."
+    
+    Core.Sleep(2500)
+
+end sub
+
+
+'/**
+' Function to get offload parameters
+' @params
+' !g_fTOENic : does NIc support TCP/IP Offload Engine
+' !g_fTestOffload : command line parameter to test tcpip offload engine NICs
+' @return nothing
+'*/
+Function GetOffloadParametersForAdapter(IpAddress)
+
+    Dim ValueArray, ulAdapterIndex, ulStatus, fTOENic, fTOESupportIPv4, fTOESupportIPv6, fTOESupportSack
+
+    GetOffloadParametersForAdapter = False
+
+    ulStatus = pController.GetIndexByIp(IpAddress, ulAdapterIndex)
+
+    if ulStatus <> 0 then 
+        Shout "GetOffloadParametersForAdapter: GetInterfaceIndex returned error - " & ulStatus
+        Exit function
+    end if
+         
+    '
+    ' Determine if NIC supports TCP/IP Offload Engine
+    '
+    ulStatus = pController.GetOffloadSupport(ulAdapterIndex, fTOESupportIPv4, fTOESupportIPv6, fTOESupportSack)
+    if ulStatus <> 0 then 
+        Shout "GetOffloadParametersForAdapter: GetOffloadSupport returned error - " & ulStatus
+        Exit function
+    end if
+
+    GetOffloadParametersForAdapter = fTOESupportIPv4 or fTOESupportIPv6
+
+End Function
+
+
+sub StartScriptTest (szLogName, szLogDirectory, szDisplayTitle)
+    dim netmon, ulStatus, fStop, CurrentValue
+    dim StartTime, EndTime, success, ValueArray
+
+    success = true
+    set core = CreateObject ("Testcore.base.1")
+    core.SetLogDirectory szLogDirectory
+    core.OpenLog szLogName, TLS_REFRESH
+
+    core.LogLevel = (Core.LogLevel) - TLS_COMMANDS
+    core.Log "***** Date and time of execution:  "  & Now
+
+    set sparta = CreateObject ("Spartacom.base.1")
+    sparta.InitLogging Core
+    sparta.SetExceptionCallback GetRef ("ErrorHandler")
+
+    set IFace = sparta.DriverInterface (g_szLocalMacAddress)
+    if (IFace is nothing) then
+        Shout ("Unable to start driver interface")
+        exit sub
+    end if
+    MediaType=IFace.MediaType
+
+    core.OpenDisplay false
+    core.SetDisplayTitle szDisplayTitle
+
+    set autosrv = CreateObject ("AutoSrvcom.base.1")
+    autosrv.InitLogging Core
+    on error resume next
+    set pController = autosrv.InitController (g_szControllerIp, g_usControllerPort, g_szAutoSrvIp, g_usAutoSrvPort)
+    if pController is Nothing then
+        Success = false
+        Shout "Test mahine can not be contacted at this time. " & Chr(13) & Chr(10) & _
+               Chr(13) & Chr(10) & _
+               "Please check " & Chr(13) & Chr(10) & _
+               " 1. Controller and test machines' network connections. " & Chr(13) & Chr(10) & _
+               " 2. Make sure Server Backchannel service is running " & Chr(13) & Chr(10) & _
+               Chr(13) & Chr(10) & _
+               "if everything is right upto this point then repeat the configuration steps."
+    end if
+
+
+    StartTime = Timer
+    Main Success
+    EndTime   = Timer
+
+    LogDurationofExecution(EndTime - StartTime)
+
+    set pController = nothing
+
+    core.CloseDisplay
+    core.CloseLog
+
+end sub
+
+
+
+
+      </script>
+   </job>
+</package>

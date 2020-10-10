@@ -1,0 +1,338 @@
+'*********************************** TCPv6_RTTMeasurement.wsf ********************
+'*                                                                               *
+'* Author            :    Balash Akbari                                          *
+'* Revision history  :                                                           *
+'*    3/10/2001     balasha         Created                                      *
+'*    3/26/2001     balsha          Ported to IPv6                               *
+'*                                                                               *
+'* This script tests Round Trip Time Measurement of TCPv6                        *
+'*                                                                               *
+'*********************************** TCPv6_RTTMeasurement.wsf*********************
+
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\common\IPv6Common.Lib"/>
+      <script language="VBScript" src="..\common\TCPv6Helper.Lib"/>
+      <script id="TCPv6_RTTMeasurement" language="VBScript">
+
+
+option explicit
+
+
+
+Dim Core, Sparta, Autosrv, MediaType, AutoNDObject, pControllerObj, ExceptionStatus, pIFace,IFace
+
+Const usMSS = 1440
+Const usTCPDestPort = 5000
+Const DefaultTcpInitialRTT  =  3000
+
+'
+' Start the script
+'
+StartScript "TCPv6_RTTMeasurement" ,g_szLogDirectory, "Tests RTT Measurement algorithm of TCPv6"
+
+
+
+' ==================================================================================================
+' Main routine
+' ==================================================================================================
+Sub Main
+
+   Core.SetAssertionTracking "50400"
+   Set AutoNDObject = Sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, g_szLocalSpoofIp6Address, FALSE)
+   Set pIFace = CreateInterface(TRUE, g_szRemoteMacAddress, g_szRemoteIp6Address, g_szLocalSpoofIp6Address)
+   
+   '/**
+   ' @area name="Offload Compliance Test Assertions"
+   ' @group name="TCP Retransmission Assertions"
+   ' @group name="TCPv6 Retransmission Measurement Assertions" 
+   ' @define name="Offload" Offload Compliance Test Assertions
+   ' @define name="TCPR" TCP Retransmission Assertions
+   ' @define name="TCPRTTMv6" TCPv6 Retransmission Measurement Assertions
+   ' @hierarchy Offload TCPR TCPRTTMv6
+   ' @key Reference="WLP# - x.x.x.x; RFC-1122 Section 4.2.3.1"
+   ' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+   ' @key TestName="TCPV6 Retransmition Measurement Test"
+   ' @key TestLog="TCPv6_RTTMeasurement.log"
+
+
+   
+   '*/
+
+   '/**
+   
+   
+   
+   pIFace.StartListening
+   
+   '/**
+   ' @test name="Stack must initial RTT Values correctly" Establish a TCP connection. Ask Autosrv to send one packet
+   ' set data size to MSS to avoid Nagling.  Receive the first packet.  Wait for the retransmission just 
+   ' less than the Initial RTO. Reset the connection
+   'Verify that retransmission occured before the timer expires for the following receive
+   '*/
+   InitialRTT
+   
+   
+    '/**
+   ' @test name="Stack must calculate the RTT values correclty when packets are delayed"  Establish a TCP connection.For the first 32 packet
+   ' sent, delay each packet for random amount of time between 3000 and 500 ms.  For each delay calculate the 
+   ' projected effect on RTO.   Do to ACK the last packet.  Wait for the retransmission just less than the Initial
+   ' RTO.  Wait for the retransmission just less than the RTO.  Make sure not packet was received.  No issue another 
+   ' Receive after RTO make sure the packet has arrived.  If the test fails up repeat the test up to three times to 
+   ' compensate for the network anomalies. 
+   '*/   
+   
+   RTTWithDelay
+
+   Core.EndTest
+   Core.Sleep(2000)
+   pIFace.StopListening
+
+End Sub
+
+
+' Function to test initial RTT
+Sub InitialRTT
+       
+       Randomize
+       
+       Dim ulStatus
+       Dim pTCPPacket, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+       Dim ulBytesRcvd, pACKPacket, ulInitialRTT,ulMarginOfError
+
+       ulInitialRTT =  DefaultTcpInitialRTT
+       ulMarginOfError = Clng(250)
+
+       ulSeqNumber = Clng(1000)
+       ulAckNumber = Clng(1)
+       usSrcPort = Core.Random(7000,49999)
+       usDestPort = 6000
+
+
+       Core.StartTest "Initial RTT Measurement"
+       Core.StartVariation
+
+       '
+       ' Establish a TCP connection
+       '
+       ulStatus = ActiveConnect(usSrcPort, usDestPort,g_szLocalSpoofIp6Address,ulSeqNumber, ulAckNumber, ulSessionId,pIFace)
+       if (ulStatus <> 0) then
+          Core.BlockVariation "RTT Measurement: ActiveConnect - " & ulStatus
+          exit sub
+       end if
+
+
+       '
+       ' Ask Autosrv to send one packet set data size to MSS to avoid Nagling
+       '
+       ulStatus = pControllerObj.Send(ulSessionId, 1, 0, usMSS, ulTID)
+       if (ulStatus <> 0) then
+          Core.Log "RTTMeasurement: Send - " & ulStatus
+          exit sub
+       end if
+
+       '
+       'Receive the first packet
+       '
+       Set pTCPPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK or TCP_PUSH, ulInitialRTT,pIFace)
+       if (pTCPPacket is Nothing) then
+           Core.FailSev1Variation "First ACK was never received"
+           ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+           exit sub
+       end if
+
+       '
+       'Wait for the retransmission just less than the Initial RTO
+       '
+       Set pTCPPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK or TCP_PUSH, ulInitialRTT - ulMarginOfError, pIFace)
+       if (pTCPPacket is Nothing) then
+
+       else
+           Core.FailSev1Variation "Retransmission occurred too early"
+           ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+           exit sub
+       end if
+
+
+       '
+       'Retransmission should occur before the timer expires for the following receive
+       '
+       Set pTCPPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK or TCP_PUSH, 2*ulMarginOfError, pIFace)
+       if (pTCPPacket is Nothing) then
+           Core.FailSev1Variation "Retransmission did not occur"
+           ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+           exit sub
+       end if
+
+       Set pACKPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+       pIFace.Send(pACKPacket)
+
+       '
+       ' Reset the connection
+       '
+       ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+
+       Core.EndTest
+
+End Sub
+
+
+
+'Function to test TRO calculation when packets are delayed 
+Sub RTTWithDelay
+
+       Dim ulStatus
+       Dim pTCPPacket, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+       Dim ulBytesRcvd, pACKPacket, ulInitialRTT,ulMarginOfError, usCount, sMessage
+       Dim Error, M, A, D, g, h, RTO, I
+       Dim usVariationRetry
+       Dim usTotalNoRetries
+
+       usVariationRetry = 0
+       usTotalNoRetries = 0
+
+
+       Core.StartTest "RTTWithDelay"
+
+       '
+       ' Establish a TCP connection
+       '
+       Randomize
+
+       For I = 3 To  25
+
+           if (usVariationRetry = 0) then
+                Core.StartVariation
+           end if
+
+           A = 0
+           g = 1/8
+           h = 1/4
+           D = 750
+           Error = 0
+           M   = 0
+           RTO = 0
+
+           ulInitialRTT =  DefaultTcpInitialRTT
+           ulMarginOfError = Clng(100)
+
+           ulSeqNumber = Clng(1000)
+           ulAckNumber = Clng(1)
+           usSrcPort = Core.Random(7000,49999)
+           usDestPort = 6000
+
+            ulStatus = ActiveConnect(usSrcPort, usDestPort,g_szLocalSpoofIp6Address,ulSeqNumber, ulAckNumber, ulSessionId,pIFace)
+            if (ulStatus <> 0) then
+                    Core.BlockVariation "RTT Measurement: Connect - " & ulStatus
+                    exit sub
+            end if
+
+            usCount = I
+
+            do
+
+                M = Int((3000 - 500 + 1) * Rnd + 500)
+
+                ulStatus = pControllerObj.Send(ulSessionId, 1, 0, usMSS, ulTID)
+                if (ulStatus <> 0) then
+                   Core.Log "RTTMeasurement: Send - " & ulStatus
+                   exit sub
+                end if
+
+                Set pTCPPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK or TCP_PUSH, ulInitialRTT,pIFace)
+                if (pTCPPacket is Nothing) then
+                   Core.FailSev1Variation "Not Receiving the packets"
+                   Msgbox("Not Receiving the packets")
+                   ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+                    exit sub
+                end if
+
+                Core.Sleep(M)
+
+
+                 Error = M - A
+                 A = A + g*Error
+                 D = D + h * (abs(Error) - D)
+                 RTO = A + 4*D
+
+                 Set pACKPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+                 pIFace.Send(pACKPacket)
+
+                 usCount = usCount -1
+            loop while (usCount >0 )
+
+            ulStatus = pControllerObj.Send(ulSessionId, 1, 0, usMSS, ulTID)
+
+            ulInitialRTT = RTO
+            ulMarginOfError = 1200
+
+            '
+            'Receive the first packet
+            '
+            Set pTCPPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK or TCP_PUSH, ulInitialRTT,pIFace)
+            if (pTCPPacket is Nothing) then
+                Core.FailSev1Variation "First ACK was never received"
+                ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+                exit sub
+            end if
+
+            '
+            'Wait for the retransmission just less than the Initial RTO
+            '
+            Set pTCPPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK or TCP_PUSH, ulInitialRTT - ulMarginOfError, pIFace)
+            if (pTCPPacket is Nothing) then
+                '
+                'Retransmission should occur before the timer expires for the following receive
+                '
+                Set pTCPPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK or TCP_PUSH, 2*ulMarginOfError, pIFace)
+         		if (pTCPPacket is Nothing) then
+                        if (usVariationRetry >= 3) then
+                            Core.FailSev2Variation "RTTWithDelay: Retransmission did not occur I = " &  I & " ulInitialRTT = " & ulInitialRTT
+                            ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+                            usVariationRetry = 0
+                        else
+                            Core.Log "Variation failed: Retrying Variation before reporting failure. Variation # " & I
+                            usVariationRetry = usVariationRetry +1
+                            usTotalNoRetries = usTotalNoRetries +1
+                            I = I - 1
+                        end if
+                else
+                         'if  we are here that means the variation passed. Reset the variation retry counter to 0
+                         usVariationRetry  =  0
+                end if
+            else
+                if (usVariationRetry >= 3) then
+                        Core.FailSev2Variation "RTTWithDelay:Retransmission occurred too early I =" &  I & " ulInitialRTT = " & ulInitialRTT
+                        ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+                        usVariationRetry = 0
+                else
+                        Core.Log "Variation failed: Retrying Variation before reporting failure. Variation # " & I
+                        usVariationRetry = usVariationRetry +1
+                        usTotalNoRetries = usTotalNoRetries +1
+                        I = I - 1
+                end if
+            end if
+
+            '
+            ' Reset the connection
+            '
+            ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+
+       Next
+
+       Core.EndTest
+
+End Sub
+
+
+
+      </script>
+   </job>
+</package>
+

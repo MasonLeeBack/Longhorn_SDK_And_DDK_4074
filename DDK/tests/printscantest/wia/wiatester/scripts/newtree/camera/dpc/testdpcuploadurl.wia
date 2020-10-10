@@ -1,0 +1,61 @@
+Test Assertion_A134239
+
+Var p:Property, root:Item
+Var dt
+{
+    PrintDescriptionFromXML('13.4.2.39')
+
+    StartWia()
+    GetRoot(root)
+    GetDeviceType(dt)
+
+    If (dt != StiDeviceTypeDigitalCamera)
+    Then Exit Passed
+
+    #Check For New Item Tree 
+    If(!IsNewTree(root))
+    Then
+    {
+        Writeln '\tThe device does not support New Item Tree'
+        Exit Failed 
+    }
+
+    If (!GetProperty(root, p, WIA_DPC_UPLOAD_URL))
+    Then Exit Passed
+
+    If (!CheckPropertyAccessFromXML(p) )
+    Then 
+    {
+        Writeln '\tIncorrect access'
+        Exit Failed
+    }
+
+    If (!CheckPropertyTypeFromXML(p) )
+    Then
+    {
+        Writeln '\tIncorrect vartype'
+        Exit Failed
+    }
+
+    If(IsPropertyReadWrite(p) )
+    Then
+    {
+        If (!SetPropertyStr(root, WIA_DPC_UPLOAD_URL, 'http://www.msn.com'))
+        Then
+        {
+            Writeln '\tSetting property value failed'
+            Exit Failed
+        }
+    }
+    Else
+    {
+       If (SetPropertyValidValue(root,p) Or SetPropertyInvalidValue(root,p) )
+       Then 
+       {
+            Writeln '\tSetting a read-only property value succeeded'
+            Exit Failed
+       }
+    }
+
+    StopWia()
+}

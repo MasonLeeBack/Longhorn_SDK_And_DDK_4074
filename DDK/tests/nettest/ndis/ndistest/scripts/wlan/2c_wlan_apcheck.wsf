@@ -1,0 +1,391 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3
+</MEDIA>
+<PHYMEDIA>
+WIRELESSLAN
+</PHYMEDIA>
+<CARDMACH>
+2C,1M
+</CARDMACH>
+<DESCRIPTION>
+<![CDATA[
+This is a Non-WHQL test script used to determine if the access points in the environment are correct
+given the devices PHY type support and also to verify communication between the access points. It will
+also verify that the device supports at least 802.11b and if WPA is supported it will verify at least
+TKIP encryption is supported 
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+	<job id="Job" prompt="no">
+		<?job error="true" debug="true"?>
+		<reference guid="{97B1B574-D0D4-4896-93B6-A2679336A8E1}" version="1.0"/>
+		<reference object="NDInfo.Info.1" version="1.0"/>
+		<reference object="NDTCore.base.1" version="1.0"/>
+		<object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+		<object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+		<object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+		<object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+		<object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+		<!-- Begin Wireless Specific Includes -->
+		<script language="VBScript" src="..\inc\CNDTStructMngr.vbs"/>
+		<script language="VBScript" src="..\inc\WlanConstants.vbs"/>
+		<script language="VBScript" src="..\inc\WlanLibrary.vbs"/>
+		<script language="VBScript" src="..\inc\CNDT1XSupp.vbs"/>
+		<script language="VBScript" src="..\inc\CWlanOpen.vbs"/>
+		<script language="VBScript" src="..\inc\CWlanCard.vbs"/>
+		<!-- End Wireless Specific Includes -->
+		<script language="VBScript" src="..\inc\Events.vbs"/>
+		<script language="VBScript" src="..\inc\clog.vbs"/>
+		<script language="VBScript" src="..\inc\Constants.vbs"/>
+		<script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+		<script language="VBScript" src="..\inc\utilities.vbs"/>
+		<script language="VBScript" src="..\inc\devchars.vbs"/>
+		<script language="VBScript" src="..\inc\general.vbs"/>
+		<script language="VBScript">
+Option Explicit 
+Dim oTest : Set oTest = Nothing
+
+Initialize()
+
+Do
+
+   Set oTest = New CTest
+   If(oTest.SetupTest(GetTestAdapterIndex(oNDInfo.AdapterList, 0), GetSupportAdapterIndex(oNDInfo.AdapterList, 0)) = False) Then
+      Exit Do
+   End If
+   
+   oTest.RunTest()
+   
+Loop While(False)
+
+oTest.CleanupTest()
+Set oTest = Nothing
+
+Terminate()
+
+Class CTest
+   
+   Private m_testCard
+   Private m_testOpen
+   Private m_testIndex
+   Private m_testGUID
+   
+   Private m_suppCard
+   Private m_suppOpen
+   Private m_suppIndex
+   Private m_suppGUID
+   
+   Private m_adapterList
+      
+   '================================================================================================='
+   Private Sub Class_Initialize
+      
+      Set m_adapterList = oNDInfo.AdapterList
+            
+   End Sub
+   
+   '================================================================================================='
+   Private Sub Class_Terminate
+   
+      Set m_testCard       = Nothing
+      Set m_testOpen       = Nothing
+      Set m_suppCard       = Nothing
+      Set m_suppOpen       = Nothing
+      
+   End Sub
+   
+   '================================================================================================='
+   Public Function SetupTest(byval testIndex, byval suppIndex)
+   Dim result        : result       = -1
+   Dim ndisStatus    : ndisStatus   = -1
+   
+      SetupTest = False
+
+      m_testIndex = testIndex
+      m_testGUID  = m_adapterList(m_testIndex).GUID
+      
+      m_suppIndex = suppIndex
+      m_suppGUID  = m_adapterList(m_suppIndex).GUID
+
+      '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+      oLog.VariationEx "Setup test", Null
+      Do
+      
+         Set m_testCard = New CWlanCard
+         If (m_testCard is Nothing) Then
+            oLog.FailedEx "Failed to create test device CWlanCard class", Null, 88888
+            Exit Do
+         End If
+                  
+         Set m_testOpen = m_testCard.vbSetupBasicTest(m_adapterList(m_testIndex))
+         If (m_testOpen is Nothing) Then
+            Exit Do
+         End If
+         
+         Set m_suppCard = New CWlanCard
+         If (m_suppCard is Nothing) Then
+            oLog.FailedEx "Failed to create support CWlanCard class", Null, 88888
+            Exit Do
+         End If
+                  
+         Set m_suppOpen = m_suppCard.vbSetupBasicTest(m_adapterList(m_suppIndex))
+         If (m_suppOpen is Nothing) Then
+            Exit Do
+         End If
+                  
+      Loop While(False)
+                 
+      SetupTest = True
+      
+   End Function
+   
+   '================================================================================================='
+   Public Function CleanupTest()
+   Dim ndisStatus    : ndisStatus   = -1
+	   
+	   m_testOpen.vbWlanReset(True)
+	   m_suppOpen.vbWlanReset(True)
+	   
+	   oLog.Write ""
+	   oLog.Write "<b>TEST DEVICE TYPE:    " & vbDeviceTypeToString(m_testOpen.vbDeviceType) & "</b>"
+	   oLog.Write "<b>SUPPORT DEVICE TYPE: " & vbDeviceTypeToString(m_suppOpen.vbDeviceType) & "</b>"  
+	   oLog.Write ""
+                        
+   End Function
+   
+   '================================================================================================='
+   Function RunTest()
+               
+      ' 802.11b Only
+      If(m_testOpen.vbDeviceType = WLAN_DEVICE_TYPE_802_11B) Then
+        
+         If(ExecuteTest(WLAN_WEP_AP1) = False) Then
+         End If
+        
+      End If
+      
+      ' 802.11g Only
+      If(m_testOpen.vbDeviceType = WLAN_DEVICE_TYPE_802_11G) Then
+        
+        If(ExecuteTest(WLAN_WEP_AP1) = False) Then
+        End If
+        
+        If(ExecuteTest(WLAN_WEP_AP2) = False) Then
+        End If
+        
+      End If
+      
+      ' 802.11a/b
+      If(m_testOpen.vbDeviceType = WLAN_DEVICE_TYPE_802_11AB) Then
+        
+        If(ExecuteTest(WLAN_WEP_AP1) = False) Then
+        End If
+        
+        If(ExecuteTest(WLAN_WEP_AP2) = False) Then
+        End If
+        
+      End If
+      
+      ' 802.11a/g
+      If(m_testOpen.vbDeviceType = WLAN_DEVICE_TYPE_802_11AG) Then
+        
+        If(ExecuteTest(WLAN_WEP_AP1) = False) Then
+        End If
+        
+        If(ExecuteTest(WLAN_WEP_AP2) = False) Then
+        End If
+        
+        If(ExecuteTest(WLAN_WEP_AP3) = False) Then
+        End If
+        
+      End If
+      
+   End Function
+   
+   '================================================================================================='
+   Function ExecuteTests(byval ssid)
+   Dim networkTypeInUse    : networkTypeInUse      = -1
+   Dim ndisStatus          : ndisStatus            = -1
+   Dim packetsReceived     : packetsReceived       = 0
+   Dim packetsToSend       : packetsToSend         = 10000
+   Dim packetsSent         : packetsSent           = 0
+   Dim minDirectedPass     : minDirectedPass       = (WLAN_PERCENT_TO_PASS_DIRECTED * packetsToSend) / 100
+   Dim minBroadcastPass    : minBroadcastPass      = (WLAN_PERCENT_TO_PASS_BROADCAST * packetsToSend) / 100
+   Dim bytesSent           : bytesSent             = 0
+   Dim bytesReceived       : bytesReceived         = 0
+   Dim duration            : duration              = 0
+   Dim testAddr            : testAddr              = -1
+   Dim packetBurst         : packetBurst           = 1
+   
+      '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+      oLog.VariationEx  "Setup association with  " & ssid, Null
+      Do
+if(1) Then
+         ndisStatus = m_suppOpen.vbAssociate(Ndis802_11Infrastructure,  _
+                                             Ndis802_11AuthModeOpen,    _
+                                             Ndis802_11WEPEnabled,      _
+                                             &H80000000&,               _
+                                             WLAN_KEY_WEP,              _
+                                             Null,                      _
+                                             ssid,              _
+                                             WLAN_ASSOCIATE_TIMEOUT)      
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.FailedEx  "Failed to associate support device with " & ssid, Null, 88888
+            Exit Do
+         End If	 
+end if
+         
+if(1) Then
+         ndisStatus = m_testOpen.vbAssociate(Ndis802_11Infrastructure,  _
+                                             Ndis802_11AuthModeOpen,    _
+                                             Ndis802_11WEPEnabled,      _
+                                             &H80000000&,               _
+                                             WLAN_KEY_WEP,              _
+                                             Null,                      _
+                                             ssid,              _
+                                             WLAN_ASSOCIATE_TIMEOUT)      
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.FailedEx  "Failed to associate test device with " & ssid, Null, 88888
+            Exit Do
+         End If	 
+end if
+if(1) then
+         Dim shell   : Set shell = CreateObject("WScript.Shell")
+         Dim result  : result    = shell.Popup("Change the default number of packets to send? (Default is 10K)", 10, "", 4 Or 32)
+         
+         
+         If(result = 6) Then
+            packetsToSend = CLng(InputBox("Enter number of packets to send", ""))
+            minDirectedPass   = (WLAN_PERCENT_TO_PASS_DIRECTED * packetsToSend) / 100
+            minBroadcastPass  = (WLAN_PERCENT_TO_PASS_BROADCAST * packetsToSend) / 100
+         End If
+         
+         '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+         ' Directed Send Check
+         '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+         
+         '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+         oLog.VariationEx  "Send " & packetsToSend & " directed packet from test to support device", _
+                           "This test will verify directed packets can be sent from the test device " & _
+                           "to the support device using " & ssid
+         If(m_testOpen.vbDirectedSend(m_suppOpen, packetsToSend, packetsSent, packetsReceived) = False) Then   
+            oLog.FailedEx "vbDirectedSend() failed", Null, 88888
+            Exit Do
+         End If
+         
+         If(packetsReceived < minDirectedPass) Then
+            oLog.Failed "Support device received less than the required amount of directed packets (Received: " & packetsReceived & ", Expected: " & minDirectedPass & ")", 88888
+         End If
+                  
+         '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+         oLog.VariationEx  "Send " & packetsToSend & " directed packet from support to test device", _
+                           "This test will verify directed packets can be sent from the support device " & _
+                           "to the test device using " & ssid
+         If(m_suppOpen.vbDirectedSend(m_testOpen, packetsToSend, packetsSent, packetsReceived) = False) Then   
+            oLog.FailedEx "vbDirectedSend() failed", Null, 88888
+            Exit Do
+         End If
+         
+         If(packetsReceived < minDirectedPass) Then
+            oLog.Failed "Test device received less than the required amount of directed packets (Received: " & packetsReceived & ", Expected: " & minDirectedPass & ")", 88888
+         End If
+         
+         '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+         ' Broadcast Send Check
+         '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+         
+         '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+         oLog.VariationEx  "Send " & packetsToSend & " broadcast packet from test to support device", _
+                           "This test will verify broadcast packets can be sent from the test device " & _
+                           "to the support device using " & ssid
+         If(m_testOpen.vbBroadcastSend(m_suppOpen, packetsToSend, packetsSent, packetsReceived) = False) Then   
+            oLog.FailedEx "vbBroadcastSend() failed", Null, 88888
+            Exit Do
+         End If
+         
+         If(packetsReceived < minBroadcastPass) Then
+            oLog.Failed "Support device received less than the required amount of broadcast packets (Received: " & packetsReceived & ", Expected: " & minDirectedPass & ")", 88888
+         End If
+                  
+         '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+         oLog.VariationEx  "Send " & packetsToSend & " broadcast packet from support to test device", _
+                           "This test will verify broadcast packets can be sent from the support device " & _
+                           "to the test device using " & ssid
+         If(m_suppOpen.vbBroadcastSend(m_testOpen, packetsToSend, packetsSent, packetsReceived) = False) Then   
+            oLog.FailedEx "vbBroadcastSend() failed", Null, 88888
+            Exit Do
+         End If
+         
+         If(packetsReceived < minBroadcastPass) Then
+            oLog.Failed "Test device received less than the required amount of broadcast packets (Received: " & packetsReceived & ", Expected: " & minDirectedPass & ")", 88888
+         End If
+        
+end if
+         '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+         ' Throughput Check
+         '+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+         
+         '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+         oLog.VariationEx  "Print test device link speed", _
+                           "This variation will print the test device link speed while associate with" & ssid
+         m_testCard.vbGetLinkSpeed()
+         
+         '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+         oLog.VariationEx  "Print support device link speed", _
+                           "This variation will print the support device link speed while associate with" & ssid
+         m_suppCard.vbGetLinkSpeed()
+         
+         '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+         oLog.VariationEx  "Measure test device throughput", _
+                           "This test will measure the throughput for the test device through " & ssid
+         
+         ' Query device for maxium burst size
+         ndisStatus = m_testOpen.vbFastNdisRequest(OID_GEN_MAXIMUM_SEND_PACKETS, packetBurst, 4)
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.FailedEx "Unable to query OID_GEN_MAXIMUM_SEND_PACKETS", Null, 88888
+            Exit Do
+         End If
+         
+         ' Set packet filter on receiver
+         If(m_testOpen.vbSetPacketFilter(DIRECTED) = False) Then
+            oLog.FailedEx "vbSetPacketFilter() failed", Null, 88888
+            Exit Do
+         End If     
+         
+         ' Set receive options for receiver
+         m_testOpen.vbSetReceiveOption(RECEIVE_DEFAULT) 
+         
+         ' Get test device address
+         If(m_testOpen.vbGetCardAddress(testAddr) = False) Then
+            oLog.FailedEx "Unable to query Test device address", Null, 88888
+            Exit Do
+         End If
+         
+         ' Send from support to the test device (testAddr)
+         If(m_testOpen.vbStartPerformance(m_suppOpen, testAddr, PERFORM_RECEIVE, 1500, packetBurst, 0, 30, 0, 0) = False) Then
+            oLog.Failed "Unable to execute performance command.", 88888
+            Exit Do
+         End If
+
+         If(m_testOpen.vbWaitPerformance() = False) Then
+            oLog.Failed "Unable to wait for performance tests to complete.", 88888
+            Exit Do
+         End If
+
+         If(m_testOpen.vbGetPerformanceResults(duration, bytesSent, bytesReceived) = False) Then
+            oLog.Failed "Unable to get performance results.", 88888
+            Exit Do
+         End If
+         
+      Loop While(False)
+            
+   End Function
+  
+End Class
+		</script>
+	</job>
+</package>
+
+<!--- CRC = 0x1c3f99d7 --->

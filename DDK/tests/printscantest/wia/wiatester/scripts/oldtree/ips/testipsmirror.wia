@@ -1,0 +1,49 @@
+Test Assertion_A134613
+
+Var p:Property, root:Item
+Var dt, lVal
+{
+    PrintDescriptionFromXML('13.4.6.13')
+    StartWia()
+    GetRoot(root)
+    GetDeviceType(dt)
+
+    If ( dt != StiDeviceTypeScanner )
+    Then Exit Passed
+
+    GetNextItem(root)
+
+    While ( root ) Do 
+    {
+        If ( !CheckItemType(root, WiaItemTypeImage) )
+        Then Goto label
+
+        If ( !GetProperty(root, p, WIA_IPS_ORIENTATION) )
+        Then Goto label
+
+        If (!CheckPropertyAccessFromXML(p) )
+        Then
+        {
+            Writeln '\tIncorrect access'
+            Exit Failed
+        }
+
+        If (!CheckPropertyTypeFromXML(p) )
+        Then
+        {
+            Writeln '\tIncorrect vartype'
+            Exit Failed
+        }
+
+        If (!CheckValueLongFromXML(p)) 
+        Then
+        {
+           Writeln '\tInvalid property value'
+           Exit Failed
+        }
+:label:
+        GetNextItem(root)
+    }
+
+    StopWia()
+}

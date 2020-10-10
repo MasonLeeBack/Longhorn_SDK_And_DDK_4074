@@ -1,0 +1,73 @@
+Test Assertion_A13466
+
+Var p:Property, root:Item
+Var dt, lVal
+{
+    PrintDescriptionFromXML('13.4.6.6')
+    StartWia()
+    GetRoot(root)
+    GetDeviceType(dt)
+
+    If ( dt != StiDeviceTypeScanner )
+    Then Exit Passed
+
+    GetNextItem(root)
+
+    While ( root ) Do
+    {
+        If ( !CheckItemType(root, WiaItemTypeImage) )
+        Then Goto label
+
+        If ( !GetProperty(root, p, WIA_IPS_XEXTENT) )
+        Then 
+        {   
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+
+        If (!CheckPropertyAccessFromXML(p) )
+        Then
+        {
+            Writeln '\tIncorrect access'
+            Exit Failed
+        }
+
+        If (!CheckPropertyTypeFromXML(p) )
+        Then
+        {
+            Writeln '\tIncorrect vartype'
+            Exit Failed
+        }
+
+        If( IsPropertyReadWrite(p) )
+        Then
+        {
+            If ( SetPropertyInvalidValue(root, p) )
+            Then 
+            {
+                Writeln '\tSetting invalid property value succeeded'
+                Exit Failed
+            }
+            If (!CheckSuppValues(root, p))
+            Then 
+            {
+                Writeln '\tChecking supported property values failed'
+                Exit Failed
+            }
+        }
+        Else
+        {
+           If (SetPropertyValidValue(root,p) Or SetPropertyInvalidValue(root,p) )
+           Then 
+           {
+                Writeln '\tSetting a read-only property value succeeded'
+                Exit Failed
+           }
+        }
+
+:label:
+        GetNextItem(root)
+    }
+
+    StopWia()
+}

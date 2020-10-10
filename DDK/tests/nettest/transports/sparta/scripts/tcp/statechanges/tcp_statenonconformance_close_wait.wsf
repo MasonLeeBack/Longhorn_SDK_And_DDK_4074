@@ -1,0 +1,254 @@
+'****************************** TCP_StateNonConformance_CLOSE_WAIT.wsf ***********************************
+'*                                                                             *
+'* Author            :    Sandeep Prabhu                                       *
+'* Revision history  :                                                         *
+'*    08/21/2000     sandeep        Created                                    *
+'*                                                                             *
+'* This script will test the state non-conrformance scenarios                  *
+'*                                                                             *
+'****************************** TCP_StateNonConformance_CLOSE_WAIT.wsf ***********************************
+
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\TCPLib.vbs"/>
+      <script language="VBScript" src="TCPStateChangesLib.vbs"/>            
+      <script id="TCP_StateNonConformance_CLOSE_WAIT" language="VBScript">
+
+
+option explicit
+
+
+Dim Core, Sparta, Autosrv, MediaType, AutoArpObject, IFace, pControllerObj
+
+ 
+'
+' Start the script
+'           
+StartScript "TCP_StateNonConformance_CLOSE_WAIT", g_szLogDirectory, "State non-conformance tests" 
+
+ 
+'
+' Main routine 
+'
+Sub Main
+    Dim ulStatus, ulTcpTimedWaitDelay
+
+   Core.SetAssertionTracking "20800"
+   '/**
+   ' @area name="Offload Compliance Test Assertions"
+   ' @group name="TCP Connection State Transition Assertions"
+   ' @group name="State Nonconformance in CLOSE_WAIT State Assertions for TCP/IP v4" 
+   ' @define name="Offload" Offload Compliance Test Assertions
+   ' @define name="TCPStates" TCP Connection State Transition Assertions
+   ' @define name="StateNonConfv4" State Nonconformance in CLOSE_WAIT State Assertions for TCP/IP v4
+   ' @hierarchy Offload TCPStates StateNonConfv4
+   ' @key Reference="WLP# - x.x.x.x; RFC-793 Sections 3.2, 3.4, 3.5, RFC-1122 Section 4.2.2.8, 4.2.2.12, 4.2.2.13"
+   ' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+   ' @key TestName="TCPv4 Connection State Nonconformance in CLOSE_WAIT Tests"
+   ' @key TestLog="TCP_StateNonConformance_CLOSE_WAIT.log"
+   '*/
+
+    IFace.StartListening         
+   '/**
+   ' @test name="The stack must repond correctly to the below scenarios when the TCP connection is in CLOSE_WAIT state"
+   ' Application on the test machine accepts a connection from the remote end.
+   ' Test verifies that Stack transitions the connection to ESTABLISHED state. 
+   ' Upon stack receiving a FIN-ACK, test verifies that Stack sends an ACK and transitions the connection to CLOSE_WAIT state.<br/> 
+   ' While the connection is at CLOSED_WAIT state, <br/>
+   ' - upon Stack receiving a RST, test verifies that Stack transitions the connection to CLOSED state. <br/>
+   ' - upon Stack receiving a SYN, test verifies that Stack sends a RST and transitions the connection to CLOSED state. <br/>
+   ' - upon Stack receiving data, test verifies that Stack ignores and does not receive it. <br/>
+   ' - upon Stack receiving a FIN, test verifies that Stack ignores and does not receive it. <br/>
+   ' - upon Stack receiving a URG-ACK, test verifies that Stack ignores and does not receive it. <br/>
+   '*/
+    Core.StartTest "CLOSE_WAIT state"                                  
+    CLOSE_WAITNonConformance
+    Core.EndTest
+    Core.Sleep 2500
+    IFace.StopListening
+    IFace.StartListening         
+    
+End Sub
+
+
+'
+' Routine to do the non conformance tests in CLOSE_WAIT state
+' Checks done -
+'     1. RST should transition the connection to CLOSED state
+'     2. SYN should result in a RST and transition the connection to CLOSED state
+'     3. Send data and ensure its not received
+'     4. Send a FIN and check its ignored
+'     5. Send a URG-ACK and check its ignored
+'            
+Sub CLOSE_WAITNonConformance
+   Dim ulStatus, fStatus, pTCPPacket, usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, ulTID
+   Dim ulLastAckNumber
+
+
+   ulSeqNumber = 5000
+   ulAckNumber = 0
+   usSrcPort = 5000
+   usDestPort = 6090
+      
+    
+   '
+   ' Get a connection in CLOSE_WAIT state
+   '   
+   Core.StartVariation
+   ulStatus = LISTEN__SYN_RCVD__ESTD__CLOSE_WAIT(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "CLOSE_WAITNonConformance: LISTEN__SYN_RCVD__ESTD__CLOSE_WAIT - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit Sub
+   end if     
+   
+   '
+   ' CLOSE_WAIT --> CLOSED
+   ' Send a RST and check the state transitions to CLOSED
+   '
+   fStatus = SendPacketAndCheckNoResponseEx(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_RST, TCP_ACK, 500)
+   if (fStatus = FALSE) then
+      Core.FailSev1Variation "CLOSE_WAITNonConformance: ACK sent on RST"
+   else
+      '
+      ' Check we are in CLOSED state by sending an ACK and receiving a RST
+      '
+      fStatus = SendPacketAndCheckNoResponseEx(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, TCP_RST, 500)
+      if (fStatus = TRUE) then
+         Core.FailSev1Variation "CLOSE_WAITNonConformance: No RST sent on ACK"
+      end if
+   end if
+      
+   ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+   
+   '
+   ' Get a connection in CLOSE_WAIT state
+   '   
+   usDestPort = usDestPort + 1
+   Core.StartVariation
+   ulStatus = LISTEN__SYN_RCVD__ESTD__CLOSE_WAIT(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "CLOSE_WAITNonConformance: LISTEN__SYN_RCVD__ESTD__CLOSE_WAIT - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit Sub
+   end if     
+   
+   '
+   ' Send a SYN and check we get a RST and the state transitions to CLOSED
+   '
+   fStatus = SendPacketAndCheckNoResponseEx(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_SYN, TCP_RST, 500)
+   if (fStatus = TRUE) then
+      Core.FailSev1Variation "CLOSE_WAITNonConformance: No RST sent on SYN"
+   else
+      '
+      ' Check we are in CLOSED state by sending an ACK and receiving a RST
+      '
+      fStatus = SendPacketAndCheckNoResponseEx(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, TCP_RST, 500)
+      if (fStatus = TRUE) then
+         Core.FailSev1Variation "CLOSE_WAITNonConformance: No RST sent on ACK"
+      end if
+   end if 
+          
+   ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+   
+   '
+   ' Get a connection in CLOSE_WAIT state
+   '   
+   usDestPort = usDestPort + 1
+   Core.StartVariation
+   ulStatus = LISTEN__SYN_RCVD__ESTD__CLOSE_WAIT(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "CLOSE_WAITNonConformance: LISTEN__SYN_RCVD__ESTD__CLOSE_WAIT - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit Sub
+   end if     
+   
+   '
+   ' Send a data packet in CLOSE_WAIT state and check its not received
+   '  
+   ulStatus = CheckDataReceived(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus = 0) then
+      Core.FailSev1Variation "CLOSE_WAITNonConformance: Data received"
+   end if     
+   
+   '
+   ' Reset the TIME_WAIT state
+   '
+   ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+  
+        
+   '
+   ' Get a connection in CLOSE_WAIT state
+   '   
+   usDestPort = usDestPort + 1
+   Core.StartVariation
+   ulStatus = LISTEN__SYN_RCVD__ESTD__CLOSE_WAIT(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "CLOSE_WAITNonConformance: LISTEN__SYN_RCVD__ESTD__CLOSE_WAIT - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit Sub
+   end if     
+   
+   '
+   ' Send a FIN and check its ignored
+   '    
+   ulLastAckNumber = ulAckNumber 
+   fStatus = SendPacketAndCheckNoResponseEx(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_FIN, TCP_ACK, 500)
+   if (fStatus = FALSE) then
+      '
+      ' Check if its a new packet or just a rexmission of the FIN-ACK because the ACK timeout 
+      ' for that expired
+      '
+      if (ulLastAckNumber <> ulAckNumber) then
+         Core.FailSev1Variation "CLOSE_WAITNonConformance: ACK sent on FIN"
+      end if 
+   end if     
+
+
+   '
+   ' Reset the TIME_WAIT state
+   '
+   ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+  
+   '
+   ' Get a connection in CLOSE_WAIT state
+   '   
+   usDestPort = usDestPort + 1
+   Core.StartVariation
+   ulStatus = LISTEN__SYN_RCVD__ESTD__CLOSE_WAIT(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "CLOSE_WAITNonConformance: LISTEN__SYN_RCVD__ESTD__CLOSE_WAIT - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit Sub
+   end if     
+      
+   '
+   ' Send a URG-ACK and check its ignored
+   '    
+   ulLastAckNumber = ulAckNumber 
+   fStatus = SendPacketAndCheckNoResponseEx(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, (TCP_ACK or TCP_URG), TCP_ACK, 500)
+   if (fStatus = FALSE) then
+      '
+      ' Check if its a new packet or just a rexmission of the FIN-ACK because the ACK timeout 
+      ' for that expired
+      '
+      if (ulLastAckNumber <> ulAckNumber) then
+         Core.FailSev1Variation "CLOSE_WAITNonConformance: ACK sent on URG-ACK"
+      end if 
+   end if     
+
+   '
+   ' Reset the connection
+   '       
+   ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+End Sub
+
+
+      </script>
+   </job>
+</package>

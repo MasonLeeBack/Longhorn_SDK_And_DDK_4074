@@ -1,0 +1,1059 @@
+<package>
+<SCRIPTDEF>
+<CARDMACH>
+2C,2M
+</CARDMACH>
+<RUNORDER>
+1810
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[This script verifies the ability to wake the machine from standby using pattern match.
+The first test is to check if pattern remove works successfully. The script adds a pattern, then
+deletes the pattern and tests to check that the machine does not wake up in response to the pattern
+The next test is to check the limit of number of pattern supported by the NIC. The script plumbs
+patterns into the script until the NIC's resources are full. We then go ahead and test the patterns
+stored on the NIC to check that the machine wakes up in response to them.
+The last test is to make sure the NIC does not respond to a fake pattern. A random pattern, not
+registered with the NIC is sent and it is checked that the machine did not wake up in response to
+the unregistered pattern.
+Before terminating, the script checks to make sure that there were no disconnects or other unexpected
+events that occured while the NIC was in standby or during wake up.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="2m_WOLPattern" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oPNPPower" progid="NDTSupp.PNPPowerMgmt.1" events="true"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+
+        <!-- Begin Wireless Specific Includes -->
+        <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	     <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	     <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	     <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	     <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+        <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+        <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+        <!-- End Wireless Specific Includes -->
+
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script id="2m_WOLPattern" language="VBScript">
+'==========================================================================
+' Script Name:    2m_WOLPattern
+'==========================================================================
+Option Explicit
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0), GetRemoteSupportAdapter (oNDInfo.AdapterList, 0))
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+' Size of _NDIS_PM_PACKET_PATTERN structure in bytes
+Const SIZEOF_NDIS_PM_PACKET_PATTERN = 24
+
+' Size of Token Ring Adapter address in bytes
+Const SIZEOF_TOKEN_RING_MAC_ADDRESS = 6
+
+' Offset of PatternOffset field in struct _NDIS_PM_PACKET_PATTERN
+Const OFFSET_MPATTERNOFFSET = 12
+
+' Offset of PatternSize field in struct _NDIS_PM_PACKET_PATTERN
+Const OFFSET_MPATTERNSIZE = 16
+
+Class TestObj
+   Private oTestCard
+   Private oSuppCard
+   Private oTestOpen
+   Private oSuppOpen
+
+   Private mPatternList ()
+   Private mNumPatternsAdded, mPatternListLength, mNumPatternsTested, mTotalPatterns
+   Private mFakeTCPPattern, mFakeNdisTestPattern
+   Private m_bStandbyOptional
+
+   Private m_lTestAdapterIndex, m_lSuppAdapterIndex
+
+   ' This is the max number of Patterns tried to registered
+   ' Increase this number to add more patterns.
+   Private mMaxPatterns
+
+   ' The max number of patterns to test wakeup for (excluding first & last patterns)
+   ' This is for efficiency purpose as testing one pattern is time consuming
+   Private mMaxPatternsToTest
+
+   ' This is the number of times each pattern is tested
+   Private mNumTestRun
+
+   ' This is the time for which machine is set to standby
+   Private mTimeToStandby
+
+   ' This is the time after which support card sends the wake pattern
+   Private mTimeToPacket
+
+   ' This is time given for machine to come out of standby!
+   Private mWakeUpOverhead
+
+   ' The minimum number of patterns that the NIC must support
+   Private mMinimumPatterns
+
+   Private Sub Class_Initialize
+      mMaxPatterns = 65          ' The max number of patterns to try and test NIC for
+      mMaxPatternsToTest = 4     ' The max number of patterns to test for wakeup
+      mNumTestRun = 1            ' How many times each pattern is tested
+      mTimeToStandby = 130       ' Machine to wakeup automatically in this time
+      mTimeToPacket = 60         ' The time after which Wakeup pattern packet is sent
+      mWakeUpOverhead = 40       ' Grace time to come out of standby after wakeup
+      mMinimumPatterns = 4       ' NIC must support atleast these many patterns
+      m_lTestAdapterIndex = 1      ' These were originally used indices
+      m_lSuppAdapterIndex = 2   ' These were originally used indices
+      m_bStandbyOptional = False ' On advanced skus, standby is optional and tested only
+                                 ' when supported
+   End Sub
+
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+      Set oTestOpen = Nothing
+
+      Set oSuppCard = Nothing
+      Set oSuppOpen = Nothing
+   End Sub
+
+
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+
+      ' Can't run this test for Datacenter and Enterprise suite Systems
+      Dim SystemSKU
+      SystemSKU = oNDTSession("SystemSKU")
+      If (not(IsEmpty (SystemSKU))) Then
+         If (SystemSKU And (VER_SUITE_DATACENTER Or VER_SUITE_ENTERPRISE)) Then
+            oLog.Write("Standby is optional on DataCenter and Advanced Server")
+            m_bStandbyOptional = True
+         End If
+      End If
+
+      If (IsIMDriver(m_lTestAdapterIndex)) Then
+         oLog.Write ("WOL is not required for IM drivers")
+         Exit Function
+      End If
+
+      ' Can't run this test if IP Packets are being used!
+      If (UseIPHeaders) Then
+         Exit Function
+      End If
+
+      ' IA64 machines do not support hibernate or standby
+      If (IsIA64Machine ()) Then
+         oLog.Write ("Hibernate and standby not supported on IA64 machines")
+         Exit Function
+      End If
+
+      Set pAdapterList = oNDInfo.AdapterList
+
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+
+      Set oTestOpen = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpen is Nothing) Then
+         Exit Function
+      End If
+
+      ' See if the system supports WOL and the NIC supports pattern matching
+      oLog.Variation ("Checking for WakeOnLan Support")
+      If (Not WakeOnLanSupported) Then
+         Exit Function
+      End If
+
+      oLog.Variation ("Setting up Support Adapter")
+      Set oSuppCard = New CLanCard
+      If (oSuppCard is Nothing) Then
+         Exit Function
+      End If
+
+      Set oSuppOpen = oSuppCard.vbSetupBasicTest(pAdapterList (m_lSuppAdapterIndex))
+      If (oSuppOpen is Nothing) Then
+         Exit Function
+      End If
+
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then
+
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")
+         If(vbAssociateWep(oTestOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If
+
+         oLog.Variation ("Associating support device with " & NDTESTAP2 & " ...")
+         If(vbAssociateWep(oSuppOpen, NDTESTAP2) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate support device with " & NDTESTAP2, 88888
+            Exit Function
+         End If
+
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+
+   Public Function RunTest (lTestAdapterIndex, lSuppAdapterIndex)
+
+      m_lTestAdapterIndex = lTestAdapterIndex
+      m_lSuppAdapterIndex = lSuppAdapterIndex
+
+      If (Not SetupTest()) Then
+         Exit Function
+      End If
+
+      oLog.Variation ("Test Add/Remove Wake Pattern")
+      if (Not TestAddAndRemoveWakePattern ()) Then
+         oLog.Write ("Failed while testing adding and removing a pattern! Pressing on.")
+      End If
+
+      ' Plumb in as many Wake Patterns as possible
+      oLog.Variation ("Add Wake Patterns")
+      If (Not TestAddWakePatterns()) Then
+         Exit Function
+      End If
+
+      ' Get list of patterns registered with the NIC
+      oLog.Variation ("Get List of Wake Pattern")
+      If (Not GetWakePatternList) Then
+         Exit Function
+      End If
+
+      ' Test with all the registered patterns
+      oLog.Variation ("Testing with all the patterns on the NIC")
+      If (Not TestAllPatterns ()) Then
+         Exit Function
+      End if
+
+      ' Check how many patterns were found. Must be atleast mMinimumPatterns
+      If mTotalPatterns < mMinimumPatterns Then
+         call oLog.Failed ("The NIC must support atleast " & mMinimumPatterns & " patterns!", 88888)
+         call oLog.Write ("This NIC supports only " & mTotalPatterns & " patterns")
+         If mNumPatternsAdded = 0 Then
+            oLog.Write ("The NIC incorrectly rejected an attempt to add wake pattern")
+            Exit Function
+         End If
+      End If
+
+      ' If we failed to add any pattern, it could be because other protocols
+      ' have added upto max! We'll remove some patterns and test with our own patterns
+      ' This is important as we should be able to test AddWakePattern calls ourselves
+      If (mNumPatternsAdded = 0) Then
+
+         oLog.Variation ("Testing with ndistest.sys patterns only")
+         oLog.Write ("The NIC has no space to add any more pattern.")
+         oLog.Write ("We will unbind TCP/IP to make some space so we can test adding patterns")
+
+         oLog.Variation ("Removing Patterns by unbinding TCP/IP")
+         If (RemovePatterns ()) Then
+            ' Now plumb in as many Wake Patterns as possible
+            oLog.Variation ("Add Wake Patterns")
+            If (Not TestAddWakePatterns()) Then
+               Exit Function
+            End If
+
+            ' Get list of patterns registered with the NIC
+            oLog.Variation ("Get List of Wake Pattern")
+            If (Not GetWakePatternList ()) Then
+               Exit Function
+            End If
+
+            ' Test with all the registered patterns
+            oLog.Variation ("Testing with all the patterns on the NIC")
+            If (Not TestAllPatterns ()) Then
+               Exit Function
+            End if
+
+            ' Check how many patterns were found. Must be atleast mMinimumPatterns
+            If mTotalPatterns < mMinimumPatterns Then
+               call oLog.Failed ("The NIC must support atleast " & mMinimumPatterns & " patterns!", 88888)
+               call oLog.Write ("This NIC supports only " & mTotalPatterns & " patterns")
+               If mNumPatternsAdded = 0 Then
+                  oLog.Write ("The NIC incorrectly rejected an attempt to add wake pattern")
+                  Exit Function
+               End If
+            End If
+
+         Else
+            oLog.Write ("Cannot test with with our patterns as RemovePatterns failed")
+            Exit Function
+         End If
+      End If
+
+
+      ' Now test with a fake pattern to make sure NIC does not get up unnecessarily
+      oLog.Variation ("Testing with a fake pattern")
+      call TestWithFakePattern ()
+
+      ' Check to make sure unexpected event did not occur. COpen & Lib will log errors
+      call oTestOpen.vbClearEvents
+      call oSuppOpen.vbClearEvents
+
+   End Function
+
+   Private Function WakeonLanSupported
+      Dim nWakeOnLanSupport, SystemWakeOnLanSupport
+      Dim nPhysicalMedium
+
+      nWakeOnLanSupport = oTestOpen.vbWakeOnLanSupportInfo (SystemWakeOnLanSupport)
+
+      WakeonLanSupported = False
+
+      nPhysicalMedium = oTestCard.vbGetPhysicalMedium()
+
+      If ((nWakeOnLanSupport And WAKE_UP_PATTERN_MATCH) = 0) Then
+         If ((nPhysicalMedium = NDISPHYSICALMEDIUMDSL) OR _
+                  (nPhysicalMedium = NDISPHYSICALMEDIUMWIRELESSLAN) OR _
+                  (nPhysicalMedium = NDISPHYSICALMEDIUMCABLEMODEM) OR _
+                  (nPhysicalMedium = NDISPHYSICALMEDIUMPHONELINE) OR _
+                  (nPhysicalMedium = NDISPHYSICALMEDIUMPOWERLINE)) Then
+
+            oLog.Write("WakeOnLan with PatternMatch is not supported by card." )
+            Exit Function
+         Else
+            If (IsUSBDevice (m_lTestAdapterIndex)) Then
+               oLog.Write ("WakeOnLan with PatternMatch need not be tested for USB devices")
+            ElseIf (IsLaptop()) Then
+               oLog.Write ("WakeOnLan with PatternMatch need not be tested on Laptops")
+            ElseIf (m_bStandbyOptional) Then
+                oLog.Write ("WakeOnLan with PatternMatch need not be tested on Advanced Server/Datacenter sku")
+            Else
+               call oLog.Failed ("WakeOnLan with PatternMatch is not supported by this card!" , 21293)
+            End If
+            Exit Function
+         End If
+      End If
+
+      If (SystemWakeOnLanSupport = 0) Then
+         If (IsUSBDevice(m_lTestAdapterIndex)) Then
+            oLog.Write ("WakeOnLan with PatternMatch need not be tested for USB devices")
+         ElseIf (IsLaptop()) Then
+            oLog.Write ("WakeOnLan with PatternMatch need not be tested on Laptops")
+         ElseIf (m_bStandbyOptional) Then
+            oLog.Write ("WakeOnLan with PatternMatch need not be tested on Advanced Server/Datacenter sku")
+         Else
+            call oLog.Failed ("WakeOnLan with PatternMatch cannot be tested on this system!", 21294)
+         End If
+         Exit Function
+      End If
+
+      ' USB bus powered adapter do not support hibernate or standby
+      ' However, it is not simple to identify if a device is bus/self powered, so not testing all USB devices
+
+      ' Can't run this test if Standby is not supported
+      Dim PowerManagementSupport
+      PowerManagementSupport = oPnPPower.PowerStates
+      If ((PowerManagementSupport And STANDBY_SUPPORTED) = 0) Then
+         If (IsUSBDevice (m_lTestAdapterIndex)) Then
+            oLog.Write ("Standby not required for USB bus powered devices")
+         ElseIf (IsLaptop()) Then
+            oLog.Write ("WakeOnLan with PatternMatch need not be tested on Laptops")
+         ElseIf (m_bStandbyOptional) Then
+            oLog.Write ("WakeOnLan with PatternMatch need not be tested on Advanced Server/Datacenter sku")
+         Else
+            call oLog.Failed ("Machine does not support standby!", 21822)
+         End If
+         Exit Function
+      End If
+
+      If ((PowerManagementSupport And WAKEUP_TIMER_SUPPORTED) = 0) Then
+         If (m_bStandbyOptional) Then
+            oLog.Write ("Machine does not support auto wake from standby")
+         Else
+            call oLog.Failed ("Machine does not support auto wake from standby!", 88888)
+         End If
+         Exit Function
+      End If
+
+      ' If here then Wake on lan is supported
+      WakeOnLanSupported = True
+   End Function
+
+
+   Private Function TestAddAndRemoveWakePattern ()
+      Dim Piece1, Piece2, Piece3, nNdisStatus, NextPatternOffset, bResult
+      Dim List (256), CurrentPattern(256), ListLen, BytesWritten, BytesNeeded
+
+      Piece1 = &H12345&
+      Piece2 = &H6789A&
+      Piece3 = &HBCDEF&
+
+      TestAddAndRemoveWakePattern = False
+
+      If (oTestOpen.vbAddWakePattern (nNdisStatus, 0, Piece1, _
+               4, Piece2, _
+               8, Piece3)) Then
+         If (nNdisStatus = NDIS_STATUS_SUCCESS) Then
+            ' Successfully added the pattern
+            ' Now get it back so we can test with it after removing it
+            ' Use NdisRequest cos we only want our pattern back
+
+            ListLen = 256
+
+            If (Not oTestOpen.vbNdisRequest (OID_PNP_WAKE_UP_PATTERN_LIST, _
+                     List, _
+                     ListLen, _
+                     REQUEST_QUERY_INFO, _
+                     BytesWritten, _
+                     BytesNeeded, _
+                     nNdisStatus, _
+                     FALSE)) Then
+               Exit Function
+            End If
+
+            If (nNdisStatus <> NDIS_STATUS_SUCCESS) Then
+               call oLog.Failed ("NdisRequest to get pattern list failed with status 0x" & nNdisStatus, 88888)
+               Exit Function
+            End If
+
+            oLog.Variation("Get WOL pattern from list")
+            bResult = oNDTCore.GetWolPattern(List, 0, oSuppOpen.vbGetCardAddress, _
+                  oTestCard.NdisMedium, CurrentPattern, NextPatternOffset)
+            If (Not bResult) Then
+               call oLog.Failed("Unable to get the pattern from pattern list", 88888)
+            End If
+
+            If (NextPatternOffset <> BytesWritten) Then
+               call oLog.Failed ("There should have been exactly one pattern in the list", 88888)
+            End If
+
+         ElseIf (nNdisStatus = NDIS_STATUS_RESOURCES) Then
+            ' Patterns list is already full
+            oLog.Write ("Ndis Status = 0x" & Hex(nNdisStatus))
+            oLog.Write ("The NIC has no more resources to add a pattern")
+            Exit Function
+         Elseif (nNdisStatus = NDIS_STATUS_NOT_SUPPORTED) Then
+            ' This is an unexpected behavior
+            call oLog.Warned ("AddWakePattern failed with NDIS_STATUS_NOT_SUPPORTED")
+            call oLog.Write ("This may be an incorrect status being returned for lack of memory to add patterns!")
+            call oLog.Write ("Return NDIS_STATUS_RESOURCES instead")
+            Exit Function
+         Else
+            ' The NdisRequest did not succeed for some other reason
+            call oLog.Failed ("Add Wake Pattern failed with Ndis Status = 0x" & Hex (nNdisStatus), 88888)
+            Exit Function
+         End If
+      Else
+         call oLog.Failed ("Add Wake Pattern operation failed", 88888)
+         Exit Function
+      End If
+
+      ' If here that means added the pattern successfully
+      ' Now try and remove the pattern just added
+      If (Not oTestOpen.vbRemoveWakePattern (nNdisStatus, 0, Piece1, _
+               4, Piece2, _
+               8, Piece3)) Then
+         call oLog.Failed ("Failed to remove a pattern from the Test Adapter", 88888)
+         Exit Function
+      Else
+         ' Check Ndis Status to make sure everything's ok
+         If nNdisStatus <> NDIS_STATUS_SUCCESS Then
+            call oLog.Failed ("Remove Pattern operation failed with Ndis Status 0x" & Hex (nNdisStatus), 88888)
+            Exit Function
+         End If
+      End If
+
+      ' Now test the NIC along failure path using the removed pattern
+      If (Not TestFailurePattern (CurrentPattern)) Then
+         oLog.Write ("Dumping the list of patterns currently on the NIC!")
+         oLog.Write ("Check and see if the removed pattern was actually removed from the NIC")
+
+         call GetWakePatternList ()
+      End If
+
+      TestAddAndRemoveWakePattern = True
+   End Function
+
+
+   Private Function TestAddWakePatterns ()
+      '
+      ' This test variation tries to plumb a very large number
+      ' of Wake Patterns onto the NIC in an attempt to max out
+      ' the limit. The minumum that must be supported is four
+      ' and three will probably be already there (put in by TCP)
+      '
+      Dim nPatternSize, WakePattern()
+      Dim i, j, bResult, nNdisStatus
+
+      TestAddWakePatterns = FALSE
+
+      For i=0 To mMaxPatterns - 1
+         nPatternSize = 2
+         ReDim WakePattern (nPatternSize)
+
+         ' Put a random seed in the generator
+         Randomize (oNDTSupp.Random (1, 32765))
+
+         For j = 0 to nPatternSize
+            ' The pattern is to have five hexits
+            WakePattern (j) = CLng ((Random (65536, 1048575)))
+         Next
+
+         oLog.Mask = DO_NOTHING     ' Needed as AddWakePattern is expected to fail
+         nNdisStatus = 1            ' Assume Failure
+         If (oTestOpen.vbAddWakePattern (nNdisStatus, 0, WakePattern (0), _
+                  4, WakePattern (1), _
+                  8, WakePattern (2))) Then
+            If (nNdisStatus = NDIS_STATUS_SUCCESS) Then
+               ' Successfully added the pattern
+               mNumPatternsAdded = mNumPatternsAdded + 1
+            ElseIf (nNdisStatus = NDIS_STATUS_RESOURCES) Then
+               ' Reached the max number of supported patterns!
+               ' Stop adding patterns now
+               Exit For
+            Elseif (nNdisStatus = NDIS_STATUS_NOT_SUPPORTED) Then
+               ' This is an unexpected behavior
+               call oLog.Warned ("AddWakePattern failed with NDIS_STATUS_NOT_SUPPORTED")
+               call oLog.Write ("This may be an incorrect status being returned for lack of memory to add patterns!")
+               call oLog.Write ("Return NDIS_STATUS_RESOURCES instead")
+               oLog.Mask = LOG_FAILURE Or LOG_WARNING
+               Exit Function
+            Else
+               ' The NdisRequest did not succeed for some other reason
+               call oLog.Failed ("Add Wake Pattern failed with Ndis Status = 0x" & Hex (nNdisStatus), 88888)
+               oLog.Mask = LOG_FAILURE Or LOG_WARNING
+               Exit Function
+            End If
+         Else
+            call oLog.Failed ("Add Wake Pattern operation failed", 88888)
+            oLog.Mask = LOG_FAILURE Or LOG_WARNING
+            Exit Function
+         End If
+      Next
+
+      If mNumPatternsAdded >= mMaxPatterns Then
+         call oLog.Warned ("The NIC claims to have added " & mNumPatternsAdded & " patterns. This is probably " & _
+               "indicative of NIC falsely claiming that pattern was added successfully")
+      End If
+
+      oLog.Mask = LOG_FAILURE Or LOG_WARNING
+      TestAddWakePatterns = TRUE
+   End Function
+
+
+   Private Function GetWakePatternList ()
+      Dim BytesWritten, ErrorStatus
+      GetWakePatternList = False
+
+      ' Retrieve all patterns from the NIC
+      oLog.Variation ("Get List of registered Wake Patterns")
+
+      ' Get the WOL pattern list
+      GetWakePatternList = oTestCard.vbNdisIoControl (OID_PNP_WAKE_UP_PATTERN_LIST, mPatternList, BytesWritten, ErrorStatus, 2)
+
+      'Using Query Info in order to get ALL patterns registered (including TCP ones)
+      If (Not GetWakePatternList Or ErrorStatus <> 0) Then
+         call oLog.Failed("Unable to get OID_PNP_WAKE_UP_PATTERN_LIST for open instance",21301)
+         Exit Function
+      End If
+
+      mPatternListLength = UBound (mPatternList) + 1
+
+      GetWakePatternList = True
+
+   End Function
+
+
+   Private Function TestAllPatterns ()
+      Dim NextPatternOffset, StartOffset, CurrentPattern (256)
+      Dim bResult, Attempt, bIsLastPattern
+
+      TestAllPatterns = False
+      bIsLastPattern = False
+
+      ' Assume no patterns been tested so far! We will test all from beginning
+      mNumPatternsTested = 0
+      mTotalPatterns = 0
+
+      Do
+         oLog.Variation("Get WOL pattern from list")
+
+         StartOffset = NextPatternOffset
+         bResult = oNDTCore.GetWolPattern(mPatternList, StartOffset, oSuppOpen.vbGetCardAddress, _
+               oTestCard.NdisMedium, CurrentPattern, NextPatternOffset)
+
+         If (Not bResult) Then
+            call oLog.Failed("Unable to get next pattern from pattern list", 21302)
+            Exit Function
+         End If
+
+         ' Check if this is the last pattern!
+         If (NextPatternOffset = mPatternListLength) Then
+            bIsLastPattern = True
+         End If
+
+         ' Found another pattern on the NIC
+         mTotalPatterns = mTotalPatterns + 1
+
+         ' If this is not a valid pattern for token ring media, skip it
+         If ( oTestCard.NdisMedium() = NDISMEDIUM802_5 And _
+              IsValidTokenRingPattern(mPatternList, StartOffset) )
+         Then
+             oLog.Write("Invalid pattern found for Token Ring Media. Skipping it!")
+         Else
+             ' Before actually testing the pattern, we implement a policy for test efficiently
+             ' ALWAYS test first and last patterns
+             ' ALWAYS test the non-ndistest.sys patterns
+             ' Then test atleast some patterns from the ndistest.sys patterns
+             If (mNumPatternsTested = 0 Or _
+                      bIsLastPattern Or _
+                      TestThisPattern (CurrentPattern) = True) Then
+
+                oLog.Write ("Testing pattern#" & mTotalPatterns)
+                mNumPatternsTested = mNumPatternsTested + 1
+                If (Not TestWakePattern (CurrentPattern)) Then
+                   call oLog.Write ("This pattern failed the test")
+                Else
+                   ' Save one of the NDIS patterns to test later for fake pattern tests
+                   If (IsEmpty (mFakeNdisTestPattern)) Then
+                      If IsNdisPattern (CurrentPattern) Then
+                         call ArrayCopy (mFakeNdisTestPattern, CurrentPattern)
+                      End If
+                   End If
+                End If
+
+             End If
+
+             ' If that was the last pattern, get out of the loop
+             If (bIsLastPattern) Then
+                Exit Do
+             End If
+	 End If
+      Loop While (True)
+
+      TestAllPatterns = True
+   End Function
+
+
+   Private Function TestThisPattern (PatternToTest)
+      ' If you were unable to add enough patterns to reach MaxPatternsToTest
+      ' then just test everything
+      If (mNumPatternsAdded < mMaxPatternsToTest) Then
+         TestThisPattern = True
+         Exit Function
+      End If
+
+      ' Its an ndistester pattern if it contains NDIS starting from byte 22
+      If (UBound (PatternToTest) < 25) Then
+         ' We know for sure this is non-ndistester pattern so done
+         TestThisPattern = True
+         Exit Function
+      End If
+
+      If (IsNdisPattern (PatternToTest)) Then
+         ' temp needed to avoid div by zero exception during mod operation below
+         ' This can happen if we add less than mMaxPatternsToTest for some reason
+         Dim temp
+         temp = Int (mNumPatternsAdded / mMaxPatternsToTest)
+         if temp <= 0 Then
+            temp = 1
+         End If
+
+         If (Int (mTotalPatterns Mod temp) = 0) Then
+            ' Test only the mPatternsToTest number of patterns out of all added
+            TestThisPattern = True
+         Else
+            TestThisPattern = False
+         End If
+      Else
+         ' Test ALL NON-NDISTester patterns
+         TestThisPattern = True
+
+         ' Save one of the TCP patterns to test later for fake pattern tests!
+         ' Not being done currently
+         If (IsEmpty (mFakeTCPPattern)) Then
+            call ArrayCopy (mFakeTCPPattern, PatternToTest)
+         End If
+      End If
+
+   End Function
+
+
+   Private Function TestWakePattern (Pattern)
+      Dim Attempts, nResult, Duration
+
+      TestWakePattern = False
+
+      Attempts = 0
+
+      Do
+         Attempts = Attempts + 1
+
+         oLog.Variation("Standby")
+
+         ' Set the packet filters for the test card
+         If (Not oTestOpen.vbSetPacketFilter(BROADCAST)) Then
+            call oLog.Failed ("SetPacketFilter failed with NdisStatus = 0x" & Hex (nResult), 88888)
+            Exit Do
+         End If
+
+         ' Set test card to wake up when pattern is seen
+         If(Not oTestOpen.vbSetWakeupType(WAKE_UP_PATTERN_MATCH)) Then
+            Exit Do
+         End If
+
+         ' Instruct the support card to send wake up pattern in
+         ' time to packet seconds to wake up the test machine
+         If (Not oSuppOpen.vbDelayedSendRaw(mTimeToPacket, Pattern)) Then
+            Exit Do
+         End If
+
+         ' Put the test machine to standby
+         nResult = 0
+         Duration = oPnPPower.Standby2(mTimeToStandby, nResult)
+         If (nResult = 0) Then
+            oLog.Write ("Machine slept for " & Duration & " seconds")
+            If (Duration < mTimeToPacket) Then
+               oLog.Warned("Machine woke up too soon" )
+            ElseIf (Duration > (mTimeToPacket + mWakeUpOverhead)) Then
+               If (Duration > mTimeToStandby) Then
+                  call oLog.Failed ("WOL Packet did not wake up machine" , 21305)
+               Else
+                  oLog.Warned("Possible wakeup problem! Took too much time to wake up!")
+                  oLog.Write ("This can occur on slow machines that take too long to come out of standby")
+               End If
+            End If
+         Else
+            If (Not m_bStandbyOptional) Then
+               call oLog.Failed ("Error occured putting machine to standby! Bailing out", 88888)
+            Else
+               oLog.Write ("Error occured putting the machine to standby! Bailing out")
+            End If
+            Exit Do
+         End If
+
+         ' check the media status after wakeup
+         If (Not oTestCard.vbWaitForLinkWithDelay(90, glWaitForLinkExtraDelay)) Then    ' wait for link to be established
+            call oLog.Write ("The link could not be re-established!")
+            Exit Do
+         End If
+
+         ' Run communication test to see that NIC can still send/receive
+         call RunCommunicationTest ()
+      Loop While(Attempts < mNumTestRun)
+
+      TestWakePattern = True
+
+   End Function
+
+
+   Private Function TestWithFakePattern ()
+
+      If IsEmpty (mFakeNdisTestPattern) Then
+         If mNumPatternsAdded = 0 Then
+            oLog.Warned ("Could not test for fake patterns!!")
+            oLog.Write ("This situation could arise if no NdisTest pattern were added (could be because of failures " & _
+                  "or becuse the NIC has no space to store any more patterns).")
+         Else
+            call oLog.Failed ("Error! Fake pattern test could not be run", 88888)
+            oLog.Write ("This is probably because the NdisTest Patterns that were added could not successfully pass the WOL test")
+         End If
+
+         TestWithFakePattern = False
+         Exit Function
+      End If
+
+      ' Change a byte in the pattern and send it out
+      ' We will change the 'N' to 'O'
+      mFakeNdisTestPattern (22) = mFakeNdisTestPattern (22) + 1
+
+      TestWithFakePattern = TestFailurePattern (mFakeNdisTestPattern)
+
+
+      '      Dim Pattern
+      '      Dim nPatternMask, nMaskSize, nMask, PatternOffset
+      '      Dim i, j
+      '      Dim bFoundByte
+      '
+      '      ' Change a single byte in the FakePatterns already saved and test them
+      '      For i=0 To 1
+      '         bFoundByte = FALSE
+      '         PatternOffset = 0
+      '
+      '         If i=0 Then
+      '            Pattern = mFakeNdisTestPattern
+      '         Else
+      '            Pattern = mFakeTCPPattern
+      '         End If
+      '
+      '         nMask = 0
+      '         nMaskSize = 0
+      '
+      '         ' Get the mask size so we can access the mask
+      '         nMaskSize = Pattern(8) + Pattern (9) * 2^8 + Pattern (10) * 2^16 + Pattern (11) * 2^24
+      '         MsgBox ("Mask Size = " & nMaskSize)
+      '
+      '         ' Now get one "applicable" mask byte from the end
+      '         For j=nMaskSize - 1 To 0 Step -1
+      '           ' First 6 bytes are ULONGs in NDIS_PM_PATTERN_PACKET
+      '           If (Pattern (j+6) <> 0) Then
+      '               ' This is the mask for the 8-byte sequence we can make a change in
+      '               nMask = Pattern (j+6)
+      '               MsgBox ("Mask byte = " & j)
+      '               MsgBox ("Mask = " & nMask)
+      '               ' This is the offset in the pattern where the 8-byte sequence starts
+      '               PatternOffset = 6 + nMaskSize + j*8
+      '               Exit For
+      '            End If
+      '         Next
+      '
+      '         MsgBox ("Pattern Offset = " & PatternOffset)
+      '
+      '         ' We'll change one of the byte in the 8-byte sequence
+      '         For j=PatternOffset to PatternOffset + 8
+      '            ' Look for a byte for which bit is set
+      '            If (nMask And (j - PatternOffset) <> 0) Then
+      '               ' Found a byte that can be made different! Increment it
+      '               Pattern (j) = Pattern (j) + 1
+      '               bFoundByte = True
+      '            End If
+      '         Next
+      '
+      '         dim thisByte, count
+      '         count = 0
+      '         for Each thisByte in Pattern
+      '            count = count + 1
+      '            oNDTLog.Write (thisByte & " ")
+      '            if count mod 16 = 0 then
+      '               oNDTLog.Write (vblf)
+      '            end if
+      '         next
+      '
+      '         If (bFoundByte) Then
+      '            TestWithFakePattern = TestFailurePattern (Pattern)
+      '         Else
+      '            call oLog.Failed ("Could not find a byte to change to make fake pattern", 88888)
+      '            TestWithFakePattern = False
+      '         End If
+      '
+      '      Next
+
+   End Function
+
+
+   Private Function TestFailurePattern (Pattern)
+      Dim Attempts, nResult, Duration
+
+      TestFailurePattern = False
+
+      Attempts = 0
+
+      Attempts = Attempts + 1
+
+      oLog.Variation("Standby")
+
+      ' Set the packet filters for the test card
+      If (Not oTestOpen.vbSetPacketFilter(BROADCAST)) Then
+         call oLog.Failed ("SetPacketFilter failed with NdisStatus = 0x" & Hex (nResult), 88888)
+         Exit Function
+      End If
+
+      ' Set test card to wake up when pattern is seen
+      If(Not oTestOpen.vbSetWakeupType(WAKE_UP_PATTERN_MATCH)) Then
+         Exit Function
+      End If
+
+      ' Instruct the support card to send wake up pattern in
+      ' time to packet seconds to wake up the test machine
+      If (Not oSuppOpen.vbDelayedSendRaw(mTimeToPacket, Pattern)) Then
+         Exit Function
+      End If
+
+      ' Put the test machine to standby
+      nResult = 0
+      Duration = oPnPPower.Standby2(mTimeToStandby, nResult)
+      If (nResult = 0) Then
+         oLog.Write ("Machine slept for " & Duration & " seconds")
+         If (Duration < mTimeToStandby) Then
+            call oLog.Failed("The Fake Wake Pattern woke up the machine", 88888)
+         ElseIf (Duration > (mTimeToStandby + mWakeUpOverhead)) Then
+            oLog.Warned("Possible wakeup problem! Took too much time to wake up!")
+            oLog.Write ("This can occur on slow machines that take too long to come out of standby")
+         End If
+      Else
+         If (Not m_bStandbyOptional) Then
+            call oLog.Failed ("Error occured putting machine to standby! Bailing out", 88888)
+         Else
+            oLog.Write ("Error occured putting the machine to standby! Bailing out")
+         End If
+         Exit Function
+      End If
+
+      ' check the media status after wakeup
+      If (Not oTestCard.vbWaitForLinkWithDelay(90, glWaitForLinkExtraDelay)) Then    ' wait for link to be established
+         call oLog.Write ("The link could not be re-established!")
+         Exit Function
+      End If
+
+      call RunCommunicationTest ()
+
+      TestFailurePattern = True
+   End Function
+
+
+   Function RunCommunicationTest ()
+      Dim nTestId
+      Dim nReceived, nResent, nMinimumPass
+      Dim bResult
+
+      oLog.Variation("Communication Test")
+      If (oSuppOpen.vbSimpleSendReceive(oTestOpen) <> 0) Then
+         Call oLog.Failed ("Test-Support card communication failed", 88888)
+      End If
+
+   End Function
+
+
+   Private Function RemovePatterns ()
+
+      Dim oProtoBinder, OldBindStatus
+      ' To remove patterns we are going to unbind TCP/IP from protocols
+
+      oLog.Variation ("Remove Patterns by unbinding TCP/IP")
+
+      RemovePatterns = False
+
+      oProtoBinder = oNDTSession ("ProtocolBinders")
+      If (IsEmpty (oProtoBinder)) Then
+         call oLog.Failed ("Protocol Binding info not found in the session", 88888)
+         Exit Function
+      End If
+
+      ' Unbind TCP/IP from test card
+      If (Not oProtoBinder(m_lTestAdapterIndex).ChangeBinding ("Internet Protocol (TCP/IP)", UNBIND_PROTOCOL, OldBindStatus)) Then
+         Exit Function
+      End If
+
+      RemovePatterns = True
+
+   End Function
+
+
+   ' This function returns a random number between the high and low numbers
+   Private Function Random(high, low)
+      Random = Int ((high - low + 1) * Rnd + low)
+   End Function
+
+
+
+   Private Function ArrayCopy (ByRef Dest, ByRef Source)
+      If ((VarType (Source) & vbArray) = 0) Then
+         call oLog.Failed ("Internal Error! Source provided is NOT an array! It is type:"  & VarType (Source), 88888)
+         Exit Function
+      End If
+
+      If VarType (Dest) <> vbArray Then
+         ReDim Dest (UBound (Source))
+      End If
+
+      Dim Element, count
+      count = 0
+
+      For Each Element in Source
+         Dest (count) = Element
+         count = count + 1
+      Next
+
+   End Function
+
+
+   Private Function IsNdisPattern (Pattern)
+      If (Ubound (Pattern) < 26) Then
+         IsNdisPattern = False
+         Exit Function
+      End If
+
+      If (Pattern (22) = &H4E And Pattern (23) = &H44 And _
+               Pattern (24) = &H49 And Pattern (25) = &H53) Then
+         IsNdisPattern = True
+      Else
+         IsNdisPattern = False
+      End If
+   End Function
+
+    ' Locate mask for the pattern (found at offset of 24 bytes
+    ' from Offset in PatternList. (_NDIS_PM_PACKET_PATTERN = 24 byte struct)
+    ' If this mask is 3F & the pattern itself is equal to adapter MAC then skip testing this
+    ' Motivation is to get around a particular failing pattern that TCP/IP adds
+    ' This WOL pattern is equal to TR adapter MAC address and has a mask looking for first 6 bytes
+    ' matching the MAC address without consideration for the leading AC & FC byte fields
+    ' that are immutable part of token ring frame. In correlation, any pattern that does not
+    ' consider the restrictions for valid AC & FC fields of TR frame and set pattern accordingly
+    ' or alternatively ignore the leading two bytes will fail on token ring media
+    Private Function IsValidTokenRingPattern(PatternList, Offset)
+	Dim firstMaskByte, patternOffset, patternSize, testCardMAC, i
+	Dim b0, b1, b2, b3
+
+	IsValidTokenRingPattern = True
+
+	firstMaskByte = PatternList(Offset + SIZEOF_NDIS_PM_PACKET_PATTERN)
+	' Look to see if PatternSize is 6 bytes - assume little endian
+	If ( PatternList(Offset + OFFSET_MPATTERNSIZE + 1) Or _
+	     PatternList(Offset + OFFSET_MPATTERNSIZE + 2) Or _
+	     PatternList(Offset + OFFSET_MPATTERNSIZE + 3) ) Then
+	    Exit Function
+	End If
+	patternSize = PatternList(Offset + OFFSET_MPATTERNSIZE)
+	If (firstMaskByte = &H3F& And patternSize = SIZEOF_TOKEN_RING_MAC_ADDRESS) Then
+	    ' Find pattern offset - assume little endian storage
+	    b0 = CLng( PatternList(Offset+OFFSET_MPATTERNOFFSET) )
+	    b1 = CLng( PatternList(Offset+OFFSET_MPATTERNOFFSET+1) )
+	    b2 = CLng( PatternList(Offset+OFFSET_MPATTERNOFFSET+2) )
+	    b3 = CLng( PatternList(Offset+OFFSET_MPATTERNOFFSET+3) )
+	    patternOffset = b0 + (b1 * &H100&) + (b2 * &H10000&) + (b3 * &H1000000&)
+	    testCardMAC = oTestOpen.vbGetCardAddress()
+	    For i = 0 to SIZEOF_TOKEN_RING_MAC_ADDRESS - 1
+	    	If ( PatternList(Offset + patternOffset + i) <> testCardMAC(i) ) Then
+		    Exit Function
+		End If
+	    Next
+	    oLog.Write("This is a well know failing WOL pattern for Token ring.")
+	    oLog.Write("It does not account for the AC & FC bytes of TR frame.")
+	    IsValidTokenRingPattern = False
+	End If
+   End Function
+End class
+
+</script>
+</job>
+</package>
+
+
+
+<!--- CRC = 0xbde3b878 --->

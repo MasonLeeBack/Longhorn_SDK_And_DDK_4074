@@ -1,0 +1,257 @@
+'************************************* TCP_DelAckTicks.wsf ***********************
+'*                                                                               *
+'* Author            :    Sandeep Prabhu                                         *
+'* Revision history  :                                                           *
+'*    09/20/2000     sandeep    Created                                          *
+'*    04/25/2003     karolys    added HCT-style comments for tst plan generation *
+'*                                                                               *
+'* This script will test the ACK timeout interval                                *
+'*                                                                               *
+'************************************* TCP_DelAckTicks.wsf ***********************
+
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="TCPLib.vbs"/>
+      <script id="TCP_DelAckTicks" language="VBScript">
+
+'/**
+' @area name="Offload Compliance Test Assertions"
+' @group name="TCP Delayed ACK Test Assertions"
+' @group name="TcpDelAckTicks Registry Variable Assertions" 
+' @define name="Offload" Offload Compliance Test Assertions
+' @define name="TCPDA" TCP Delayed ACK Test Assertions
+' @define name="DAReg" TcpDelAckTicks Registry Variable Assertions
+' @hierarchy Offload TCPDA DAReg
+' @key Reference="WLP# - x.x.x.x; RFC-813, RFC-1122 Section 4.2.3.2"
+' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+' @key TestName="TCPv4 TcpDelAckTicks Registry Variable Functionality Tests"
+' @key TestLog="TCP_DelAckTicks.log"
+'*/
+
+option explicit
+
+Dim Core, Sparta, Autosrv, MediaType, AutoArpObject, IFace, pControllerObj
+Const usMSS = 1460
+
+'
+' Start the script
+'
+StartScript "TCP_DelAckTicks", g_szLogDirectory, "Tests for ACK timeout interval"
+
+
+
+' ==================================================================================================
+' Main routine
+' ==================================================================================================
+Sub Main
+   Dim ulStatus, ulWindowSize, ulTcpDelAckTicks
+   Core.SetAssertionTracking "40600"
+
+   '/**
+   ' @config conf="The TcpDelAckTicks registry variable is set to 4."
+   ' @test name="Stack must wait 400 msecs before triggering a delayed ACK on an unacknowledged packet."
+   ' variation 1: Autosrv on the test machine is requested to establish a connection back to the script machine.
+   ' The script receives the SYN, sends the SYN-ACK and receives the ACK.
+   ' Then it in a loop (10) it sends a single data packet and waits to receive the ACK from the test machine.
+   ' The script verifies that the timeout betwen sending the data packet and getting the ACK is correct.<br/>
+   ' variation 2: The scripts establishes a connection to the test machine by sending a SYN, receiving a SYN-ACK and sending an ACK.
+   ' Then it in a loop (10) it sends a single data packet and waits to receive the ACK from the test machine.
+   ' The script verifies that the timeout betwen sending the data packet and getting the ACK is correct.<br/>
+   '*/
+
+   ulTcpDelAckTicks = 4
+   ulStatus = pControllerObj.SetRegistryValueByIp(HKEY_LOCAL_MACHINE, G_szRemoteIpAddress, "TcpDelAckTicks", ulTcpDelAckTicks)
+   if (ulStatus <> 0) then
+      Core.Log "SetRegistryValue - " & ulStatus
+      exit sub
+   end if
+   ulStatus = Reboot(TRUE)
+   if (ulStatus <> 0) then
+      Core.Log "Reboot - " & ulStatus
+      exit sub
+   end if
+
+
+   IFace.StartListening
+   Core.StartTest "ACK timeout: TcpDelAckTicks = " & ulTcpDelAckTicks
+   VerifyDelayedAckTimeout ulTcpDelAckTicks
+   Core.EndTest
+   Core.Sleep(2500)
+   IFace.StopListening
+
+   '/**
+   ' @config conf="The TcpDelAckTicks registry variable is set to 6 (max valid value)."
+   ' @test name="Stack must wait 600 msecs before triggering a delayed ACK on an unacknowledged packet."
+   ' variation 1: Autosrv on the test machine is requested to establish a connection back to the script machine.
+   ' The script receives the SYN, sends the SYN-ACK and receives the ACK.
+   ' Then it in a loop (10) it sends a single data packet and waits to receive the ACK from the test machine.
+   ' The script verifies that the timeout betwen sending the data packet and getting the ACK is correct.<br/>
+   ' variation 2: The scripts establishes a connection to the test machine by sending a SYN, receiving a SYN-ACK and sending an ACK.
+   ' Then it in a loop (10) it sends a single data packet and waits to receive the ACK from the test machine.
+   ' The script verifies that the timeout betwen sending the data packet and getting the ACK is correct.<br/>
+   '*/
+
+   ulTcpDelAckTicks = 6
+   ulStatus = pControllerObj.SetRegistryValueByIp(HKEY_LOCAL_MACHINE, G_szRemoteIpAddress, "TcpDelAckTicks", ulTcpDelAckTicks)
+   if (ulStatus <> 0) then
+      Core.Log "SetRegistryValue - " & ulStatus
+      exit sub
+   end if
+   ulStatus = Reboot(TRUE)
+   if (ulStatus <> 0) then
+      Core.Log "Reboot - " & ulStatus
+      exit sub
+   end if
+
+   IFace.StartListening
+   Core.StartTest "ACK timeout: TcpDelAckTicks = " & ulTcpDelAckTicks
+   VerifyDelayedAckTimeout ulTcpDelAckTicks
+   Core.EndTest
+   Core.Sleep(2500)
+   IFace.StopListening
+
+   '/**
+   ' @config conf="The TcpDelAckTicks registry variable is set to 0 (valid range is 2-6)."
+   ' @test name="Invalid TcpDelAckTicks value (0) should be ignored by the stack and it should use 2 instead."
+   ' variation 1: Autosrv on the test machine is requested to establish a connection back to the script machine.
+   ' The script receives the SYN, sends the SYN-ACK and receives the ACK.
+   ' Then it in a loop (10) it sends a single data packet and waits to receive the ACK from the test machine.
+   ' The script verifies that the timeout betwen sending the data packet and getting the ACK is correct.<br/>
+   ' variation 2: The scripts establishes a connection to the test machine by sending a SYN, receiving a SYN-ACK and sending an ACK.
+   ' Then it in a loop (10) it sends a single data packet and waits to receive the ACK from the test machine.
+   ' The script verifies that the timeout betwen sending the data packet and getting the ACK is correct.<br/>
+   '*/
+
+   ulTcpDelAckTicks = 0
+   ulStatus = pControllerObj.SetRegistryValueByIp(HKEY_LOCAL_MACHINE, G_szRemoteIpAddress, "TcpDelAckTicks", ulTcpDelAckTicks)
+   if (ulStatus <> 0) then
+      Core.Log "SetRegistryValue - " & ulStatus
+      exit sub
+   end if
+   ulStatus = Reboot(TRUE)
+   if (ulStatus <> 0) then
+      Core.Log "Reboot - " & ulStatus
+      exit sub
+   end if
+
+   IFace.StartListening
+   Core.StartTest "ACK timeout: TcpDelAckTicks = " & ulTcpDelAckTicks
+   VerifyDelayedAckTimeout ulTcpDelAckTicks
+   Core.EndTest
+   Core.Sleep(2500)
+   IFace.StopListening
+
+   '/**
+   ' @config conf="The TcpDelAckTicks registry variable is set to 2 (default)."
+   ' @test name="Stack must wait 200 msecs before triggering a delayed ACK on an unacknowledged packet."
+   ' variation 1: Autosrv on the test machine is requested to establish a connection back to the script machine.
+   ' The script receives the SYN, sends the SYN-ACK and receives the ACK.
+   ' Then it in a loop (10) it sends a single data packet and waits to receive the ACK from the test machine.
+   ' The script verifies that the timeout betwen sending the data packet and getting the ACK is correct.<br/>
+   ' variation 2: The scripts establishes a connection to the test machine by sending a SYN, receiving a SYN-ACK and sending an ACK.
+   ' Then it in a loop (10) it sends a single data packet and waits to receive the ACK from the test machine.
+   ' The script verifies that the timeout betwen sending the data packet and getting the ACK is correct.<br/>
+   '*/
+
+   ulTcpDelAckTicks = DefaultTcpDelAckTicks
+   ulStatus = pControllerObj.DeleteRegistryValueByIp(HKEY_LOCAL_MACHINE, G_szRemoteIpAddress, "TcpDelAckTicks")
+   if (ulStatus <> 0) then
+      Core.Log "DeleteRegistryValueByIp - " & ulStatus
+      exit sub
+   end if
+   ulStatus = Reboot(TRUE)
+   if (ulStatus <> 0) then
+      Core.Log "Reboot - " & ulStatus
+      exit sub
+   end if
+
+   IFace.StartListening
+   Core.StartTest "ACK timeout: TcpDelAckTicks = " & ulTcpDelAckTicks
+   VerifyDelayedAckTimeout ulTcpDelAckTicks
+   Core.EndTest
+   Core.Sleep(2500)
+   IFace.StopListening
+
+
+End Sub
+
+
+Sub VerifyDelayedAckTimeout(ulTcpDelAckTicks)
+   Dim ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim pTCPPacket, ulStatus, ulBytesRcvd, fConnectType, fSynProtect
+
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 5000
+   usDestPort = 5001
+
+   for each fConnectType in Array (true, false)
+      Core.StartVariation
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+
+      '
+      ' Esatablish a TCP connection
+      '
+      ulStatus = ConnectTo(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, NULL, usMSS, fConnectType)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "VerifyDelayedAckTimeout: ConnectTo - " & ulStatus
+         exit sub
+      end if
+
+      Dim ulTimeout
+      ulTimeout = ulTcpDelAckTicks * 100
+      if ((ulTcpDelAckTicks < 2) OR (ulTcpDelAckTicks > 6)) then
+         ulTimeout = DefaultTcpDelAckTicks * 100
+      end if
+
+
+      Dim ulCounter, ulStartTime, ulElapsedTime, ulErrors
+      ulErrors = 0
+      For ulCounter = 1 to 10
+         Dim ulModVal
+         '
+         ' Send a data packet
+         '
+         Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 100)
+         IFace.Send(pTCPPacket)
+
+         '
+         ' Verify that an ACK is received within the expected timeout period
+         '
+         ulStartTime = Timer
+         set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 1000)
+         if (pTCPPacket is Nothing) then
+            Core.FailSev1Variation "VerifyDelayedAckTimeout: Didn't receive ACK for data"
+            ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+            exit sub
+         end if
+         ulElapsedTime = (Timer - ulStartTime)*1000
+         if ((ulElapsedTime  < CLng(ulTimeout*0.7)) OR (ulElapsedTime  > CLng(ulTimeout*1.3))) then
+            ulErrors = ulErrors + 1
+            Core.log "VerifyDelayedAckTimeout: ACK(" & ulCounter & ") timeout incorrect " & ulElapsedTime
+         end if
+      Next
+
+      if (ulErrors >= 3) then
+         Core.FailSev1Variation "VerifyDelayedAckTimeout: ACK timeout incorrect"
+         ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+         exit sub
+      end if
+   next
+
+   '
+   ' Reset the connection
+   '
+   ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+
+End Sub
+
+
+      </script>
+   </job>
+</package>

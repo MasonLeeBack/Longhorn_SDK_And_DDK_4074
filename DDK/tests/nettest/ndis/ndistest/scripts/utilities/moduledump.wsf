@@ -1,0 +1,106 @@
+<package>
+	<comment>
+	PrimalSCRIPT wizard generated file.
+	</comment>
+	<job id="Job1">
+		<object id="oShell" progid="WScript.Shell" events="false"/>
+		<script id="ModuleDump.wsf" language="VBScript">
+Option Explicit
+Dim oArgs, oOut, oIn
+Dim i
+
+set oOut	= WScript.StdOut
+set oIn		= WScript.StdIn	
+set oArgs 	= WScript.Arguments
+
+CheckScriptEngine()
+
+if(oArgs.Count > 0) then
+	for i = 0 to oArgs.Count - 1
+	
+		select case UCase(oArgs(i))
+		
+		case "NDINFO"
+			DumpNDInfo()
+		
+		case "NDTCOMMWS"
+			DumpNDTCommWS()
+			
+		case "NDTSESSION"
+			DumpNDTSession()
+					
+		case else
+			'DumpNDInfo()
+			
+		end select
+		
+	next
+else
+	DumpNDInfo()
+	DumpNDTCommWS()
+	DumpNDTSession()
+end if
+	
+set oArgs 	= nothing
+set oOut	= nothing
+set oIn		= nothing
+
+'//////////////////////////////////////////////////////////////////////////////////////////////////
+Sub DumpNDInfo()
+	Dim oNDInfo
+	set oNDInfo =  CreateObject("NDInfo.Info.1")
+	
+	oOut.WriteLine("---------------------------------------- NDINFO ----------------------------------------")
+	oOut.WriteLine(oNDInfo.Dump)
+	
+	set oNDInfo = nothing
+End Sub
+
+'//////////////////////////////////////////////////////////////////////////////////////////////////
+Sub DumpNDTCommWS()
+	Dim oNDTComm
+	set oNDTComm =  CreateObject("NDTCommWS.BackChannel.1")
+
+	oOut.WriteLine("--------------------------------------- NDTCommWS --------------------------------------")
+	oOut.WriteLine(oNDTComm.Dump)
+		
+	set oNDTComm = nothing
+End Sub
+
+'//////////////////////////////////////////////////////////////////////////////////////////////////
+Sub DumpNDTSession()
+	Dim oNDTSession
+	set oNDTSession =  CreateObject("NDTSession.Session.1")
+
+	oOut.WriteLine("--------------------------------------- NDTSession --------------------------------------")
+	oOut.WriteLine(oNDTSession.Dump)
+		
+	set oNDTSession = nothing
+End Sub
+
+'//////////////////////////////////////////////////////////////////////////////////////////////////
+Sub CheckScriptEngine()
+	Dim Arr, Count, RetVal
+	
+	Arr = split(WScript.FullName, "\")
+	Count = ubound(Arr)
+	if(not lcase(Arr(Count)) = "cscript.exe") then
+		RetVal = msgbox("This script must be run with cscript.exe." & vblf & _
+		       			"Would you like to make cscript.exe your default script engine?", vbQuestion Or vbYesNo or vbSystemModal, "Invalid Script Engine")
+		if(RetVal = vbYes) then
+			oShell.Run "wscript.exe //H:cscript",0, true
+			msgbox "cscript.exe is now the default script engine." & vblf & _
+			   	   "You can now rerun the script from the command line.", vbInformation or vbOkOnly or vbSystemModal, "Default Engine Changed"
+			WScript.Quit
+		else
+			WScript.Quit	
+		end if
+	end if
+	
+End Sub
+
+		</script>
+	</job>
+</package>
+
+<!--- CRC = 0x8c91f42e --->

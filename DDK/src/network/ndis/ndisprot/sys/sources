@@ -1,0 +1,28 @@
+TARGETNAME=ndisprot
+TARGETPATH=obj
+TARGETTYPE=DRIVER
+
+C_DEFINES=$(C_DEFINES) -DNDIS_WDM=1  -DNDIS60=1 
+C_DEFINES=$(C_DEFINES) -DNDIS_CHIMNEY_OFFLOAD=1
+# C_DEFINES=$(C_DEFINES) -DDBG_SPIN_LOCK=1 -DEX_CALLBACK=1
+
+# MSC_WARNING_LEVEL=/W4
+
+PRECOMPILED_INCLUDE=precomp.h
+PRECOMPILED_PCH=precomp.pch
+PRECOMPILED_OBJ=precomp.obj
+
+USE_MAPSYM=1
+
+TARGETLIBS=\
+    $(DDK_LIB_PATH)\ndis.lib \
+    $(DDK_LIB_PATH)\wdmsec.lib
+
+SOURCES=\
+    ndisprot.rc \
+    ntdisp.c \
+    ndisbind.c \
+    recv.c \
+    send.c \
+    debug.c\
+    ExCallbk.c

@@ -1,0 +1,429 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3
+</MEDIA>
+<CARDMACH>
+2C,1M
+</CARDMACH>
+<RUNORDER>
+3050
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[
+This is a bidirectional send receive test for Ndis 6.0 miniports. It sends packets
+from the test adapter to the support adapter, which the support adapter is expected
+to reply to. At the same time, it sends packets from the support adapter to the test
+adapter, which the test adapter is expected to reply to. This should result in continuous
+bidirectional traffic between the two adapters.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="2c_Mini6SendRecvReply" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore6" progid="NDTCore6.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oCoreFactory" progid="NDTCore6.Factory.1" events="true"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\inc\Constants6.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard6.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen6.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanEndPoint6.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script id="2c_Mini6SendRecvReply" language="VBScript">
+'==========================================================================
+' Script Name:    2c_Mini6SendRecvReply
+'==========================================================================
+Option Explicit
+
+Dim oTestObj
+
+' We are going to be using ndis 6 protocol
+g_UseNdis6Protocol = TRUE
+
+' We would also be using the trick to point oNDTCore to oNDTCore6, so that anyone who
+' uses oNDTCore would automatically get oNDTCore6. Only problem is we might be masking
+' some errors, so this would not be done just yet
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0), GetSupportAdapterIndex (oNDInfo.AdapterList, 0))
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard, oTestOpen, oTestRecvReplyEndPoint, oTestSendRecvEndPoint
+   Private oSuppCard, oSuppOpen, oSuppSendRecvEndPoint, oSuppRecvReplyEndPoint
+   Private m_lTestAdapterIndex, m_lSuppAdapterIndex
+
+   Private Sub Class_Initialize
+
+   End Sub
+
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+      Set oTestOpen = Nothing
+      Set oTestRecvReplyEndPoint = Nothing   ' Recv normal and send reply
+      Set oTestSendRecvEndPoint = Nothing        ' Send normal to supp adapter
+
+      Set oSuppCard = Nothing
+      Set oSuppOpen = Nothing
+      Set oSuppSendRecvEndPoint = Nothing    ' Send to test adapter & recv replies
+      Set oSuppRecvReplyEndPoint = Nothing        ' Receive normal from test adapter
+   End Sub
+
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+
+      oNDTCore6.DebugLevel = NORMAL_LOGGING_LEVEL
+
+      Set pAdapterList = oNDInfo.AdapterList
+
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard6
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+
+      Set oTestOpen = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpen is Nothing) Then
+         Exit Function
+      End If
+
+      Set oTestSendRecvEndPoint = oTestOpen.vbCreateEndPoint(CLENDPOINT)
+      If (oTestSendRecvEndPoint is Nothing) Then
+         Exit Function
+      End If
+
+      If (oTestSendRecvEndPoint.vbOpenCommunicationChannel(SIMPLE_SEND_COMM_MGR, _
+            NDISTEST_CONSTRUCTOR, NDIS_MEDIUM_802_3_MEDIA_MODULE) <> 0) Then
+         Exit Function
+      End If
+
+
+      Set oTestRecvReplyEndPoint = oTestOpen.vbCreateEndPoint(CLENDPOINT)
+      If (oTestRecvReplyEndPoint is Nothing) Then
+         Exit Function
+      End If
+
+      If (oTestRecvReplyEndPoint.vbOpenCommunicationChannel(SIMPLE_SEND_COMM_MGR, _
+            NDISTEST_CONSTRUCTOR, NDIS_MEDIUM_802_3_MEDIA_MODULE) <> 0) Then
+         Exit Function
+      End If
+
+      oLog.Variation ("Setting up Support Adapter")
+      Set oSuppCard = New CLanCard6
+      If (oSuppCard is Nothing) Then
+         Exit Function
+      End If
+
+      Set oSuppOpen = oSuppCard.vbSetupBasicTest(pAdapterList (m_lSuppAdapterIndex))
+      If (oSuppOpen is Nothing) Then
+         Exit Function
+      End If
+
+      Set oSuppRecvReplyEndPoint = oSuppOpen.vbCreateEndPoint(CLENDPOINT)
+      If (oSuppRecvReplyEndPoint is Nothing) Then
+         Exit Function
+      End If
+
+      If (oSuppRecvReplyEndPoint.vbOpenCommunicationChannel(SIMPLE_SEND_COMM_MGR, _
+            NDISTEST_CONSTRUCTOR, NDIS_MEDIUM_802_3_MEDIA_MODULE) <> 0) Then
+         Exit Function
+      End If
+
+
+      Set oSuppSendRecvEndPoint = oSuppOpen.vbCreateEndPoint(CLENDPOINT)
+      If (oSuppSendRecvEndPoint is Nothing) Then
+         Exit Function
+      End If
+
+      If (oSuppSendRecvEndPoint.vbOpenCommunicationChannel(SIMPLE_SEND_COMM_MGR, _
+            NDISTEST_CONSTRUCTOR, NDIS_MEDIUM_802_3_MEDIA_MODULE) <> 0) Then
+         Exit Function
+      End If
+
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+
+   Public Function RunTest (lTestAdapterIndex, lSuppAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      m_lSuppAdapterIndex = lSuppAdapterIndex
+
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+
+      ExecuteTestCore
+   End Function
+
+   Private Function VerifyResults(bTestOriginator, oSendCommMgrStats, oRecvCommMgrStats, oRecvNBStats, oReplyCommMgrStats, oReplyNBStats)
+      Dim OriginatorCard, ReplyCard
+      Dim nMinimumPass
+
+      VerifyResults = True
+      If (bTestOriginator) Then
+         OriginatorCard = "Test card"
+         ReplyCard = "Support card"
+      Else
+         OriginatorCard = "Support card"
+         ReplyCard = "Test card"
+      End If
+
+      ' First verify the originators send side stats
+      If (oSendCommMgrStats.TotalNetBufferListsSent = 0) Then
+         Call oLog.Failed (OriginatorCard & " did not send any net buffer lists", 88888)
+         VerifyResults = False
+      End If
+
+      If (oSendCommMgrStats.TotalNetBufferListsSendCompleted <> oSendCommMgrStats.TotalNetBufferListSendsSuccessful) Then
+         Call oLog.Failed (OriginatorCard & " failed net buffer list sends", 88888)
+         VerifyResults = False
+      End If
+
+      ' Next verify the repliers receive side stats
+      If (oRecvNBStats.TotalNetBufferListsReceived = 0) Then
+         Call oLog.Failed (ReplyCard & " did not receive any packets sent from the " & OriginatorCard, 88888)
+         VerifyResults = False
+      ElseIf (oRecvNBStats.TotalNetBufferListsReceived < oSendCommMgrStats.TotalNetBufferListSendsSuccessful) Then
+         ' Was this an acceptable number?
+         nMinimumPass = (glPercentToPass * oSendCommMgrStats.TotalNetBufferListSendsSuccessful) / 100
+         nMinimumPass = CLng(nMinimumPass)
+
+         If (oRecvNBStats.TotalNetBufferListsReceived < nMinimumPass) Then
+            Call oLog.Failed (ReplyCard & " received fewer net buffers than the required minimum of " & nMinimumPass, 88888)
+            VerifyResults = False
+         Else
+            oLog.Warned(ReplyCard & " received acceptable but less than expected number of net buffer")
+         End If
+      ElseIf (oRecvNBStats.TotalNetBuffersCorrupted > 0) Then
+         Call oLog.Failed ("Some of the net buffers sent from " & OriginatorCard & " were corrupted during communication", 88888)
+         VerifyResults = False
+      End If
+
+      ' Next, verify the repliers send side stats
+      If (oRecvCommMgrStats.TotalReplyNetBufferListsSent = 0) Then
+         Call oLog.Failed (ReplyCard & " did not send any reply net buffer lists", 88888)
+         VerifyResults = False
+      End If
+
+      If (oRecvCommMgrStats.TotalReplyNetBufferListsSendCompleted <> oRecvCommMgrStats.TotalReplyNetBufferListSendsSuccessful) Then
+         Call oLog.Failed (ReplyCard & " failed reply net buffer list sends", 88888)
+         VerifyResults = False
+      End If
+
+      ' Finally, verify the originators receive side stats
+      If (oReplyNBStats.TotalNetBufferListsReceived = 0) Then
+         Call oLog.Failed (OriginatorCard & " did not receive any replies sent from the " & ReplyCard, 88888)
+         VerifyResults = False
+      ElseIf (oReplyNBStats.TotalNetBufferListsReceived < oRecvCommMgrStats.TotalReplyNetBufferListSendsSuccessful) Then
+         ' Was this an acceptable number?
+         nMinimumPass = (glPercentToPass * oRecvCommMgrStats.TotalReplyNetBufferListSendsSuccessful) / 100
+         nMinimumPass = CLng(nMinimumPass)
+
+         If (oReplyNBStats.TotalNetBufferListsReceived < nMinimumPass) Then
+            Call oLog.Failed (OriginatorCard & " received fewer reply net buffers than the required minimum of " & nMinimumPass, 88888)
+            VerifyResults = False
+         Else
+            oLog.Warned(OriginatorCard & " received acceptable but less than expected number of net buffer")
+         End If
+      ElseIf (oReplyNBStats.TotalNetBuffersCorrupted > 0) Then
+         Call oLog.Failed ("Some of the net buffers sent from " & ReplyCard & " were corrupted during communication", 88888)
+         VerifyResults = False
+      End If
+
+   End Function
+
+   Private Sub ExecuteTestCore
+      Dim TestAddr, SuppAddr, nReceiveDelay
+      Dim bResult, Status
+      Dim oRecvCommMgrConfig, oRecvNBConfig, oRecvMediaConfig
+      Dim oSendCommMgrConfig, oSendNBConfig, oSendMediaConfig
+      Dim oSendCommMgrStats
+      Dim oRecvCommMgrStats, oRecvNBStats, oReplyCommMgrStats, oReplyNBStats
+      Dim nTestId
+
+      oLog.Variation ("Setting up instances")
+
+      Call oTestOpen.vbSetPacketFilter(DIRECTED)
+      Call oSuppOpen.vbSetPacketFilter(DIRECTED)
+
+      TestAddr = oTestOpen.vbGetCardAddress
+      SuppAddr = oSuppOpen.vbGetCardAddress
+      nTestId = oNDTSupp.Random(1, 32765)
+
+      nReceiveDelay = oSuppOpen.vbGetReceiveDelay
+
+      ' Create the various config obects to be used
+      Set oRecvCommMgrConfig = oCoreFactory.CommMgrRecvConfig(SIMPLE_SEND_COMM_MGR)
+      Set oRecvNBConfig = oCoreFactory.ConstructorRecvConfig(NDISTEST_CONSTRUCTOR)
+      Set oRecvMediaConfig = oCoreFactory.MediaModuleRecvConfig(NDIS_MEDIUM_802_3_MEDIA_MODULE)
+
+      Set oRecvCommMgrStats = oCoreFactory.CommMgrRecvStatistics(SIMPLE_SEND_COMM_MGR)
+      Set oRecvNBStats = oCoreFactory.ConstructorRecvStatistics(NDISTEST_CONSTRUCTOR)
+
+      Set oReplyCommMgrStats = oCoreFactory.CommMgrRecvStatistics(SIMPLE_SEND_COMM_MGR)
+      Set oReplyNBStats = oCoreFactory.ConstructorRecvStatistics(NDISTEST_CONSTRUCTOR)
+
+      Set oSendCommMgrConfig = oCoreFactory.CommMgrSendConfig(SIMPLE_SEND_COMM_MGR)
+      Set oSendNBConfig = oCoreFactory.ConstructorSendConfig(NDISTEST_CONSTRUCTOR)
+      Set oSendMediaConfig = oCoreFactory.MediaModuleSendConfig(NDIS_MEDIUM_802_3_MEDIA_MODULE)
+
+      Set oSendCommMgrStats = oCoreFactory.CommMgrSendStatistics(SIMPLE_SEND_COMM_MGR)
+
+      ' First, start the normal send from test adapter and receive at
+      ' support adapter
+      oSendCommMgrConfig.NumSends = 50
+      oSendCommMgrConfig.NumNetBufferListsPerSend = 2
+      oSendCommMgrConfig.InitialBurstSize = 2
+      oSendCommMgrConfig.SendLatency = 3000  ' Wait 3 seconds before starting send
+      oSendCommMgrConfig.InterSendDelay = 10 ' Wait 10 ms between each send call
+
+      oSendNBConfig.MaxMdlSize = 1500
+      oSendNBConfig.NumNBLToPreallocate = 100
+      oSendNBConfig.NumNetBuffersPerNetBufferList = 1
+      oSendNBConfig.NetBufferSize = 1500
+      oSendNBConfig.TestId = nTestId
+
+      oSendMediaConfig.DestinationAddress = TestAddr
+
+      oRecvNBConfig.TestId = nTestId
+      oRecvNBConfig.MaxMdlSize = 1500
+
+      Call oSendNBConfig.SetReplyAddress(SuppAddr, 6)
+
+      oLog.Variation ("Starting Supp->Test->Supp")
+      Status = oTestRecvReplyEndPoint.vbStartReceive(oRecvCommMgrConfig, oRecvNBConfig, oRecvMediaConfig)
+      Status = oSuppSendRecvEndPoint.vbStartReceive(oRecvCommMgrConfig, oRecvNBConfig, oRecvMediaConfig)
+      Status = oSuppSendRecvEndPoint.vbSendNetBufferLists(oSendCommMgrConfig, oSendNBConfig, oSendMediaConfig)
+
+      oSendCommMgrConfig.SendLatency = 0  ' Start immediately
+      Call oSendNBConfig.SetReplyAddress(TestAddr, 6)
+      oSendNBConfig.TestId = nTestId + 1
+      oSendMediaConfig.DestinationAddress = SuppAddr
+
+      oRecvNBConfig.TestId = nTestId + 1
+
+      oLog.Variation ("Starting Test->Supp->Test")
+      Status = oSuppRecvReplyEndPoint.vbStartReceive(oRecvCommMgrConfig, oRecvNBConfig, oRecvMediaConfig)
+      Status = oTestSendRecvEndPoint.vbStartReceive(oRecvCommMgrConfig, oRecvNBConfig, oRecvMediaConfig)
+      Status = oTestSendRecvEndPoint.vbSendNetBufferLists(oSendCommMgrConfig, oSendNBConfig, oSendMediaConfig)
+
+      ' First, we check the results from the supp->test->supp
+      Status = oSuppSendRecvEndPoint.vbWaitForSendsToComplete(0)
+      Status = oSuppSendRecvEndPoint.vbGetSendResults(oSendCommMgrStats, Nothing)
+      If (Status <> 0) then
+         Call oLog.Failed ("Failed to get send results. Error " & Status, 88888)
+      End If
+
+      WScript.Sleep nReceiveDelay
+
+      ' Stop test adapters receiving/replying
+      Status = oTestRecvReplyEndPoint.vbStopReceive()
+      If (Status <> 0) Then
+         Call oLog.Failed ("Failed to stop receive. Error " & Status, 88888)
+      End If
+
+      Status = oTestRecvReplyEndPoint.vbGetReceiveResults(oRecvCommMgrStats, oRecvNBStats)
+      If (Status <> 0) Then
+         Call oLog.Failed ("Failed to get receive results. Error " & Status, 88888)
+      End If
+
+
+      ' Stop support adapter receving replies
+      Status = oSuppSendRecvEndPoint.vbStopReceive()
+      If (Status <> 0) Then
+         Call oLog.Failed ("Failed to stop receive. Error " & Status, 88888)
+      End If
+
+      Status = oSuppSendRecvEndPoint.vbGetReceiveResults(oReplyCommMgrStats, oReplyNBStats)
+      If (Status <> 0) Then
+         Call oLog.Failed ("Failed to get receive results. Error " & Status, 88888)
+      End If
+
+      Call VerifyResults(FALSE, _
+            oSendCommMgrStats, _
+            oRecvCommMgrStats, _
+            oRecvNBStats, _
+            oReplyCommMgrStats, _
+            oReplyNBStats)
+
+      ' Now, stop the test card sending normal
+      Status = oTestSendRecvEndPoint.vbWaitForSendsToComplete(0)
+      Status = oTestSendRecvEndPoint.vbGetSendResults(oSendCommMgrStats, Nothing)
+      If (Status <> 0) then
+         Call oLog.Failed ("Failed to get send results. Error " & Status, 88888)
+      End If
+      WScript.Sleep nReceiveDelay
+
+      ' Stop supp adapters receiving/replying
+      Status = oSuppRecvReplyEndPoint.vbStopReceive()
+      If (Status <> 0) Then
+         Call oLog.Failed ("Failed to stop receive. Error " & Status, 88888)
+      End If
+
+      Status = oSuppRecvReplyEndPoint.vbGetReceiveResults(oRecvCommMgrStats, oRecvNBStats)
+      If (Status <> 0) Then
+         Call oLog.Failed ("Failed to get receive results. Error " & Status, 88888)
+      End If
+
+      ' Stop test adapter receving replies
+      Status = oTestSendRecvEndPoint.vbStopReceive()
+      If (Status <> 0) Then
+         Call oLog.Failed ("Failed to stop receive. Error " & Status, 88888)
+      End If
+
+      Status = oTestSendRecvEndPoint.vbGetReceiveResults(oReplyCommMgrStats, oReplyNBStats)
+      If (Status <> 0) Then
+         Call oLog.Failed ("Failed to get receive results. Error " & Status, 88888)
+      End If
+
+      Call VerifyResults(TRUE, _
+            oSendCommMgrStats, _
+            oRecvCommMgrStats, _
+            oRecvNBStats, _
+            oReplyCommMgrStats, _
+            oReplyNBStats)
+
+      oLog.Variation("Clear Events")
+
+      ' Clear the flags, so that ndis does not have a problem
+      Call oTestOpen.vbSetPacketFilter(CLng(0))
+      Call oSuppOpen.vbSetPacketFilter(CLng(0))
+
+      Call oTestOpen.vbClearEvents()
+      Call oSuppOpen.vbClearEvents()
+
+   End Sub
+
+End Class
+
+</script>
+</job>
+</package>
+
+<!--- CRC = 0xc8d8f798 --->

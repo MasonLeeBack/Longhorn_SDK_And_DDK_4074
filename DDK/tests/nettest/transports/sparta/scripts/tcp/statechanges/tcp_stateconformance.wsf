@@ -1,0 +1,608 @@
+'****************************** TCP_StateConformance.wsf ***********************************
+'*                                                                             *
+'* Author            :    Sandeep Prabhu                                       *
+'* Revision history  :                                                         *
+'*    08/21/2000     sandeep        Created                                    *
+'*                                                                             *
+'* This script will test the various TIME_WAIT duration scenarions             *
+'*                                                                             *
+'****************************** TCP_StateConformance.wsf ***********************************
+
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\TCPLib.vbs"/>
+      <script language="VBScript" src="TCPStateChangesLib.vbs"/>            
+      <script id="TCP_StateConformance" language="VBScript">
+
+
+option explicit
+
+Const usTCPDestPort = 7000
+
+Dim Core, Sparta, Autosrv, MediaType, AutoArpObject, IFace, pControllerObj
+
+ 
+'
+' Start the script
+'           
+StartScript "TCP_StateConformance", g_szLogDirectory, "TIME_WAIT duration tests" 
+
+ 
+'
+' Main routine 
+'
+Sub Main
+    Dim ulStatus, ulTcpTimedWaitDelay
+
+   Core.SetAssertionTracking "20700"
+   '/**
+   ' @area name="Offload Compliance Test Assertions"
+   ' @group name="TCP Connection State Transition Assertions"
+   ' @group name="State Conformance Assertions for TCP/IP v4" 
+   ' @define name="Offload" Offload Compliance Test Assertions
+   ' @define name="TCPStates" TCP Connection State Transition Assertions
+   ' @define name="StateConfv4" State Conformance Assertions for TCP/IP v4
+   ' @hierarchy Offload TCPStates StateConfv4
+   ' @key Reference="WLP# - x.x.x.x; RFC-793 Sections 3.2, 3.4, 3.5, RFC-1122 Section 4.2.2.8, 4.2.2.12, 4.2.2.13"
+   ' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+   ' @key TestName="TCPv4 Connection State Conformance Tests"
+   ' @key TestLog="TCP_StateConformance.log"
+   '*/
+
+    '    
+    ' LISTEN -> SYN_RCVD -> ESTD -> FIN_WAIT1 -> TIME_WAIT
+    '
+    IFace.StartListening         
+   '/**
+   ' @test name="The stack must transition the TCP connection into LISTEN, SYN_RCVD, ESTABLISHED, FIN_WAIT1, TIME_WAIT states respectively according to below test scenario"
+   ' Application on the test machine accepts a connection from the remote end.
+   ' Test verifies that Stack transitions the connection to ESTABLISHED state. 
+   ' Application closes the connection.
+   ' Test verifies that Stack sends FIN and transitions the connection to FIN_WAIT1 state. 
+   ' Upon stack receiving a FIN-ACK, test verifies that Stack sends an ACK and transitions the connection to TIME_WAIT state. 
+   '*/
+    Core.StartTest "LISTEN->SYN_RCVD->ESTD->FIN_WAIT1->TIME_WAIT"  
+    X__ESTD__FIN_WAIT1__TIME_WAIT("CLOSED___LISTEN__SYN_RCVD")
+    Core.EndTest
+    Core.Sleep 2500
+    IFace.StopListening
+    
+    '    
+    ' LISTEN -> SYN_RCVD -> ESTD -> FIN_WAIT1 -> FIN_WAIT2 -> TIME_WAIT
+    '
+    IFace.StartListening         
+   '/**
+   ' @test name="The stack must transition the TCP connection into LISTEN, SYN_RCVD, ESTABLISHED, FIN_WAIT1, FIN_WAIT2, TIME_WAIT states respectively according to below test scenario"
+   ' Application on the test machine accepts a connection from the remote end.
+   ' Test verifies that Stack transitions the connection to ESTABLISHED state. 
+   ' Application closes the connection.
+   ' Test verifies that Stack sends FIN and transitions the connection to FIN_WAIT1 state. 
+   ' Upon stack receiving an ACK, test verifies that Stack sends nothing and transitions the connection to FIN_WAIT2 state.
+   ' Upon stack receiving a FIN, test verifies that Stack sends an ACK and transitions the connection to TIME_WAIT state. 
+   '*/
+    Core.StartTest "LISTEN->SYN_RCVD->ESTD->FIN_WAIT1->FIN_WAIT2->TIME_WAIT"    
+    X__ESTD__FIN_WAIT1__FIN_WAIT2__TIME_WAIT("CLOSED___LISTEN__SYN_RCVD")
+    Core.EndTest
+    Core.Sleep 2500
+    IFace.StopListening
+    
+    '    
+    ' LISTEN -> SYN_RCVD -> ESTD -> FIN_WAIT1 -> CLOSING -> TIME_WAIT
+    '
+    IFace.StartListening         
+   '/**
+   ' @test name="The stack must transition the TCP connection into LISTEN, SYN_RCVD, ESTABLISHED, FIN_WAIT1, CLOSING, TIME_WAIT states respectively according to below test scenario"
+   ' Application on the test machine accepts a connection from the remote end.
+   ' Test verifies that Stack transitions the connection to ESTABLISHED state. 
+   ' Application closes the connection.
+   ' Test verifies that Stack sends FIN and transitions the connection to FIN_WAIT1 state. 
+   ' Upon stack receiving a FIN, test verifies that Stack sends an ACK and transitions the connection to CLOSING state. 
+   ' Upon stack receiving an ACK, test verifies that Stack sends nothing and transitions the connection to TIME_WAIT state. 
+   '*/
+    Core.StartTest "LISTEN->SYN_RCVD->ESTD->FIN_WAIT1->CLOSING->TIME_WAIT"    
+    X__ESTD__FIN_WAIT1__CLOSING__TIME_WAIT("CLOSED___LISTEN__SYN_RCVD")
+    Core.EndTest
+    Core.Sleep 2500
+    IFace.StopListening
+    
+    '    
+    '    
+    ' LISTEN -> SYN_RCVD -> FIN_WAIT1 -> TIME_WAIT
+    '
+    'IFace.StartListening         
+    'Core.StartTest "LISTEN->SYN_RCVD->FIN_WAIT1->TIME_WAIT"    
+    'CLOSED___LISTEN__SYN_RCVD__FIN_WAIT1__TIME_WAIT
+    'Core.EndTest
+    'Core.Sleep 2500
+    'IFace.StopListening
+    
+    ' LISTEN -> SYN_RCVD -> ESTD -> CLOSE_WAIT -> LAST_ACK
+    '
+    IFace.StartListening         
+   '/**
+   ' @test name="The stack must transition the TCP connection into LISTEN, SYN_RCVD, ESTABLISHED, CLOSE_WAIT, LAST_ACK states respectively according to below test scenario"
+   ' Application on the test machine accepts a connection from the remote end.
+   ' Test verifies that Stack transitions the connection to ESTABLISHED state. 
+   ' Upon stack receiving a FIN-ACK, test verifies that Stack sends an ACK and transitions the connection to CLOSE_WAIT state. 
+   ' Application closes the connection.
+   ' Test verifies that Stack sends FIN and transitions the connection to LAST_ACK state. 
+   '*/
+    Core.StartTest "LISTEN->SYN_RCVD->ESTD->CLOSE_WAIT->LAST_ACK"  
+    X__ESTD__CLOSE_WAIT__LAST_ACK("CLOSED___LISTEN__SYN_RCVD")
+    Core.EndTest
+    Core.Sleep 2500
+    IFace.StopListening
+
+    '    
+    ' CLOSED -> SYN_SENT -> ESTD -> FIN_WAIT1 -> TIME_WAIT
+    '
+    IFace.StartListening         
+   '/**
+   ' @test name="The stack must transition the TCP connection into CLOSED, SYN_SENT, ESTABLISHED, FIN_WAIT1, TIME_WAIT states respectively according to below test scenario"
+   ' Application on the test machine establishes a connection to the remote end.
+   ' Test verifies that Stack transitions the connection to ESTABLISHED state. 
+   ' Application closes the connection.
+   ' Test verifies that Stack sends FIN and transitions the connection to FIN_WAIT1 state. 
+   ' Upon stack receiving a FIN-ACK, test verifies that Stack sends an ACK and transitions the connection to TIME_WAIT state. 
+   '*/
+    Core.StartTest "CLOSED->SYN_SENT->ESTD->FIN_WAIT1->TIME_WAIT"  
+    X__ESTD__FIN_WAIT1__TIME_WAIT("CLOSED__SYN_SENT")
+    Core.EndTest
+    Core.Sleep 2500
+    IFace.StopListening
+        
+    '    
+    ' CLOSED -> SYN_SENT -> ESTD -> FIN_WAIT1 -> FIN_WAIT2 -> TIME_WAIT
+    '
+    IFace.StartListening         
+   '/**
+   ' @test name="The stack must transition the TCP connection into CLOSED, SYN_SENT, ESTABLISHED, FIN_WAIT1, FIN_WAIT2, TIME_WAIT states respectively according to below test scenario"
+   ' Application on the test machine establishes a connection to the remote end.
+   ' Test verifies that Stack transitions the connection to ESTABLISHED state. 
+   ' Application closes the connection.
+   ' Test verifies that Stack sends FIN and transitions the connection to FIN_WAIT1 state. 
+   ' Upon stack receiving an ACK, test verifies that Stack sends nothing and transitions the connection to FIN_WAIT2 state. 
+   ' Upon stack receiving a FIN, test verifies that Stack sends an ACK and transitions the connection to TIME_WAIT state. 
+   '*/
+    Core.StartTest "CLOSED->SYN_SENT->ESTD->FIN_WAIT1->FIN_WAIT2->TIME_WAIT"    
+    X__ESTD__FIN_WAIT1__FIN_WAIT2__TIME_WAIT("CLOSED__SYN_SENT")
+    Core.EndTest
+    Core.Sleep 2500
+    IFace.StopListening
+
+    '    
+    ' CLOSED -> SYN_SENT -> ESTD -> FIN_WAIT1 -> CLOSING -> TIME_WAIT
+    '
+    IFace.StartListening         
+   '/**
+   ' @test name="The stack must transition the TCP connection into CLOSED, SYN_SENT, ESTABLISHED, FIN_WAIT1, CLOSING, TIME_WAIT states respectively according to below test scenario"
+   ' Application on the test machine establishes a connection to the remote end.
+   ' Test verifies that Stack transitions the connection to ESTABLISHED state. 
+   ' Application closes the connection.
+   ' Test verifies that Stack sends FIN and transitions the connection to FIN_WAIT1 state. 
+   ' Upon stack receiving a FIN, test verifies that Stack sends an ACK and transitions the connection to CLOSING state. 
+   ' Upon stack receiving an ACK, test verifies that Stack sends nothing and transitions the connection to TIME_WAIT state. 
+   '*/
+    Core.StartTest "CLOSED->SYN_SENT->ESTD->FIN_WAIT1->CLOSING->TIME_WAIT"    
+    X__ESTD__FIN_WAIT1__CLOSING__TIME_WAIT("CLOSED__SYN_SENT")
+    Core.EndTest
+    Core.Sleep 2500
+    IFace.StopListening
+    
+    '    
+    ' CLOSED -> SYN_SENT -> ESTD -> CLOSE_WAIT -> LAST_ACK
+    '
+    IFace.StartListening         
+   '/**
+   ' @test name="The stack must transition the TCP connection into CLOSED, SYN_SENT, ESTABLISHED, CLOSE_WAIT, LAST_ACK states respectively according to below test scenario"
+   ' Application on the test machine establishes a connection to the remote end.
+   ' Test verifies that Stack transitions the connection to ESTABLISHED state. 
+   ' Upon stack receiving a FIN-ACK, test verifies that Stack sends an ACK and transitions the connection to CLOSE_WAIT state. 
+   ' Application closes the connection.
+   ' Test verifies that Stack sends FIN and transitions the connection to LAST_ACK state. 
+   '*/
+    Core.StartTest "CLOSED->SYN_SENT->ESTD->CLOSE_WAIT->LAST_ACK"  
+    X__ESTD__CLOSE_WAIT__LAST_ACK("CLOSED__SYN_SENT")
+    Core.EndTest
+    Core.Sleep 2500
+    IFace.StopListening
+
+    '    
+    ' SYN_SENT -> SYN_RCVD -> ESTD -> FIN_WAIT1 -> TIME_WAIT
+    '
+    IFace.StartListening         
+   '/**
+   ' @test name="The stack must transition the TCP connection into CLOSED, SYN_SENT, SYN_RCVD, ESTABLISHED, FIN_WAIT1, TIME_WAIT states respectively according to below test scenario"
+   ' Application on the test machine tries to establish a connection to the remote end.
+   ' After sending a SYN, it receives a SYN in response, that is a simultaneous open.
+   ' Test verifies that Stacks sends a SYN-ACK to accept the simultaneous open and Stack transitions the connection to ESTABLISHED state. 
+   ' Application closes the connection.
+   ' Test verifies that Stack sends FIN and transitions the connection to FIN_WAIT1 state. 
+   ' Upon stack receiving a FIN-ACK, test verifies that Stack sends an ACK and transitions the connection to TIME_WAIT state. 
+   '*/
+    Core.StartTest "SYN_SENT->SYN_RCVD->ESTD->FIN_WAIT1->TIME_WAIT"  
+    SYN_SENT__SYN_RCVD__ESTD__FIN_WAIT1__TIME_WAIT
+    Core.EndTest
+    Core.Sleep 2500
+    IFace.StopListening
+
+End Sub
+
+
+'
+' Routine to do the conformance test
+'     LISTEN -> SYN_RCVD -> ESTD -> FIN_WAIT1 -> TIME_WAIT
+' or  CLOSED -> SYN_SENT -> ESTD -> FIN_WAIT1 -> TIME_WAIT
+' Parameters :
+'     szType : Specifies the initial state "CLOSED___LISTEN__SYN_RCVD" or "CLOSED__SYN_SENT"
+'            
+Sub X__ESTD__FIN_WAIT1__TIME_WAIT(szType)
+   Dim ulStatus, usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, pTCPPacket
+   Dim fStatus, ulSessionId, ulTID
+    
+   ulSeqNumber = 1000
+   ulAckNumber = 0
+   usSrcPort = 5000
+   usDestPort = 6000
+  
+   Core.StartVariation
+   
+   if (szType = "CLOSED___LISTEN__SYN_RCVD") then
+      '
+      ' Do a passive connection establishment 
+      '
+      ulStatus = LISTEN__ESTD(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId)
+      if (ulStatus <> 0) then
+          Core.FailSev1Variation "X__ESTD__FIN_WAIT1__TIME_WAIT: LISTEN__ESTD - " & ulStatus       
+          ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+          exit Sub
+      end if
+   elseif (szType = "CLOSED__SYN_SENT") then 
+      '
+      ' Do an active connection establishment
+      '
+      ulStatus = CLOSED__ESTD(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId)
+      if (ulStatus <> 0) then
+          Core.FailSev1Variation "X__ESTD__FIN_WAIT1__TIME_WAIT: CLOSED__ESTD - " & ulStatus       
+          ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+          exit Sub
+      end if
+   else
+      exit Sub
+   end if   
+   
+   '
+   ' Transition the connection to FIN_WAIT1 state
+   '
+   ulStatus = ESTD__FIN_WAIT1(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+       Core.FailSev1Variation "X__ESTD__FIN_WAIT1__TIME_WAIT: ESTD__FIN_WAIT1 - " & ulStatus
+       ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+       exit sub
+   end if
+      
+   '
+   ' Send a FIN-ACK and receive an ACK, thus transitioning to TIME_WAIT
+   '
+   fStatus = SendPacketAndCheckNoResponseEx(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, (TCP_FIN or TCP_ACK), TCP_ACK, 500)
+   if (fStatus = TRUE) then
+       Core.FailSev1Variation "X__ESTD__FIN_WAIT1__TIME_WAIT: No ACK received on FIN-ACK"      
+       ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+       exit sub
+   end if 
+   
+   '
+   ' Reset the ESTD/TIME_WAIT state
+   '   
+   ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+End Sub
+
+
+'
+' Routine to do the conformance test
+'     LISTEN -> SYN_RCVD -> ESTD -> FIN_WAIT1 -> FIN_WAIT2 -> TIME_WAIT
+' or  CLOSED -> SYN_SENT -> ESTD -> FIN_WAIT1 -> FIN_WAIT2 -> TIME_WAIT
+' Parameters :
+'     szType : Specifies the initial state "CLOSED___LISTEN__SYN_RCVD" or "CLOSED__SYN_SENT"
+'            
+Sub X__ESTD__FIN_WAIT1__FIN_WAIT2__TIME_WAIT(szType)
+   Dim ulStatus, usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, pTCPPacket
+   Dim fStatus, ulSessionId, ulTID
+    
+   ulSeqNumber = 1000
+   ulAckNumber = 0
+   usSrcPort = 5000
+   usDestPort = 6001
+ 
+   Core.StartVariation
+     
+   if (szType = "CLOSED___LISTEN__SYN_RCVD") then
+      '
+      ' Do a passive connection establishment 
+      '
+      ulStatus = LISTEN__ESTD(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId)
+      if (ulStatus <> 0) then
+          Core.FailSev1Variation "X__ESTD__FIN_WAIT1__FIN_WAIT2__TIME_WAIT: LISTEN__ESTD - " & ulStatus       
+          ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+          exit sub
+      end if
+   elseif (szType = "CLOSED__SYN_SENT") then 
+      '
+      ' Do an active connection establishment
+      '
+      ulStatus = CLOSED__ESTD(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId)
+      if (ulStatus <> 0) then
+          Core.FailSev1Variation "X__ESTD__FIN_WAIT1__FIN_WAIT2__TIME_WAIT: CLOSED__ESTD - " & ulStatus       
+          ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+          exit sub
+      end if
+   else
+      exit Sub
+   end if   
+   
+   '
+   ' Transition the connection to FIN_WAIT1 state
+   '
+   ulStatus = ESTD__FIN_WAIT1(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+       Core.FailSev1Variation "X__ESTD__FIN_WAIT1__FIN_WAIT2__TIME_WAIT: ESTD__FIN_WAIT1 - " & ulStatus
+       ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+       exit sub
+   end if
+   
+   '
+   ' Send an ACK thus transitioning to FIN_WAIT2
+   '
+   Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+   IFace.Send(pTCPPacket)
+      
+   '
+   ' Send a FIN-ACK and receive an ACK, thus transitioning to TIME_WAIT
+   '
+   fStatus = SendPacketAndCheckNoResponseEx(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, (TCP_FIN or TCP_ACK), TCP_ACK, 500)
+   if (fStatus = TRUE) then
+       Core.FailSev1Variation "X__ESTD__FIN_WAIT1__FIN_WAIT2__TIME_WAIT: No ACK received on FIN-ACK"
+       ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+       exit sub
+   end if 
+   
+   '
+   ' Reset the ESTD/TIME_WAIT state
+   '   
+   ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+End Sub
+
+'
+' Routine to do the conformance test
+'     LISTEN -> SYN_RCVD -> ESTD -> FIN_WAIT1 -> CLOSING -> TIME_WAIT
+' or  CLOSED -> SYN_SENT -> ESTD -> FIN_WAIT1 -> CLOSING -> TIME_WAIT
+' Parameters :
+'     szType : Specifies the initial state "CLOSED___LISTEN__SYN_RCVD" or "CLOSED__SYN_SENT"
+'            
+Sub X__ESTD__FIN_WAIT1__CLOSING__TIME_WAIT(szType)
+   Dim ulStatus, usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, pTCPPacket, fStatus, ulSessionId
+   Dim ulLastSeqNumber, ulLastAckNumber, ulTID
+    
+   ulSeqNumber = 1000
+   ulAckNumber = 0
+   usSrcPort = 5000
+   usDestPort = 6002
+      
+   Core.StartVariation
+   
+   if (szType = "CLOSED___LISTEN__SYN_RCVD") then
+      '
+      ' Do a passive connection establishment 
+      '
+      ulStatus = LISTEN__ESTD(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId)
+      if (ulStatus <> 0) then
+          Core.FailSev1Variation "X__ESTD__FIN_WAIT1__FIN_WAIT2__TIME_WAIT: LISTEN__ESTD - " & ulStatus       
+          ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+          exit sub
+      end if
+   elseif (szType = "CLOSED__SYN_SENT") then 
+      '
+      ' Do an active connection establishment
+      '
+      ulStatus = CLOSED__ESTD(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId)
+      if (ulStatus <> 0) then
+          Core.FailSev1Variation "X__ESTD__FIN_WAIT1__FIN_WAIT2__TIME_WAIT: CLOSED__ESTD - " & ulStatus       
+          ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+          exit sub
+      end if
+   else
+      exit Sub
+   end if   
+  
+   ulLastSeqNumber = ulSeqNumber
+   ulLastAckNumber = ulAckNumber
+   
+   '
+   ' Transition the connection to FIN_WAIT1 state
+   '
+   ulStatus = ESTD__FIN_WAIT1(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+       Core.FailSev1Variation "X__ESTD__FIN_WAIT1__CLOSING__TIME_WAIT: ESTD__FIN_WAIT1 - " & ulStatus       
+       ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+       exit sub
+   end if
+      
+   '
+   ' Send a FIN-ACK (acking the packet before the FIN) and receive an ACK, 
+   ' thus transitioning to CLOSING
+   '
+   fStatus = SendPacketAndCheckNoResponseEx(usSrcPort, usDestPort, ulLastSeqNumber, ulLastAckNumber, (TCP_FIN or TCP_ACK), TCP_ACK, 500)
+   if (fStatus = TRUE) then
+       Core.FailSev1Variation "X__ESTD__FIN_WAIT1__CLOSING__TIME_WAIT: No ACK received on FIN-ACK"
+       ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+       exit sub
+   end if
+         
+   '
+   ' Send an ACK thus transitioning the state to TIME_WAIT
+   '       
+   Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+   IFace.Send(pTCPPacket)       
+   
+   '
+   ' Reset the ESTD/TIME_WAIT state
+   '   
+   ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+End Sub
+
+'
+' Routine to do the conformance test
+'     LISTEN -> SYN_RCVD -> ESTD -> CLOSE_WAIT -> LAST_ACK
+' or  CLOSED -> SYN_SENT -> ESTD -> CLOSE_WAIT -> LAST_ACK
+' Parameters :
+'     szType : Specifies the initial state "CLOSED___LISTEN__SYN_RCVD" or "CLOSED__SYN_SENT"
+'            
+Sub X__ESTD__CLOSE_WAIT__LAST_ACK(szType)
+   Dim ulStatus, usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, pTCPPacket
+   Dim fStatus, ulSessionId, ulTID
+    
+   ulSeqNumber = 1000
+   ulAckNumber = 0
+   usSrcPort = 5000
+   usDestPort = 6003
+      
+   Core.StartVariation
+   
+   if (szType = "CLOSED___LISTEN__SYN_RCVD") then
+      '
+      ' Do a passive connection establishment 
+      '
+      ulStatus = LISTEN__ESTD(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId)
+      if (ulStatus <> 0) then
+          Core.FailSev1Variation "X__ESTD__FIN_WAIT1__FIN_WAIT2__TIME_WAIT: LISTEN__ESTD - " & ulStatus       
+          ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+          exit sub
+      end if
+   elseif (szType = "CLOSED__SYN_SENT") then 
+      '
+      ' Do an active connection establishment
+      '
+      ulStatus = CLOSED__ESTD(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId)
+      if (ulStatus <> 0) then
+          Core.FailSev1Variation "X__ESTD__FIN_WAIT1__FIN_WAIT2__TIME_WAIT: CLOSED__ESTD - " & ulStatus       
+          ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+          exit sub
+      end if
+   else
+      exit Sub
+   end if   
+  
+   '
+   ' Send a FIN-ACK and receive an ACK, thus transitioning the connection to CLOSE_WAIT
+   '   
+   fStatus = SendPacketAndCheckNoResponseEx(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, (TCP_FIN or TCP_ACK), TCP_ACK, 500)
+   if (fStatus = TRUE) then
+      Core.FailSev1Variation "X__ESTD__CLOSE_WAIT__LAST_ACK: No ACK received on FIN-ACK"
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+      
+   '
+   ' Transition the connection to LAST_ACK
+   '       
+   ulStatus = ESTD__FIN_WAIT1(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+       Core.FailSev1Variation "X__ESTD__CLOSE_WAIT__LAST_ACK: ESTD__FIN_WAIT1 - " & ulStatus
+       ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+       exit sub
+   end if
+   
+   '
+   ' Send an ACK thus transitioning the connection to CLOSED
+   ' 
+   Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+   IFace.Send(pTCPPacket)
+   
+   '
+   ' Reset the ESTD/TIME_WAIT state
+   '   
+   ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+End Sub
+
+
+'
+' Routine to do the conformance test
+'     SYN_SENT -> SYN_RCVD -> ESTD -> FIN_WAIT1 -> TIME_WAIT
+'            
+Sub SYN_SENT__SYN_RCVD__ESTD__FIN_WAIT1__TIME_WAIT
+   Dim ulStatus, usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, pTCPPacket
+   Dim fStatus, ulSessionId, ulTID
+    
+   ulSeqNumber = 1000
+   ulAckNumber = 0
+   usSrcPort = 5000
+   usDestPort = 6004
+   
+   Core.StartVariation
+   
+   '
+   ' Grab the SYN
+   '
+   ulStatus = CLOSED__SYN_SENT(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+       Core.FailSev1Variation "SYN_SENT__SYN_RCVD__ESTD__FIN_WAIT1__TIME_WAIT: CLOSED__SYN_SENT - " & ulStatus       
+       ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+       exit sub
+   end if
+   
+   '
+   ' Send a SYN, receive a SYN-ACK
+   '
+   fStatus = SendPacketAndCheckNoResponseEx(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_SYN, (TCP_SYN or TCP_ACK), 500)
+   if (fStatus = TRUE) then
+       Core.FailSev1Variation "SYN_SENT__SYN_RCVD__ESTD__FIN_WAIT1__TIME_WAIT: No SYN-ACK received on SYN"
+       ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+       exit sub
+   end if
+   
+   '
+   ' Send an ACK and check no response
+   '      
+   fStatus = SendPacketAndCheckNoResponseEx(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, TCP_ACK, 500)
+   if (fStatus = FALSE) then
+       Core.FailVariation "SYN_SENT__SYN_RCVD__ESTD__FIN_WAIT1__TIME_WAIT: ACK received on ACK"
+       ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+       exit sub
+   end if
+   
+   '
+   ' Transition the connection to FIN_WAIT1 state
+   '
+   ulStatus = ESTD__FIN_WAIT1(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+       Core.FailSev1Variation "SYN_SENT__SYN_RCVD__ESTD__FIN_WAIT1__TIME_WAIT: ESTD__FIN_WAIT1 - " & ulStatus       
+       Core.log "634968 TCP : Stack doesn't support simultaneous open"
+       ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+       exit sub
+   end if
+   
+   '
+   ' Send a FIN-ACK and receive an ACK, thus transitioning to TIME_WAIT
+   '
+   fStatus = SendPacketAndCheckNoResponseEx(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, (TCP_FIN or TCP_ACK), TCP_ACK, 500)
+   if (fStatus = TRUE) then
+       Core.FailSev1Variation "SYN_SENT__SYN_RCVD__ESTD__FIN_WAIT1__TIME_WAIT: No ACK received on FIN-ACK"       
+       ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+       exit sub
+   end if
+      
+   '
+   ' Reset the ESTD/TIME_WAIT state
+   '   
+   ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+End Sub
+
+ 
+      </script>
+   </job>
+</package>

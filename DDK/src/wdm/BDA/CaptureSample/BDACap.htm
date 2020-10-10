@@ -1,0 +1,320 @@
+<html xmlns:o="urn:schemas-microsoft-com:office:office"
+xmlns:w="urn:schemas-microsoft-com:office:word"
+xmlns="http://www.w3.org/TR/REC-html40">
+
+<head>
+<meta http-equiv=Content-Type content="text/html; charset=windows-1252">
+<meta name=ProgId content=Word.Document>
+<meta name=Generator content="Microsoft Word 10">
+<meta name=Originator content="Microsoft Word 10">
+<link rel=File-List href="BDACap_files/filelist.xml">
+<title>BDACap: AVStream Simulated Hardware Sample Driver</title>
+<!--[if gte mso 9]><xml>
+ <o:DocumentProperties>
+  <o:Author>TC Pritchett</o:Author>
+  <o:LastAuthor>Anand Ganesh</o:LastAuthor>
+  <o:Revision>21</o:Revision>
+  <o:TotalTime>86</o:TotalTime>
+  <o:Created>2001-10-19T18:21:00Z</o:Created>
+  <o:LastSaved>2002-10-11T01:04:00Z</o:LastSaved>
+  <o:Pages>1</o:Pages>
+  <o:Words>947</o:Words>
+  <o:Characters>5400</o:Characters>
+  <o:Company>Microsoft Corporation</o:Company>
+  <o:Lines>45</o:Lines>
+  <o:Paragraphs>12</o:Paragraphs>
+  <o:CharactersWithSpaces>6335</o:CharactersWithSpaces>
+  <o:Version>10.3501</o:Version>
+ </o:DocumentProperties>
+</xml><![endif]--><!--[if gte mso 9]><xml>
+ <w:WordDocument>
+  <w:SpellingState>Clean</w:SpellingState>
+  <w:GrammarState>Clean</w:GrammarState>
+  <w:BrowserLevel>MicrosoftInternetExplorer4</w:BrowserLevel>
+ </w:WordDocument>
+</xml><![endif]-->
+<style>
+<!--
+ /* Font Definitions */
+ @font-face
+	{font-family:Verdana;
+	panose-1:2 11 6 4 3 5 4 4 2 4;
+	mso-font-charset:0;
+	mso-generic-font-family:swiss;
+	mso-font-pitch:variable;
+	mso-font-signature:536871559 0 0 0 415 0;}
+@font-face
+	{font-family:"MS Sans Serif";
+	panose-1:0 0 0 0 0 0 0 0 0 0;
+	mso-font-alt:"Times New Roman";
+	mso-font-charset:0;
+	mso-generic-font-family:roman;
+	mso-font-format:other;
+	mso-font-pitch:auto;
+	mso-font-signature:0 0 0 0 0 0;}
+ /* Style Definitions */
+ p.MsoNormal, li.MsoNormal, div.MsoNormal
+	{mso-style-parent:"";
+	margin:0in;
+	margin-bottom:.0001pt;
+	mso-pagination:widow-orphan;
+	font-size:12.0pt;
+	font-family:"Times New Roman";
+	mso-fareast-font-family:"Times New Roman";}
+a:link, span.MsoHyperlink
+	{color:blue;
+	text-decoration:underline;
+	text-underline:single;}
+a:visited, span.MsoHyperlinkFollowed
+	{color:blue;
+	text-decoration:underline;
+	text-underline:single;}
+p
+	{mso-margin-top-alt:auto;
+	margin-right:0in;
+	mso-margin-bottom-alt:auto;
+	margin-left:0in;
+	mso-pagination:widow-orphan;
+	font-size:12.0pt;
+	font-family:"Times New Roman";
+	mso-fareast-font-family:"Times New Roman";}
+pre
+	{margin:0in;
+	margin-bottom:.0001pt;
+	mso-pagination:widow-orphan;
+	tab-stops:45.8pt 91.6pt 137.4pt 183.2pt 229.0pt 274.8pt 320.6pt 366.4pt 412.2pt 458.0pt 503.8pt 549.6pt 595.4pt 641.2pt 687.0pt 732.8pt;
+	font-size:10.0pt;
+	font-family:"Courier New";
+	mso-fareast-font-family:"Times New Roman";}
+span.SpellE
+	{mso-style-name:"";
+	mso-spl-e:yes;}
+span.GramE
+	{mso-style-name:"";
+	mso-gram-e:yes;}
+@page Section1
+	{size:8.5in 11.0in;
+	margin:1.0in 1.25in 1.0in 1.25in;
+	mso-header-margin:.5in;
+	mso-footer-margin:.5in;
+	mso-paper-source:0;}
+div.Section1
+	{page:Section1;}
+-->
+</style>
+<!--[if gte mso 10]>
+<style>
+ /* Style Definitions */
+ table.MsoNormalTable
+	{mso-style-name:"Table Normal";
+	mso-tstyle-rowband-size:0;
+	mso-tstyle-colband-size:0;
+	mso-style-noshow:yes;
+	mso-style-parent:"";
+	mso-padding-alt:0in 5.4pt 0in 5.4pt;
+	mso-para-margin:0in;
+	mso-para-margin-bottom:.0001pt;
+	mso-pagination:widow-orphan;
+	font-size:10.0pt;
+	font-family:"Times New Roman";}
+</style>
+<![endif]-->
+</head>
+
+<body lang=EN-US link=blue vlink=blue style='tab-interval:.5in'>
+
+<div class=Section1>
+
+<h2><span class=SpellE>BDACap</span>: BDA/<span class=SpellE>AVStream</span>
+Simulated Hardware Sample Driver <span style='font-family:Verdana'><o:p></o:p></span></h2>
+
+<h3><span style='font-family:Verdana'>SUMMARY<o:p></o:p></span></h3>
+
+<p><span style='font-size:10.0pt;font-family:Verdana'>The <span class=SpellE>BDACap</span>
+sample is based on the <span class=SpellE>AVSHwS</span> sample provided in the <span
+class=SpellE>AVStream</span> samples directory. Modifications were made to
+allow the original <span class=SpellE>AVSHwS</span> sample to work with the <span
+class=SpellE>BDATuner</span> sample.<span style='mso-spacerun:yes'>  </span>The
+purpose of the sample is to demonstrate how to write a pin-centric <span
+class=SpellE>AVStream</span> <span class=SpellE>minidriver</span>. The sample
+also shows how to implement DMA by using the related functionality provided by <span
+class=SpellE>AVStream</span>.<o:p></o:p></span></p>
+
+<p><span style='font-size:10.0pt;font-family:Verdana'>The driver is designed to
+be used with the BDA sample software tuner driver (<span class=SpellE>BDATuner.sys</span>).<o:p></o:p></span></p>
+
+<h3><span style='font-family:Verdana'>BUILDING THE SAMPLE<o:p></o:p></span></h3>
+
+<p><span style='font-size:10.0pt;font-family:Verdana'>Build the sample by
+typing <b>build -<span class=SpellE><span class=GramE>cz</span></span></b> in
+either the standard checked or free build environment. A successful build
+produces <span class=SpellE>BDACap<i>.sys</i></span><i>.<o:p></o:p></i></span></p>
+
+<p><span style='font-size:10.0pt;font-family:Verdana'>To use the driver you
+should build <span class=SpellE>bdacap.sys</span> and <span class=SpellE>bdatuner.sys</span>.
+Copy these binaries along with the corresponding <span class=SpellE>infs</span>
+(<span class=SpellE>bdacap.inf</span>, <span class=SpellE>bdatuner.inf</span>)
+to a common directory and install them using the Add New Hardware Wizard which
+can be accessed via the control panel. To the questions asked say “Yes, I have
+already connected the hardware”, “Add a new hardware device” (at the bottom of
+the option list), “Install the hardware that I manually select from a list
+(Advanced)”, “Sound Video and Game controllers” and “Have disk”. Point it to
+the directory containing the .<span class=SpellE>inf</span> and .sys files. <i
+style='mso-bidi-font-style:normal'>Install the capture device first, and then
+the tuner device.</i><o:p></o:p></span></p>
+
+<p><span style='font-size:10.0pt;font-family:Verdana'>The sample works on x86
+platforms and builds correctly using Microsoft® Visual C® 6.0. The driver uses
+Plug and Play. <o:p></o:p></span></p>
+
+<p><span style='font-size:10.0pt;font-family:Verdana'>This sample runs on
+Microsoft® Windows® 2000 and Windows XP®, Windows® 98 ME, SE and Gold.<o:p></o:p></span></p>
+
+<h3><span style='font-family:Verdana'>PROGRAMMING TOUR<o:p></o:p></span></h3>
+
+<p><span class=SpellE><b><span style='font-size:10.0pt;font-family:Verdana'>DriverEntry</span></b></span><span
+style='font-size:10.0pt;font-family:Verdana'> in <span class=SpellE><i>device.cpp</i></span>
+is the initial point of entry. This routine passes control to <span
+class=SpellE>AVStream</span> through a call to <span class=SpellE><b>KsInitializeDriver</b></span>.
+In this call, the <span class=SpellE>minidriver</span> passes the device
+descriptor, an <span class=SpellE>AVStream</span> structure that recursively
+defines the <span class=SpellE>AVStream</span> object hierarchy for a driver.
+This is common behavior for an <span class=SpellE>AVStream</span> <span
+class=SpellE>minidriver</span>. <o:p></o:p></span></p>
+
+<p><span style='font-size:10.0pt;font-family:Verdana'>At device start time (see
+the <span class=SpellE><b>CcaptureDevice::PnpStart</b></span> method in <span
+class=SpellE><i>device.cpp</i></span>), a simulated piece of capture hardware
+is created (the <span class=SpellE>ChardwareSimulation</span> class)<span
+class=GramE>,</span> a DMA adapter is acquired from the operating system and is
+registered with <span class=SpellE>AVStream</span> through a call to <span
+class=SpellE><b>KsDeviceRegisterAdapterObject</b></span>. This call is required
+for a sample that performs DMA directly into the capture buffers, instead of
+using DMA to write to a common buffer. <o:p></o:p></span></p>
+
+<p><span class=SpellE><i><span style='font-size:10.0pt;font-family:Verdana'>Filter.cpp</span></i></span><span
+style='font-size:10.0pt;font-family:Verdana'> is where the sample lays out the
+KSPIN_DESCRIPTOR_EX structure for the single capture pin. In addition, a
+KSFILTER_DISPATCH structure and a KSFILTER_DESCRIPTOR structure are provided in
+this source file. The filter dispatch provides only a create dispatch, a
+routine that is included in <span class=SpellE><i>Filter.cpp</i></span>. The
+process dispatch is provided on the pin, since this is a pin-centric sample. <o:p></o:p></span></p>
+
+<p><span class=SpellE><i><span style='font-size:10.0pt;font-family:Verdana'>Capture.cpp</span></i></span><span
+style='font-size:10.0pt;font-family:Verdana'> contains source for the transport
+input and output pins on the capture filter. This is where the KSPIN_DISPATCH
+structure for the unique pin is provided. This dispatch structure specifies a
+Process callback routine, also defined in this source file. This routine is
+where stream pointer manipulation and cloning occurs. <o:p></o:p></span></p>
+
+<p><span style='font-size:10.0pt;font-family:Verdana'>The process callback is
+one of two routines of interest in <span class=SpellE><i>Capture.cpp</i></span>
+that demonstrate how to do DMA transfers using <span class=SpellE>AVStream</span>
+functionality. The other is <span class=SpellE><b>CCapturePin::CompleteMappings</b></span>.
+These two methods show how to use the queue, obtain clone pointers, use
+scatter/gather lists, and perform other DMA-related tasks. <o:p></o:p></span></p>
+
+<p><span class=SpellE><i><span style='font-size:10.0pt;font-family:Verdana'>Hwsim.cpp</span></i></span><span
+style='font-size:10.0pt;font-family:Verdana'> contains the hardware simulation
+code and also code that fills the scatter/gather mappings. This source file
+includes the Start, Pause and Stop methods for the hardware simulation class (<span
+class=SpellE>CHardwaresimulation</span>). Transport synthesis code is also
+here. The supplied objects provide a framework for synthesizing transport data.
+<o:p></o:p></span></p>
+
+<p><span class=SpellE><i style='mso-bidi-font-style:normal'><span
+style='font-size:10.0pt;font-family:Verdana'>Cafilter.cpp</span></i></span><span
+style='font-size:10.0pt;font-family:Verdana'> contains definitions of
+properties, events and methods for a generic <i style='mso-bidi-font-style:
+normal'>CA (Conditional Access)</i> Filter. The samples themselves don’t
+suggest any particular design. It is important to read the notes in <span
+class=SpellE>cafilter.h</span> regarding the <i style='mso-bidi-font-style:
+normal'>limitations of using such a custom filter</i>. Importantly, while it would
+work in conjunction with such a filter, the <i style='mso-bidi-font-style:normal'>Network
+Provider does NOT control such custom filters.</i><o:p></o:p></span></p>
+
+<p><span style='font-size:10.0pt;font-family:Verdana'>See comments in all .<span
+class=SpellE>cpp</span> files. Also see complete <span class=SpellE>AVStream</span>
+documentation in the DDK documentation. <o:p></o:p></span></p>
+
+<h3><span style='font-family:Verdana'>RUNNING THE SAMPLE<o:p></o:p></span></h3>
+
+<p><span class=GramE><span style='font-size:10.0pt;font-family:Verdana'>Once
+installation is complete, access the driver through the <span class=SpellE>graphedt</span>
+tool.</span></span><span style='font-size:10.0pt;font-family:Verdana'> <i>Graphedt.exe</i>
+is available in the <i>Tools</i> directory of the DDK. In the <span
+class=SpellE>Graphedt</span> application, click the Graph menu and select
+Insert Filters.<span style='mso-spacerun:yes'>  </span>Insert the ATSC Network
+Provider (from the BDA Network Provider category), the Sample BDA Tuner (from
+the BDA Source filters category), the Sample BDA CA Filter (from the BDA CP/CA
+Filters category) and the Sample BDA Capture Filter (from the BDA Receiver
+Filters category). Right click and render the network provider. This should
+build a graph with the <span class=SpellE>demultiplexer</span>, <span
+class=GramE>TIF<span style='mso-spacerun:yes'>  </span>and</span> audio/video
+decoders (if they are installed). To build a DVBT or DVBS graph you need to
+define the right macros in <span class=SpellE>bdatuner.h</span> prior to
+building <span class=SpellE>bdatuner.sys</span>. In order to build a DVBS or
+DVBT graph you will have to create a suitable tuning space from the network
+provider property page. A DVBS tuning space should be called “MYDVB” and a
+DVB-T or DVB-C tuning space should be called “DVBT” or “DVBC” respectively.<o:p></o:p></span></p>
+
+<h3><span style='font-family:Verdana'>COMMENTS<o:p></o:p></span></h3>
+
+<p class=MsoNormal><span style='font-size:10.0pt;font-family:Verdana'>For more
+information on <span class=SpellE>AVStream</span>, see the DDK documentation. <o:p></o:p></span></p>
+
+<h3><span style='font-family:Verdana'>CODE TOUR<o:p></o:p></span></h3>
+
+<h4><span style='font-family:Verdana'>File Manifest<o:p></o:p></span></h4>
+
+<pre><u>File</u><span style='mso-spacerun:yes'>           </span><u>Description<o:p></o:p></u></pre><pre><o:p>&nbsp;</o:p></pre><pre>BDACap.htm<span
+style='mso-tab-count:1'>     </span>The Sample Tour documentation for this sample (this file).</pre><pre><span
+class=GramE>Sources<span style='mso-tab-count:2'>        </span>The generic file for building the code sample.</span></pre><pre><span
+class=SpellE>BDACap.inf</span><span style='mso-tab-count:1'>     </span>A sample capture installation file.</pre><pre><span
+class=SpellE><span class=GramE>BDASWRcv.inf</span></span><span class=GramE><span
+style='mso-tab-count:1'>   </span>A special “software receiver” installation file.</span></pre><pre><span
+class=SpellE>BDACap.h</span><span style='mso-tab-count:1'>       </span>The main <span
+class=GramE>header file</span> for the sample.</pre><pre><span class=SpellE><span
+class=GramE>device.cpp</span></span><span style='mso-tab-count:1'>     </span><span
+class=SpellE>DriverEntry</span>, Plug and Play handling, initialization, device level code.</pre><pre><span
+class=SpellE><span class=GramE>device.h</span></span><span style='mso-tab-count:
+1'>       </span>Header file for above.</pre><pre><span class=SpellE><span
+class=GramE>filter.cpp</span></span><span style='mso-tab-count:1'>     </span>Filter level code for the capture filter.</pre><pre><span
+class=SpellE><span class=GramE>filter.h</span></span><span style='mso-tab-count:
+1'>       </span>Header file for above.</pre><pre><span class=SpellE><span
+class=GramE>capture.cpp</span></span><span style='mso-tab-count:1'>    </span>Pin level code for the capture pin, DMA handling.</pre><pre><span
+class=SpellE><span class=GramE>capture.h</span></span><span style='mso-tab-count:
+1'>      </span>Header file for above.</pre><pre><span class=SpellE><span
+class=GramE>cafilter.cpp</span></span><span style='mso-spacerun:yes'>   </span>Implementation of a very generic CA filter.</pre><pre><span
+class=SpellE><span class=GramE>cafilter.h</span></span><span style='mso-spacerun:yes'>     </span>Defines the filter and pin descriptors for the CA filter.</pre><pre><span
+class=SpellE><span class=GramE>hwsim.cpp</span></span><span style='mso-tab-count:
+1'>      </span>Hardware simulation code, filling scatter/gather mappings, etc.</pre><pre><span
+class=SpellE><span class=GramE>hwsim.h</span></span><span style='mso-tab-count:
+1'> </span><span style='mso-spacerun:yes'>     </span><span style='mso-tab-count:
+1'>   </span>Header file for above.</pre><pre><span class=SpellE>TStream.cpp</span><span
+style='mso-tab-count:1'>    </span>Transport stream simulation framework.</pre><pre><span
+class=SpellE>TStream.h</span><span style='mso-tab-count:1'>      </span>Header <span
+class=GramE>file</span> for above.</pre><pre><span class=SpellE>BDACap.rc</span><span
+style='mso-tab-count:1'>      </span>Resource <span class=GramE>file</span> mainly for version.</pre><pre><o:p>&nbsp;</o:p></pre><pre><o:p>&nbsp;</o:p></pre><pre><o:p>&nbsp;</o:p></pre>
+
+<table class=MsoNormalTable border=0 cellspacing=0 cellpadding=0 width=624
+ style='width:6.5in;mso-cellspacing:0in;mso-padding-alt:0in 5.4pt 0in 5.4pt'>
+ <tr style='mso-yfti-irow:0;mso-yfti-lastrow:yes;height:1.5pt'>
+  <td style='background:aqua;padding:.75pt .75pt .75pt .75pt;height:1.5pt'>
+  <p class=MsoNormal><span style='font-size:2.0pt;mso-bidi-font-size:12.0pt'><o:p>&nbsp;</o:p></span></p>
+  </td>
+ </tr>
+</table>
+
+<pre><o:p>&nbsp;</o:p></pre><pre><o:p>&nbsp;</o:p></pre>
+
+<p style='tab-stops:45.8pt 91.6pt 137.4pt 183.2pt 229.0pt 274.8pt 320.6pt 366.4pt 412.2pt 458.0pt 503.8pt 549.6pt 595.4pt 641.2pt 687.0pt 732.8pt'><span
+style='font-size:7.5pt;font-family:"MS Sans Serif";mso-bidi-font-family:"Courier New"'>©
+2001 Microsoft Corporation</span><span style='font-size:10.0pt;font-family:
+Verdana;mso-bidi-font-family:"Courier New"'> <o:p></o:p></span></p>
+
+<pre><o:p>&nbsp;</o:p></pre></div>
+
+</body>
+
+</html>

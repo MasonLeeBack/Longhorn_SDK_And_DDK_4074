@@ -1,0 +1,142 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, 802_5, FDDI
+</MEDIA>
+<CARDMACH>
+1C,1M
+</CARDMACH>
+<RUNORDER>
+1510
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[
+Tests simultaneous add and delete of multicast address using NDIS 6.0 multicast oids
+ ]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+    <job id="1c_CallScripts" prompt="no">
+        <reference object="NDInfo.Info.1" version="1.0"/>
+        <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+        <reference object="NDTCore.base.1" version="1.0"/>
+        <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+        <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+        <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+        <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+        <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+	     <object id="oWshShell" progid="WScript.Shell" events="true"/>
+	     <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+
+         <!-- Begin Wireless Specific Includes -->
+         <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	      <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	      <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	      <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	      <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+         <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+         <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+         <!-- End Wireless Specific Includes -->
+
+        <script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+        <script language="VBScript" src="..\inc\clog.vbs"/>
+        <script language="VBScript" src="..\newinc\CCard.vbs"/>
+        <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+        <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+        <script language="VBScript" src="..\newinc\COpen.vbs"/>
+        <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+        <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+        <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+        <script language="VBScript" src="..\newinc\Setup.vbs"/>
+        <script language="VBScript" src="..\inc\Events.vbs"/>
+        <script language="VBScript" src="..\inc\Constants.vbs"/>
+        <script language="VBScript" src="..\inc\ConstLAN.vbs"/>
+        <script id="1c_CallScripts" language="VBScript">
+'==========================================================================
+' Script Name:    1c_CallScripts
+'
+' Description:    Test script to verify how stuff works
+'
+' Revision History:
+'
+'==========================================================================
+Option Explicit
+
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0))
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Dim m_lTestAdapterIndex
+   Dim FullPath
+   Private Sub Class_Initialize
+      ' Obtain full path of support script
+      Dim FullName
+      Dim lTmpVar
+      Dim lDiff
+
+      FullName = Wscript.ScriptFullName
+      lTmpVar = InStrRev(FullName,"\")
+      FullPath = Left(FullName, lTmpVar)
+
+   End Sub
+
+   Private Sub Class_Terminate
+   End Sub
+
+   ' Here, we should decide on a multicast address
+   ' and the test id if we plan to send/recv packets
+   ' and store those into NDTSession
+   Public Function RunTest(lTestAdapterIndex)
+      Dim NdisVersion
+      Dim oWshScriptExec1, oWshScriptExec2
+
+      m_lTestAdapterIndex = lTestAdapterIndex
+      NdisVersion = WinFileVersion("\system32\drivers\ndis.sys")
+      If ((NdisVersion = "") Or (NdisVersion < "6.0")) Then
+         oLog.Write ("Ndis version " & NdisVersion & " below 6.0. Cannot test 6.0 multicast oids")
+         Exit Function
+      End If
+      oLog.Variation("Starting simultaneous tests")
+
+      ' Execute the support script
+      Set oWshScriptExec1 = oWshShell.Exec("wscript.exe """ & FullPath & "CalledMultScript1.wsf"" " & lTestAdapterIndex)
+      If (oWshScriptExec1 is Nothing) Then
+         Call oLog.Failed ("Internal Ndistest error: WshShell.Exec function did not return WshScriptExec object", 88888)
+         Exit Function
+      End If
+
+      Set oWshScriptExec2 = oWshShell.Exec("wscript.exe """ & FullPath & "CalledMultScript2.wsf"" " & lTestAdapterIndex)
+      If (oWshScriptExec2 is Nothing) Then
+         Call oLog.Failed ("Internal Ndistest error: WshShell.Exec function did not return WshScriptExec object", 88888)
+         Exit Function
+      End If
+
+      ' Wait for script 1 to complete
+      Do
+         WScript.Sleep 1000
+      Loop Until (oWshScriptExec1.Status = 1)
+
+      ' Wait if script 2 has not completed
+      Do
+         WScript.Sleep 1000
+      Loop Until (oWshScriptExec2.Status = 1)
+
+      ' Both child threads are done
+      Set oWshScriptExec1 = Nothing
+      Set oWshScriptExec2 = Nothing
+   End Function
+
+End Class
+        </script>
+    </job>
+</package>
+
+
+<!--- CRC = 0x515890f6 --->

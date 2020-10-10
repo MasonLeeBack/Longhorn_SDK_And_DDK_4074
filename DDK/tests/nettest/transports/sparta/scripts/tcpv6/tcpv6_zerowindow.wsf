@@ -1,0 +1,1185 @@
+'
+' File          : TCPv6_ZeroWindow.wsf
+' Author        : Sandeep Prabhu [5/8/01]
+'
+' A script to zero window probing functionality
+'
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\common\IPv6Common.Lib"/>
+      <script language="VBScript" src="..\common\TCPv6Helper.Lib"/>
+      <script id="TCPv6_ZeroWindow" language="VBScript">
+
+'/**
+' @area name="Offload Compliance Test Assertions"
+' @group name="TCP Zero Window Probing Assertions"
+' @group name="Zero Window Probing Assertions for TCP/IP v6" 
+' @define name="Offload" Offload Compliance Test Assertions
+' @define name="TCPZW" TCP Zero Window Probing Assertions
+' @define name="ZWAst" Zero Window Probing Assertions for TCP/IP v6
+' @hierarchy Offload TCPZW ZWAst
+' @key Reference="WLP# - x.x.x.x; RFC-793 Section 3.7, RFC-1122 Section 4.2.2.17"
+' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+' @key TestName="TCPv6 Zero Window Probing Functionality Tests"
+' @key TestLog="TCPv6_ZeroWindow.log"
+'*/
+
+option explicit
+    
+Dim Core, Sparta, Autosrv, MediaType, AutoNDObject, IFace, pControllerObj, ExceptionStatus
+
+ 
+'
+' Start the script
+'    
+       
+StartScript "TCPv6_ZeroWindow", g_szLogDirectory, "Tests for zero window probing functionality"
+
+
+' ==================================================================================================
+' Main routine
+' ==================================================================================================
+Sub Main
+   Core.SetAssertionTracking "60900"
+
+   '/**
+   ' @test name="Stack must start window probing when the advertised receive window drops to zero."
+   ' Autosrv is requested to issue a connect back to the script machine. Script machine accepts the connection. 
+   ' Autosrv is requested to send data. The script receives the data until the receive window shrinks to zero.
+   ' At this point the script verifies that the stack sends 2 zero window probes (ACKs) with the right timing.
+   ' After the second probe the receive window is opened, the data consumed and the connection is terminated.
+   ' The script also verifies that the stack goes through slow start when the receive window is opened.<br/>
+   '*/
+   Core.StartTest "Stack does probing when receiver window drops to zero"
+   ActiveZeroWindowProbing
+   Core.EndTest
+   Core.Sleep(2500)
+   
+   '/**
+   ' @test name="Verify that the stack responds correctly to zero window probing." 
+   ' Autosrv is requested to issue a connect back to the script machine. Script machine accepts the connection. 
+   ' The script sends data that fills up the receive window. The stack should indicate a shrinking receive window.
+   ' When the receive window reached zero the script starts sending window probes to the stack. 
+   ' The script verifies that the stack responds by resending the last ACK with the correct sequence number 
+   ' and window size (0).
+   ' At this point the script requests autosrv to post a receive and consume the data on the test machine.
+   ' The stack must send a window update packet advertising a nonzero receive window.
+   ' When this is verified the script resets the connection.<br/>
+   '*/
+   Core.StartTest "Stack responds to zero window probes"
+   PassiveZeroWindowProbing
+   Core.EndTest
+   Core.Sleep(2500)   
+
+   '/**
+   ' @test name="Verify that the stack does no probing if rcvd SYN advertizes a zero window." 
+   ' Autosrv on the test machine is requested to create a listening socket and accept connections.
+   ' Scripts sends a SYN advertising a zero receive window.
+   ' Stack must respond immediately with a SYN-ACK without zero window probing. 
+   ' After the script verifies this it terminates the connection.<br/>
+   '*/           
+   Core.StartTest "No probing done if rcvd SYN advertizes a zero window"
+   ZeroWindowProbingForSYN
+   Core.EndTest
+   Core.Sleep(2500)
+
+   '/**
+   ' @test name="Verify that the stack does not probe on receiveing a SYN-ACK advertising a zero receive window if it has no data to send thru ConnectEx()."
+   ' Autosrv on the test machine is requested to create a socket and issue a COnnectEx() call with no data to send.
+   ' Script machine accepts the SYN and advertises a zero receive window in the SYN-ACK. The stack must respond
+   ' with an ACK without any zero window probing in the handshake.
+   ' Then autosrv on the test machine is asked to send data to the sript machine.
+   ' Verify that the stack sends 3 zero window probes (ACKs) with the right timing.
+   ' After the third probe the receive window is opened, the data consumed and the connection is reset.
+   ' The script also checks that the stack does slow start when the script opens up the receive window.<br/>
+   '*/
+   Core.StartTest "No probing done on recv SYN-ACK if no data to send thru ConnectEx"
+   ZeroWindowProbingOnConnectEx 0
+   Core.EndTest
+   Core.Sleep(2500)
+
+   '/**
+   ' @test name="Verify that the stack does not probe on receiveing a SYN-ACK advertising a zero receive window if it has no data to send thru ConnectEx()."
+   ' Autosrv on the test machine is requested to create a socket and issue a COnnectEx() call with some data to send.
+   ' Script machine accepts the SYN and advertises a zero receive window in the SYN-ACK. The stack must respond
+   ' with an ACK without any zero window probing in the handshake.
+   ' Then the stack must start zero window probing.
+   ' Verify that the stack sends 3 zero window probes (ACKs) with the right timing.
+   ' After the third probe the receive window is opened, the data consumed and the connection is reset.
+   ' The script also checks that the stack does slow start when the script opens up the receive window.<br/>
+   '*/
+   Core.StartTest "Probing done on recv SYN-ACK if data to send thru ConnectEx"
+   ZeroWindowProbingOnConnectEx DEFAULT_MSS
+   Core.EndTest
+   Core.Sleep(2500)
+
+   '/**
+   ' @test name="The stack must not do zero window probing unless it has data to send." 
+   ' Autosrv is requested to connect back to the script machine. Script machine accepts the connection and advertises 
+   ' a zero receive window in the SYN-ACK.
+   ' As the stack has no data to send it must not do zero window probing.
+   ' After this the stack is asked to send data. It must start sending window probes.   
+   ' The script verifies that 3 window probes are sent then opens up the receive window and consumes the data. 
+   ' The script advertises a zero window in the final ACK.
+   ' At this point the stack has no data to send. It must not send zero window probes.
+   ' After this the stack is asked to send data again. It must start sending window probes. 
+   ' When this is verified, the data is consumed and the connection is terminated.<br/>
+   '*/   
+   Core.StartTest "Zero window probing done only when there is data to send"
+   ZeroWindowProbingWithNoData
+   Core.EndTest
+   Core.Sleep(2500)   
+
+   '/**
+   ' @test name="The stack must send a FIN without probing if a zero window is advertised and it has no other data to send." 
+   ' Autosrv is requested to connect back to the script machine. Script machine accepts the connection and advertises a zero receive window in the SYN-ACK.
+   ' Autosrv is requested to terminate the connection. 
+   ' The stack has no data to send so it must not do zero window probing.
+   ' The script verifies that the stack sends the FIN and responds with a FIN-ACK.
+   ' The case is terminated when the final ACK from the stack is received by the script.<br/>
+   '*/
+   Core.StartTest "Zero window probing not done while sending FIN (no data)"
+   ZeroWindowProbingForFIN 0, TRUE
+   Core.EndTest
+   Core.Sleep(2500)
+   
+   '/**
+   ' @test name="The stack must do zero window probing when sending a FIN with data." 
+   ' Autosrv is requested to connect back to the script machine. Script machine accepts the connection and advertises a zero receive window in the SYN-ACK.
+   ' Autosrv is requested to execute a SendAndDisconnect.
+   ' As the stack has data to send it must do zero window probing.
+   ' The script verifies that the stack sends 3 window probes then opens up the receive window.
+   ' At this point the stack must send its FIN with the data. Once the script receives the FIN it responds with a FIN-ACK.
+   ' The case is terminated when the final ACK from the stack is received by the script.<br/>
+   '*/
+   Core.StartTest "Zero window probing done while sending FIN (with data)"
+   ZeroWindowProbingForFIN 100, FALSE
+   Core.EndTest
+   Core.Sleep(2500)
+
+   '/**
+   ' @test name="Verify that the stack does correct exponential backoff when sending zero window probes." 
+   ' Autosrv is requested to connect back to the script machine. Script machine accepts the connection and advertises a zero receive window in the SYN-ACK.
+   ' The script requests through autosrv that the stack start sending data.
+   ' The stack on the test machine should start sending zero window probes. 
+   ' The delay should increase exponentially till 6 retransmits and then stay the same.
+   ' The script waits until it receives 10 window probes with the correct timing. 
+   ' Then it opens up the receive window, verifies that the stack goes through slow-start, consumes the data and finally resets the connection.<br/>
+   '*/      
+   Core.StartTest "Zero window probe interval increases exponentially"
+   ZeroWindowProbeInterval
+   Core.EndTest
+   Core.Sleep(2500)
+
+   '/**
+   ' @test name="Verify that the stack sends the correct number of zero window probe retries if the other party doesn't respond." 
+   ' Autosrv is requested to connect back to the script machine. Script machine accepts the connection and advertises a zero receive window in the SYN-ACK.
+   ' The script requests through autosrv that the stack start sending data.
+   ' The stack on the test machine should start sending zero window probes. 
+   ' The script does not reply to the window probe, but verifies that the retries are sent with the correct timing.
+   ' The script also verifies that the stack in the end sends an RST.<br/>
+   '*/
+   Core.StartTest "Zero window probe retries and interval between them"
+   ZeroWindowProbeRetries FALSE
+   Core.EndTest
+   Core.Sleep(2500)
+   
+   '/**
+   ' @test name="Verify that the stack stops retransmitting window probes when it receives a window update."
+   ' Autosrv is requested to connect back to the script machine. Script machine accepts the connection and advertises a zero receive window in the SYN-ACK.
+   ' The script requests through autosrv that the stack start sending data.
+   ' The stack on the test machine should start sending zero window probes. 
+   ' The script does not reply to the first 3 retransmissions, but verifies that the retries are sent with the correct timing.
+   ' After this the script sends a windows update and verifies that the stack stops the probe retransmissions.
+   ' It also verifies that the stack goes through a slow start and sends the data.<br/>
+   '*/
+   Core.StartTest "Zero window probe rexmits stop on receiving a window update"
+   ZeroWindowProbeRetries TRUE
+   Core.EndTest   
+   Core.Sleep(2500)
+   
+End Sub
+
+
+'
+' Routine to test the basic functionality when stack does the zero window probing
+'
+Sub ActiveZeroWindowProbing
+   Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim ulLastAck, ulBytesRcvd, ulDataLength, pPacket, usWindowSize
+   Dim AutoNDObject, pIFace, ulSendSize, ulCWin, ulBytesSent
+
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 5000
+   usDestPort = 5001
+   usWindowSize = (2+3+1)*DEFAULT_MSS        
+   ulSendSize = 40*DEFAULT_MSS
+   ulCWin = 5*DEFAULT_MSS              ' Since 3 ACKs would have been received  
+
+   Core.StartVariation
+
+   Set AutoNDObject = Sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, g_szLocalSpoofIp6Address, FALSE)    
+   Set pIFace = CreateInterface(TRUE, g_szRemoteMacAddress, g_szRemoteIp6Address, g_szLocalSpoofIp6Address)
+   pIFace.StartListening
+
+   '
+   ' Establish a TCP connection 
+   '
+   ulStatus = ZeroWindowConnect(TRUE, usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, usWindowSize, pIFace)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "ActiveZeroWindowProbing: ZeroWindowConnect - " & ulStatus
+      exit sub
+   end if
+   
+   '
+   ' do loop used to get around using goto
+   '
+   do    
+      '
+      ' Ask Autosrv to start sending data
+      '
+      ulStatus = pControllerObj.Send(ulSessionId, 1, 0, ulSendSize, ulTID)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "ActiveZeroWindowProbing: Send - " & ulStatus
+         exit do
+      end if
+   
+      '
+      ' Do data exchange till window shrinks to zero 
+      '
+      ulStatus = DoDataExchangeTillWindowShrinksToZero(usWindowSize, ulSeqNumber, ulAckNumber, pIFace, ulBytesSent)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "ActiveZeroWindowProbing: DoDataExchangeTillWindowShrinksToZero - " & ulStatus
+         exit do
+      end if
+               
+      '
+      ' Ensure the stack does zero window probing
+      '
+      ulStatus = RespondToZeroWindowProbes(2, ulSeqNumber, ulAckNumber, DEFAULT_TcpInitialRTT, usWindowSize, pIFace)
+      if (ulStatus <> 0) then
+         Core.FailSev1Variation "ActiveZeroWindowProbing: RespondToZeroWindowProbes - " & ulStatus
+         exit do
+      end if
+      
+      '
+      ' Complete the data exchange
+      '
+      ulStatus = VerifySlowStart(ulSeqNumber, ulAckNumber, DEFAULT_MSS, usWindowSize, ulSendSize - ulBytesSent, ulCWin, pIFace)
+      if (ulStatus <> 0) then      
+         Core.FailSev1Variation "ActiveZeroWindowProbing: VerifySlowStart - " & ulStatus
+         exit do
+      end if
+      
+   loop while (FALSE)
+   
+   '
+   ' Reset the connection
+   '
+   ulStatus = ResetConnectionEx(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.log "ERROR: ActiveZeroWindowProbing: ResetConnectionEx - " & ulStatus
+   end if
+End Sub
+
+
+'
+' Routine to test the basic functionality when stack responds to zero window probing
+'
+Sub PassiveZeroWindowProbing
+   Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim ulBytesRcvd, pPacket, AutoNDObject, pIFace, ulCounter, ulExpectAckNumber
+
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 5000
+   usDestPort = 5001
+
+   Core.StartVariation
+
+   Set AutoNDObject = Sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, g_szLocalSpoofIp6Address, FALSE)    
+   Set pIFace = CreateInterface(TRUE, g_szRemoteMacAddress, g_szRemoteIp6Address, g_szLocalSpoofIp6Address)
+   pIFace.StartListening
+
+   '
+   ' Establish a TCP connection 
+   '
+   ulStatus = ZeroWindowConnect(TRUE, usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, NULL, pIFace)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "PassiveZeroWindowProbing: ActiveConnect - " & ulStatus
+      exit sub
+   end if
+   
+   '
+   ' do loop used to get around using goto
+   '
+   do    
+      '
+      ' Send data till the receive window if full
+      '
+      do
+         Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+         pPacket.UserData DEFAULT_MSS, "This is a test"
+         pIFace.Send(pPacket)
+         
+         '
+         ' Receive the ACK
+         '
+         Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 50, pIFace) 
+         if Not(pPacket is Nothing) then
+            if (pPacket.TcpHeader.WindowSize = 0) then
+               exit do
+            end if
+         end if
+      loop while (TRUE)
+      
+      '
+      ' Send zero window probes and ensure stack responds to it by resending the 
+      ' last ACK
+      '
+      ulExpectAckNumber = ulSeqNumber
+      For ulCounter = 1 to 5
+         Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+         pPacket.UserData 1
+         pIFace.Send(pPacket)
+         
+         Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 50, pIFace) 
+         if (pPacket is Nothing) then
+            Core.FailSev1Variation "PassiveZeroWindowProbing: Didn't receive response to zero window probe"
+            exit do
+         elseif ((ulBytesRcvd <> 0) OR (pPacket.TcpHeader.AckNumber <> ulExpectAckNumber) OR (pPacket.TcpHeader.WindowSize <> 0)) then
+            Core.FailSev1Variation "PassiveZeroWindowProbing: Incorrect response - Size = " & ulBytesRcvd & ", Seq = " & Hex(pPacket.TcpHeader.AckNumber) & " <> " & Hex(ulExpectAckNumber) & ", Window = " & pPacket.TcpHeader.WindowSize
+            exit do         
+         end if
+      Next
+      
+      '
+      ' Ask Autosrv to post a receive
+      '
+      Core.StartVariation
+      ulStatus = pControllerObj.Receive(ulSessionId, 1, 0, 65535, ulTID)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "PassiveZeroWindowProbing: Receive - " & ulStatus
+         exit do
+      end if
+
+      '
+      ' Check that a window update message is rcvd
+      '
+      set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 300, pIFace) 
+      if (pPacket is Nothing) then
+         Core.FailSev1Variation "PassiveZeroWindowProbing: Window update not rcvd"
+         exit do
+      elseif (pPacket.TCPHeader.WindowSize = 0) then
+         Core.FailSev1Variation "PassiveZeroWindowProbing: Window update advertizes a 0 window"
+         exit do
+      end if
+   
+   loop while (FALSE)
+   
+   '
+   ' Reset the connection
+   '
+   ulStatus = ResetConnectionEx(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.log "ERROR: ActiveZeroWindowProbing: ResetConnectionEx - " & ulStatus
+   end if
+End Sub
+
+'
+' Routine to test that if the window is 0 when sending a SYN, no probing is done
+'
+Sub ZeroWindowProbingForSYN
+   Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim pTCPPacket, pIFace, AutoNDObject, pSYNPacket
+
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 5000
+   usDestPort = 5001
+
+   Core.StartVariation
+      
+   Set AutoNDObject = Sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, g_szLocalSpoofIp6Address, FALSE)    
+   Set pIFace = CreateInterface(TRUE, g_szRemoteMacAddress, g_szRemoteIp6Address, g_szLocalSpoofIp6Address)
+   pIFace.StartListening
+
+   '
+   ' Create a SYN with a zero window advertisement
+   '
+   Set pSYNPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_SYN, 0)
+   pSYNPacket.TCPHeader.TCPOption(0).AddMSS(DEFAULT_MSS)
+   pSYNPacket.TCPHeader.WindowSize = 0
+
+
+   '
+   ' Send the SYN, SYN-ACK should be sent immediately without any zero window probing
+   '
+   set pTCPPacket = RecvSynAck(pSYNPacket, usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, pIFace, ulTID)
+   if (pTCPPacket is Nothing) then
+      Core.FailSev1Variation "ZeroWindowProbingForSYN: SYN-ACK not rcvd"
+   end if
+
+   '
+   ' Reset the connection
+   '
+   ulStatus = ResetConnectionEx(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.log "ERROR: ZeroWindowProbingForSYN: ResetConnectionEx - " & ulStatus
+   end if
+End Sub
+
+
+'
+' If a zero window is advertized during handshake (i.e. in the SYN-ACK) of ConnectEx,
+' a zero window probe is done after the handshake only if there is data to send else
+' zero window probing is done only when the first send is issued
+'
+Sub ZeroWindowProbingOnConnectEx(ulDataSize)
+   Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim pTCPPacket, pIFace, AutoNDObject, ulSendSize, pPacket, ulBytesRcvd, ulTimeout
+
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 5000
+   usDestPort = 5001
+   ulSendSize = DEFAULT_MSS
+   if (ulDataSize <> 0) then
+      ulDataSize = ulSendSize
+   end if
+
+   Core.StartVariation
+      
+   Set AutoNDObject = Sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, g_szLocalSpoofIp6Address, FALSE)    
+   Set pIFace = CreateInterface(TRUE, g_szRemoteMacAddress, g_szRemoteIp6Address, g_szLocalSpoofIp6Address)
+   pIFace.StartListening
+
+   '
+   ' Ask the stack to issue a ConnectEx & grab the SYN
+   '
+   Set pPacket=RecvSynEx(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulDataSize, ulSeqNumber, ulAckNumber, ulSessionId, pIFace, ulTID)
+   if (pPacket is Nothing) then
+      Core.BlockVariation "ZeroWindowProbingOnConnectEx: Failed to receive a SYN"
+      exit sub
+   end if
+   
+   '
+   ' do loop used to get around using a goto
+   '
+   do
+      '
+      ' Send a SYN-ACK with a zero window
+      '
+      Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_SYN or TCP_ACK, 0)
+      pPacket.TCPHeader.TCPOption(0).AddMSS(DEFAULT_MSS)
+      pPacket.TCPHeader.WindowSize = 0
+      pIFace.Send(pPacket)
+
+      '
+      ' Receive the ACK - We don't do direct completion of sends. So the stack 
+      ' doesn't do zero window probing as part of the handshake since the data is 
+      ' not yet indicated to tcpip. So in either case, when there is data to send or
+      ' not, it will send the ACK
+      '
+      Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 200, pIFace) 
+      if (pPacket is Nothing) then
+         Core.FailSev1Variation "ZeroWindowProbingOnConnectEx: Failed to receive an ACK"
+         exit do
+      elseif (ulBytesRcvd <> 0) then
+         Core.FailSev1Variation "ZeroWindowProbingOnConnectEx: Incorrect ACK - Size = " & ulBytesRcvd
+         exit do
+      end if
+
+       '
+       ' Check if connection is offloaded
+       '
+       If Not IsConnectionOffloaded(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, g_szRemoteIp6Address, ulSessionId) and g_fTestOffload And g_fTOENic Then
+          Core.FailSev1Variation "ZeroWindowProbingOnConnectEx : Failed to offload the connection"
+          exit do
+       End If
+
+      '
+      ' If there is no data to send, we will issue a send
+      '
+      ulTimeout = DEFAULT_TcpInitialRTT
+      if (ulDataSize = 0) then
+         Core.StartVariation
+         ulStatus = pControllerObj.Send(ulSessionId, 1, 0, ulSendSize, ulTID)
+         if (ulStatus <> 0) then         
+            Core.BlockVariation "ZeroWindowProbingOnConnectEx: Send - " & ulStatus
+            exit do
+         end if
+         
+         '
+         ' The send call itself may have an overhead so we will use a larger timeout
+         ' to take that into account
+         '
+         ulTimeout = 5000
+      end if
+
+      '
+      ' At this point the stack has data to send either as part of the handshake or 
+      ' after the handshake. So it should do zero window probing
+      '
+      ulStatus = RespondToZeroWindowProbes(3, ulSeqNumber, ulAckNumber, ulTimeout, 4*DEFAULT_MSS, pIFace)
+      if (ulStatus <> 0) then
+         Core.FailSev1Variation "ZeroWindowProbingOnConnectEx: RespondToZeroWindowProbes - " & ulStatus
+         exit do
+      end if
+
+      '
+      ' Complete the data exchange
+      '
+      ulStatus = VerifySlowStart(ulSeqNumber, ulAckNumber, DEFAULT_MSS, 4*DEFAULT_MSS, ulSendSize, 2*DEFAULT_MSS, pIFace)
+      if (ulStatus <> 0) then      
+         Core.FailSev1Variation "ZeroWindowProbingOnConnectEx: VerifySlowStart - " & ulStatus
+         exit do
+      end if
+   loop while (FALSE)
+
+   '
+   ' Reset the connection
+   '
+   ulStatus = ResetConnectionEx(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.log "ERROR: ZeroWindowProbingOnConnectEx: ResetConnectionEx - " & ulStatus
+   end if   
+   
+End Sub
+
+
+'
+' Ensure that zero window probing is done only when there is data to send. Tests the following -
+' 1. Advertize a zero window in the SYN-ACK and ensure no 0 window probing till 1st send
+' 2. The last ACK for the send advertizes a 0 window. Check no window probing till next send
+'
+Sub ZeroWindowProbingWithNoData
+   Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim pTCPPacket, pIFace, AutoNDObject, ulSendSize, pPacket, ulBytesRcvd
+
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 5000
+   usDestPort = 5001
+
+   Core.StartVariation
+
+   Set AutoNDObject = Sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, g_szLocalSpoofIp6Address, FALSE)    
+   Set pIFace = CreateInterface(TRUE, g_szRemoteMacAddress, g_szRemoteIp6Address, g_szLocalSpoofIp6Address)
+   pIFace.StartListening
+
+   '
+   ' Ask stack to issue a connect and grab the SYN
+   '
+   Set pPacket = RecvSyn(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId, pIFace, ulTID)
+   if (pPacket is Nothing) then
+      Core.BlockVariation "ZeroWindowProbingWithNoData: Failed to receive a SYN"
+      exit sub
+   end if
+   
+   '
+   ' Send a SYN-ACK with a zero window
+   '
+   Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_SYN or TCP_ACK, 0)
+   pPacket.TCPHeader.TCPOption(0).AddMSS(DEFAULT_MSS)
+   pPacket.TCPHeader.WindowSize = 0
+   pIFace.Send(pPacket)
+
+   '
+   ' do loop used to get around using goto
+   '
+   do
+      '
+      ' Ensure the stack doesn't do zero window probing since there is no data to send
+      '
+      Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 200, pIFace) 
+      if (pPacket is Nothing) then
+         Core.FailSev1Variation "ZeroWindowProbingWithNoData: Failed to receive an ACK"
+         exit do
+      elseif (ulBytesRcvd <> 0) then
+         Core.FailSev1Variation "ZeroWindowProbingWithNoData: Incorrect ACK - Size = " & ulBytesRcvd
+         exit do
+      end if
+         
+       '
+       ' Check if connection is offloaded
+       '
+       If Not IsConnectionOffloaded(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, g_szRemoteIp6Address, ulSessionId) and g_fTestOffload And g_fTOENic Then
+          Core.FailSev1Variation "ZeroWindowProbingWithNoData : Failed to offload the connection"
+          exit do
+       End If
+
+      '
+      ' Now issue a send
+      '
+      Core.StartVariation
+      ulStatus = pControllerObj.Send(ulSessionId, 1, 0, DEFAULT_MSS, ulTID)
+      if (ulStatus <> 0) then         
+         Core.BlockVariation "ZeroWindowProbingWithNoData: Send - " & ulStatus
+         exit do
+      end if
+
+      '
+      ' Ensure stack does zero window probing
+      '
+      ulStatus = RespondToZeroWindowProbes(3, ulSeqNumber, ulAckNumber, DEFAULT_TcpInitialRTT, 4*DEFAULT_MSS, pIFace)
+      if (ulStatus <> 0) then
+         Core.FailSev1Variation "ZeroWindowProbingWithNoData: RespondToZeroWindowProbes - " & ulStatus
+         exit do
+      end if
+
+      '
+      ' Receive the data packet
+      '
+      Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 200, pIFace) 
+      if (pPacket is Nothing) then
+         Core.FailSev1Variation "ZeroWindowProbingWithNoData: Failed to receive data packet"
+         exit do
+      elseif (ulBytesRcvd <> DEFAULT_MSS) then
+         Core.FailSev1Variation "ZeroWindowProbingWithNoData: Failed to receive data packet - " & ulBytesRcvd
+         exit do
+      end if
+
+      '
+      ' Send an ACK with a zero window
+      '   
+      Core.StartVariation
+      Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+      pTCPPacket.TCPHeader.WindowSize = 0
+      IFace.Send(pTCPPacket)
+
+      '
+      ' Ensure no zero window probing is done
+      '
+      Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 200, pIFace) 
+      if Not(pPacket is Nothing) then
+         Core.FailSev1Variation "ZeroWindowProbingWithNoData: Received zero window probe"
+         exit do
+      end if
+      
+      '
+      ' Now issue a send
+      '
+      Core.StartVariation
+      ulStatus = pControllerObj.Send(ulSessionId, 1, 0, 10*DEFAULT_MSS, ulTID)
+      if (ulStatus <> 0) then         
+         Core.BlockVariation "ZeroWindowProbingWithNoData: Send - " & ulStatus
+         exit do
+      end if
+
+      '
+      ' Ensure stack does zero window probing
+      '
+      ulStatus = RespondToZeroWindowProbes(3, ulSeqNumber, ulAckNumber, DEFAULT_TcpInitialRTT, 4*DEFAULT_MSS, pIFace)
+      if (ulStatus <> 0) then
+         Core.FailSev1Variation "ZeroWindowProbingWithNoData: RespondToZeroWindowProbes - " & ulStatus
+         exit do
+      end if
+
+      '
+      ' Complete the data exchange
+      '
+      ulStatus = VerifySlowStart(ulSeqNumber, ulAckNumber, DEFAULT_MSS, 4*DEFAULT_MSS, 10*DEFAULT_MSS, 3*DEFAULT_MSS, pIFace)
+      if (ulStatus <> 0) then      
+         Core.FailSev1Variation "ZeroWindowProbingWithNoData: VerifySlowStart - " & ulStatus
+         exit do
+      end if
+   loop while (FALSE)
+
+   '
+   ' Reset the connection
+   '
+   ulStatus = ResetConnectionEx(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.log "ERROR: ZeroWindowProbingWithNoData: ResetConnectionEx - " & ulStatus
+   end if   
+
+End Sub
+
+'
+' Routine to test that if the window is 0 when sending a FIN, zero window probing 
+' is not done
+'
+Sub ZeroWindowProbingForFIN(ulDataSize, fClose)
+   Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim pTCPPacket, pIFace, AutoNDObject, ulSendSize, pPacket, ulBytesRcvd
+
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 5000
+   usDestPort = 5001
+
+   Core.StartVariation
+
+   Set AutoNDObject = Sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, g_szLocalSpoofIp6Address, FALSE)    
+   Set pIFace = CreateInterface(TRUE, g_szRemoteMacAddress, g_szRemoteIp6Address, g_szLocalSpoofIp6Address)
+   pIFace.StartListening
+
+
+   '
+   ' Establish a TCP connection, advertise 0 window in SYN-ACK 
+   '
+   ulStatus = ZeroWindowConnect(TRUE, usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, 0, pIFace)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "ZeroWindowProbingForFIN: ZeroWindowConnect - " & ulStatus
+      exit sub
+   end if
+
+   '
+   ' do loop used to get around using goto
+   '
+   do
+      '
+      ' Ask Autosrv to do send and disconnect
+      '
+      if (fClose) then
+         ulStatus = pControllerObj.Shutdown(ulSessionId, ulTID)
+      else
+         ulStatus = pControllerObj.SendAndDisconnect(ulSessionId, ulDataSize, ulTID)
+      end if
+      if (ulStatus <> 0) then
+         Core.BlockVariation "ZeroWindowProbingForFIN: SendAndDisconnect/Shutdown - " & ulStatus
+         exit do
+      end if
+   
+      '
+      ' We don't expect zero window probing if there is no data to be sent
+      '
+      if (ulDataSize <> 0) then
+         '
+         ' Ensure stack does zero window probing
+         '
+         ulStatus = RespondToZeroWindowProbes(3, ulSeqNumber, ulAckNumber, DEFAULT_TcpInitialRTT, 4*DEFAULT_MSS, pIFace)
+         if (ulStatus <> 0) then
+            Core.FailSev1Variation "ZeroWindowProbingForFIN: RespondToZeroWindowProbes - " & ulStatus
+            exit do
+         end if
+      end if
+   
+      '
+      ' Receive the FIN-ACK
+      '
+      Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_FIN or TCP_ACK, 5000, pIFace) 
+      if (pPacket is Nothing) then
+         Core.FailSev1Variation "ZeroWindowProbingForFIN: FIN-ACK not rcvd"
+         exit do
+      end if
+   
+      '
+      ' Send a FIN-ACK with a zero window
+      '
+      Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, (TCP_FIN or TCP_ACK), 0)
+      pPacket.TCPHeader.WindowSize = 0
+      pIFace.Send(pPacket)
+   
+      '
+      ' Receive the ACK
+      '
+      Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 200, pIFace) 
+      if (pPacket is Nothing) then
+         Core.FailSev1Variation "ZeroWindowProbingForFIN: ACK not rcvd"
+         exit do
+      end if
+   loop while (FALSE)
+
+   '
+   ' Reset the connection
+   '
+   ulStatus = ResetConnectionEx(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.log "ERROR: ZeroWindowProbingForFIN: ResetConnectionEx - " & ulStatus
+   end if   
+   
+End Sub
+
+'
+' Routine to test the zero window probe interval increases exponentially
+'
+Sub ZeroWindowProbeInterval
+   Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim pTCPPacket, pIFace, AutoNDObject, ulSendSize, pPacket, ulBytesRcvd
+
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 5000
+   usDestPort = 5001
+
+   Core.StartVariation
+
+   Set AutoNDObject = Sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, g_szLocalSpoofIp6Address, FALSE)    
+   Set pIFace = CreateInterface(TRUE, g_szRemoteMacAddress, g_szRemoteIp6Address, g_szLocalSpoofIp6Address)
+   pIFace.StartListening
+
+
+   '
+   ' Establish a TCP connection, advertize 0 window in SYN-ACK 
+   '
+   ulStatus = ZeroWindowConnect(TRUE, usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, 0, pIFace)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "ZeroWindowProbeInterval: ZeroWindowConnect - " & ulStatus
+      exit sub
+   end if
+
+   '
+   ' do loop used to get around using goto
+   '
+   do
+      '
+      ' Ask Autosrv to start sending data
+      '
+      ulStatus = pControllerObj.Send(ulSessionId, 1, 0, 20*DEFAULT_MSS, ulTID)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "ZeroWindowProbeInterval: Send - " & ulStatus
+         exit do
+      end if
+   
+      '
+      ' Ensure stack does zero window probing
+      '
+      ulStatus = RespondToZeroWindowProbes(10, ulSeqNumber, ulAckNumber, DEFAULT_TcpInitialRTT, 5*DEFAULT_MSS, pIFace)
+      if (ulStatus <> 0) then
+         Core.FailSev1Variation "ZeroWindowProbeInterval: RespondToZeroWindowProbes - " & ulStatus
+         exit do
+      end if
+      
+      '
+      ' Complete the data exchange
+      '
+      ulStatus = VerifySlowStart(ulSeqNumber, ulAckNumber, DEFAULT_MSS, 5*DEFAULT_MSS, 20*DEFAULT_MSS, 2*DEFAULT_MSS, pIFace)
+      if (ulStatus <> 0) then      
+         Core.FailSev1Variation "ZeroWindowProbeInterval: VerifySlowStart - " & ulStatus
+         exit do
+      end if
+   loop while (FALSE)
+   
+   '
+   ' Reset the connection
+   '
+   ulStatus = ResetConnectionEx(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.log "ERROR: ZeroWindowProbeInterval: ResetConnectionEx - " & ulStatus
+   end if  
+    
+End Sub
+
+'
+' Routine to test the zero window probe intervals
+'
+Sub ZeroWindowProbeRetries(fRespond)
+   Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim pTCPPacket, pIFace, AutoNDObject, ulSendSize, pPacket, ulBytesRcvd
+
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 5000
+   usDestPort = 5001
+
+   Core.StartVariation
+
+   Set AutoNDObject = Sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, g_szLocalSpoofIp6Address, FALSE)    
+   Set pIFace = CreateInterface(TRUE, g_szRemoteMacAddress, g_szRemoteIp6Address, g_szLocalSpoofIp6Address)
+   pIFace.StartListening
+
+
+   '
+   ' Establish a TCP connection, advertize 0 window in SYN-ACK 
+   '
+   ulStatus = ZeroWindowConnect(TRUE, usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, 0, pIFace)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "ZeroWindowProbeInterval: ZeroWindowConnect - " & ulStatus
+      exit sub
+   end if
+
+   '
+   ' do loop used to get around using goto
+   '
+   do
+      '
+      ' Ask Autosrv to start sending data
+      '
+      ulStatus = pControllerObj.Send(ulSessionId, 1, 0, DEFAULT_MSS*10, ulTID)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "ZeroWindowProbeRetries: Send - " & ulStatus
+         exit do
+      end if
+   
+      '
+      ' Start receiving the window probe packets and don't respond
+      '
+      Dim ulNumProbes, ulTimeout, ulStartTime, ulElapsedTime
+      ulNumProbes = 0
+      ulTimeout = DEFAULT_TcpInitialRTT
+      do
+         ulStartTime = Timer
+         Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, ulTimeout*1.1, pIFace) 
+         if (pPacket is Nothing) then
+            'Msgbox("Failed to receive response")
+            exit do
+         end if
+         ulElapsedTime = Timer - ulStartTime
+         if ((pPacket.TCPHeader.Flag <> TCP_ACK) OR (ulBytesRcvd <> 1)) then
+            exit do
+         elseif ((ulElapsedTime*1000) < (ulTimeout - 500)) then
+            Core.FailSev1Variation "ZeroWindowProbeRetries: Received probe too soon - " & (ulElapsedTime*1000) & " << " & ulTimeout
+            exit do
+         end if
+         
+         ulNumProbes = ulNumProbes + 1
+         ulTimeout = ulTimeout * 2
+         
+         if (fRespond AND (ulNumProbes = 3)) then
+            '
+            ' Send a window update notification
+            '            
+            Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+            pPacket.TcpHeader.WindowSize = 5*DEFAULT_MSS
+            pIFace.Send(pPacket)
+            exit do
+         end if
+      loop while (TRUE)
+   
+      if (fRespond) then
+         '
+         ' Complete the data exchange. Note that we have already received 1 byte.
+         '
+         ulStatus = VerifySlowStart(ulSeqNumber, ulAckNumber, DEFAULT_MSS, 5*DEFAULT_MSS, DEFAULT_MSS*10-1, 2*DEFAULT_MSS, pIFace)
+         if (ulStatus <> 0) then      
+            Core.FailSev1Variation "ZeroWindowProbeRetries: VerifySlowStart - " & ulStatus
+            exit do
+         end if
+      else   
+         '
+         ' Verify the number of probes
+         '
+         if (ulNumProbes <> DEFAULT_TcpMaxDataRetransmissions) then
+            Core.FailSev1Variation "ZeroWindowProbeRetries: # Zero probe retries = " & ulNumProbes & " <> " & DEFAULT_TcpMaxDataRetransmissions
+            exit do
+         end if
+                  
+         '
+         ' Send a data packet
+         '   
+         Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, (TCP_PUSH or TCP_ACK), 0)
+         pPacket.UserData 100, "This is a test"
+         pIFace.Send(pPacket)
+         
+         '
+         ' Receive a RST which ensures the connection has transitioned to CLOSED state
+         '
+         Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_RST, 300, pIFace) 
+         if (pPacket is Nothing) then
+            Core.FailSev1Variation "ZeroWindowProbeRetries: Connection not in CLOSED state"
+            exit do
+         end if
+      end if
+   loop while (FALSE)
+   
+
+   '
+   ' Reset the connection
+   '
+   ulStatus = ResetConnectionEx(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.log "ERROR: ZeroWindowProbeInterval: ResetConnectionEx - " & ulStatus
+   end if  
+   
+End Sub
+
+
+
+'********************************************************************************
+'                                Helper functions
+'******************************************************************************** 
+ 
+'
+' A function to establish a connection and advertize a specific window in SYN-ACK/ACK
+'
+Function ZeroWindowConnect(fActive, usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, usWindowSize, pIFace)
+   Dim pPacket, pSYNPacket, ulTID, bFlags, ulBytesRcvd
+   
+   if (fActive) then
+      '
+      ' Ask Autosrv to issue a connect and grab the SYN
+      '
+      Set pPacket = RecvSyn(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId, pIFace, ulTID)
+   else
+      '
+      ' Ask Autosrv to issue an accept, send a SYN and grab the SYN-ACK
+      '
+      Set pSYNPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_SYN, 0)     
+      pSYNPacket.TcpHeader.TcpOption(0).AddMSS DEFAULT_MSS
+      Set pPacket=RecvSynAck(pSYNPacket, usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, pIFace, ulTID)
+   end if
+   if (pPacket is Nothing) then
+      Core.log "ZeroWindowConnect: Failed to receive SYN/SYN-ACK"
+      ZeroWindowConnect = 1
+      exit function
+   end if
+   
+   '
+   ' Send a SYN-ACK/ACK with the appropriate window size
+   '
+   if (fActive) then
+      Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_SYN or TCP_ACK, 0)     
+      pPacket.TcpHeader.TcpOption(0).AddMSS DEFAULT_MSS
+   else
+      Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 0)     
+   end if
+   if Not(IsNull(usWindowSize)) then
+      pPacket.TcpHeader.WindowSize = usWindowSize
+   end if
+   pIFace.Send(pPacket)
+   
+   '
+   ' Receive an ACK if active connect
+   '
+   if (fActive) then
+      Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 200, pIFace) 
+      if (pPacket is Nothing) then
+         Core.log "ZeroWindowConnect: Failed to receive an ACK"
+         ZeroWindowConnect = 2
+         '
+         ' Reset the connection
+         '
+         ulStatus = ResetConnectionEx(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId)
+         if (ulStatus <> 0) then
+            Core.log "ERROR: ZeroWindowConnect: ResetConnectionEx - " & ulStatus
+         end if
+         exit function
+      end if
+   end if
+   
+   '
+   ' Check if connection is offloaded
+   '
+   If Not IsConnectionOffloaded(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, g_szRemoteIp6Address, ulSessionId) and g_fTestOffload And g_fTOENic Then
+      Core.Log "ZeroWindowConnect : Failed to offload the connection"
+      ZeroWindowConnect = 1
+      Exit Function
+   End If
+
+   ZeroWindowConnect = 0
+End Function
+
+'
+' Function to receive zero window probes and respond to them
+'    
+Function RespondToZeroWindowProbes(ulNumProbes, ulSeqNumber, ulAckNumber, ulTimeout, usWindowSize, pIFace)
+   Dim ulBytesRcvd, ulCounter, pPacket, ulExpectSeqNumber
+   Dim ulStartTime, ulElapsedTime
+   
+   ulExpectSeqNumber = ulAckNumber
+   For ulCounter = 1 to ulNumProbes
+      '
+      ' Receive the zero window probes
+      '
+      ulBytesRcvd = 0
+      ulStartTime = Timer
+      Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, ulTimeout+500, pIFace) 
+      if (pPacket is Nothing) then
+         Core.log "RespondToZeroWindowProbes: Failed to receive zero window probe"
+         RespondToZeroWindowProbes = 1
+         exit function
+      elseif ((ulBytesRcvd <> 1) OR (pPacket.TcpHeader.SeqNumber <> ulExpectSeqNumber)) then
+         Core.log "RespondToZeroWindowProbes: Incorrect zero window probe - Size = " & ulBytesRcvd & ", Seq = " & Hex(pPacket.TcpHeader.SeqNumber) & " <> " & Hex(ulExpectSeqNumber)
+         RespondToZeroWindowProbes = 2
+         exit function
+      end if
+      ulElapsedTime = (Timer - ulStartTime)*1000
+      if (ulCounter > 1) then
+         '
+         ' Since the initial TO will be determined by the current RTT, we will skip
+         ' doing this check for the first transmit
+         ' 
+         if (ulElapsedTime < (ulTimeout - 500)) then
+            Core.log "RespondToZeroWindowProbes: Probe interval too small - " & ulElapsedTime & " << " & (ulTimeout - 500)            
+            if (ulElapsedTime < (DEFAULT_TcpTimedWaitDelay*1000)) then
+               RespondToZeroWindowProbes = 3
+               exit function
+            end if
+         end if
+      end if
+      
+      '
+      ' Send an ACK
+      '
+      Set pPacket = MakeTCPPacket(pPacket.TcpHeader.DestPort, pPacket.TcpHeader.SrcPort, ulSeqNumber, ulAckNumber-1, TCP_ACK, 0)
+      if (ulCounter <> ulNumProbes) then
+         pPacket.TcpHeader.WindowSize = 0
+      else
+         pPacket.TcpHeader.WindowSize = usWindowSize
+      end if
+      pIFace.Send(pPacket) 
+      if (ulElapsedTime < (DEFAULT_TcpTimedWaitDelay*1000)) then
+         ulTimeout = 2*ulElapsedTime
+      end if
+   Next
+
+   RespondToZeroWindowProbes = 0
+End Function
+
+'
+' Function to do data exchange till window shrinks to zero
+'
+Function DoDataExchangeTillWindowShrinksToZero(usWindowSize, ulSeqNumber, ulAckNumber, pIFace, ulBytesSent)
+   Dim ulTotalBytesRcvd, ulBytesRcvd, pPacket, usWindowAvail, usSrcPort, usDestPort
+   
+   if (usWindowSize = 0) then
+      DoDataExchangeTillWindowShrinksToZero = 0
+      exit function
+   end if
+   
+   ulBytesSent = 0 
+   usWindowAvail = usWindowSize                                                            
+   do
+      '
+      ' Receive all the packets
+      '
+      ulTotalBytesRcvd = 0
+      do
+         Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 50, pIFace)  
+         if Not(pPacket is Nothing) then
+            usSrcPort = pPacket.TcpHeader.DestPort
+            usDestPort = pPacket.TcpHeader.SrcPort
+            ulTotalBytesRcvd = ulTotalBytesRcvd + ulBytesRcvd
+            usWindowAvail = usWindowAvail - ulBytesRcvd
+            ulBytesSent = ulBytesSent + ulBytesRcvd
+         end if
+      loop while Not(pPacket is Nothing)
+      
+      '
+      ' If we didn't receive any data since sending the last ACK, we probably
+      ' don't have enough data to shrink the window
+      '
+      if (ulTotalBytesRcvd = 0) then
+         Core.log "DoDataExchangeTillWindowShrinksToZero: Not enough data to shrink the window"
+         DoDataExchangeTillWindowShrinksToZero = 1
+         exit function
+      end if
+      
+      '
+      ' Send an ACK
+      '
+      Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+      pPacket.TcpHeader.WindowSize = usWindowAvail
+      pIFace.Send(pPacket)
+            
+      if (usWindowAvail = 0) then
+         DoDataExchangeTillWindowShrinksToZero = 0
+         exit function
+      end if
+   loop while(TRUE)
+   
+   DoDataExchangeTillWindowShrinksToZero = 0
+
+End Function
+
+      </script>
+   </job>
+</package>

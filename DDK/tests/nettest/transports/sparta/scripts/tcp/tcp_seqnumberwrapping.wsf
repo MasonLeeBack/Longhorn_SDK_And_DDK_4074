@@ -1,0 +1,403 @@
+'************************************* TCP_SeqNumberWrapping.wsf ***********************
+'*                                                                                   *
+'* Author            :    Sandeep Prabhu                                             *
+'* Revision history  :                                                               *
+'*    10/11/2000     sandeep        Created                                          *
+'*                                                                                   *
+'* This script will test the Seq number wrapping functionality                       *
+'*                                                                                   *
+'************************************* TCP_SeqNumberWrapping.wsf ***********************
+
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="TCPLib.vbs"/>
+      <script id="TCP_SeqNumberWrapping" language="VBScript">
+
+
+option explicit
+    
+Dim Core, Sparta, Autosrv, MediaType, AutoArpObject, IFace, pControllerObj
+Const usMSS = 1460
+ 
+'
+' Start the script
+'           
+StartScript "TCP_SeqNumberWrapping", g_szLogDirectory, "Tests for sequence number wrapping"
+
+' ==================================================================================================
+' Main routine
+' ==================================================================================================
+Sub Main
+   Core.SetAssertionTracking "30300"
+   '/**
+   ' @area name="Offload Compliance Test Assertions"
+   ' @group name="TCP Miscellaneous Test Assertions"
+   ' @group name="Sequence Number Wrapping Assertions for TCP/IP v4"
+   ' @define name="Offload" Offload Compliance Test Assertions
+   ' @define name="TCPMisc" TCP Miscellaneous Test Assertions
+   ' @define name="SequenceNumber" Sequence Number Wrapping Assertions for TCP/IP v4
+   ' @hierarchy Offload TCPMisc SequenceNumber
+   ' @key Reference="WLP# - x.x.x.x; RFC-793 Section 3.3; RFC-1323 Section 4"
+   ' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+   ' @key TestName="TCPv4 Sequence Number Wrapping"
+   ' @key TestParam=""
+   ' @key TestLog="TCP_SeqNumberWrapping.log"
+   '*/
+   Dim ulStatus, ulWindowSize
+   g_fCheckOffloadConnection = false   
+   '
+   ' Tests to ensure we handle the seq number wrapping in SYN correctly
+   '   
+   '/**
+   ' @test name="The stack must handle Seq number wrapping in SYN"
+   ' The SYN is sent to stack with Seq Number FFFFFFFF and received from stack in ACK
+   ' Number received from stack in SYN-ACK is expected to be wrapped around
+   '*/
+   IFace.StartListening
+   Core.StartTest "Seq number wrapping in SYN"
+   SeqNumberWrapping FALSE, &HFFFFFFFF
+   Core.EndTest
+   Core.Sleep 2500
+   IFace.StopListening
+
+   '
+   ' Tests to ensure we handle the seq number wrapping in SYN-ACK correctly
+   '   
+   '/**
+   ' @test name="The stack must handle Seq number wrapping in SYN-ACK
+   ' Stack initiates the connection and receives FFFFFFFF as Seq Number in SYN-ACK.
+   ' Then stack must send ACK with wrapped around Ack Number
+   '*/
+   IFace.StartListening
+   Core.StartTest "Seq number wrapping in SYN-ACK"
+   SeqNumberWrapping TRUE, &HFFFFFFFF
+   Core.EndTest
+   Core.Sleep 2500
+   IFace.StopListening
+
+
+   '
+   ' Tests to ensure we handle the seq number wrapping while sending data correctly
+   '   
+   '/**
+   ' @test name="The stack must handle Seq number wrapping in data packet"
+   ' The connection is established in such a way that data received by the stack contains
+   ' Seq. Number high enough to elicit the ACK from stack containing wrapped Seq. number
+   '*/
+   IFace.StartListening
+   Core.StartTest "Seq number wrapping in data packet"
+   SeqNumberWrapping FALSE, &HFFFFFFF0
+   Core.EndTest
+   Core.Sleep 2500
+   IFace.StopListening
+
+   '
+   ' Tests to ensure we handle the seq number wrapping in FIN correctly
+   '   
+   '/**
+   ' @test name="The stack must handle Seq number wrapping in FIN"
+   ' The connection is established. The data is received by the stack till the Seq.
+   ' number is FFFFFFFF. The stack receives FIN and must respond with it's FIN-ACK
+   ' containing wrapped Ack. Number
+   '*/
+   IFace.StartListening
+   Core.StartTest "Seq number wrapping in FIN"
+   SeqNumberWrapping FALSE, &HFFFFFFFF-(1+1000)
+   Core.EndTest
+   Core.Sleep 2500
+   IFace.StopListening
+
+      
+End Sub
+
+'
+' Routine to test the seq number wrapping
+'
+Sub SeqNumberWrapping(fActive, ByVal ulSeqNumber)
+   Dim ulStatus, ulAckNumber, ulSessionId, usSrcPort, usDestPort
+   
+   ulAckNumber = Clng(1)
+   usSrcPort = 5000
+   usDestPort = 6000
+   
+   Core.StartVariation
+
+   '
+   ' Make the stack do a connection establishment
+   '
+   if (fActive) then
+      ulStatus = PassiveConnect(usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)
+      if (ulStatus <> 0) then
+         Core.FailSev1Variation "SeqNumberWrapping: PassiveConnect - " & ulStatus
+         ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+         exit sub
+      end if
+   else   
+      ulStatus = ActiveConnect(usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)
+      if (ulStatus <> 0) then
+         Core.FailSev1Variation "SeqNumberWrapping: ActiveConnect - " & ulStatus
+         ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+         exit sub
+      end if
+   end if
+
+   '
+   ' Do some data transfer
+   '   
+   ulStatus = DataExchange(usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)
+   if (ulStatus <> 0) then
+      Core.FailSev1Variation "SeqNumberWrapping: DataExchange - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+   
+   '
+   ' Close the connection
+   '
+   ulStatus = CloseConnection(usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)
+   if (ulStatus <> 0) then
+      Core.FailSev1Variation "SeqNumberWrapping: CloseConnection - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+
+   ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+
+End Sub
+
+'
+' Function to establish a connection
+'
+Function ActiveConnect(usSrcPort, usDestPort, ByRef ulSessionId, ByRef ulSeqNumber, ByRef ulAckNumber)
+   Dim ulStatus, ulTID, pTCPPacket, ulStartSeqNumber, ulBytesRcvd
+
+   '
+   ' Ask AutoSrv to issue a connect and grab the SYN
+   ' 
+   Set pTCPPacket = GrabSyn(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, FALSE, NULL)  
+   if (pTCPPacket is Nothing) then
+      Core.log "ActiveConnect: Failed to receive a SYN"
+      ActiveConnect = 1
+      exit Function
+   end if
+   
+   '
+   ' Send the SYN-ACK
+   '
+   Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, (TCP_SYN or TCP_ACK), 0)
+   pTCPPacket.TCPHeader.TCPOption(0).AddMSS(usMSS)
+   IFace.Send(pTCPPacket)
+      
+   '
+   ' Receive the ACK
+   '   
+   ulStartSeqNumber = ulSeqNumber
+   Set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 500)
+   if (pTCPPacket is Nothing) then
+      Core.log "ActiveConnect: Didn't receive an ACK"
+      ActiveConnect = 1
+      exit Function
+   end if
+   
+   '
+   ' Verify the ACK number 
+   '
+   if (ulSeqNumber <> (ulStartSeqNumber + 1)) then   
+      Core.log "ActiveConnect: Incorrect ack# in ACK " & ulSeqNumber & " <> " & (ulStartSeqNumber + 1)
+      ActiveConnect = 1
+      exit Function
+   end if 
+
+   '
+   ' Check if connection is offloaded
+   '
+   If Not IsConnectionOffloaded(usSrcPort, usDestPort, ulSessionId) and g_fTestOffload And g_fTOENic Then
+      Core.Log "ActiveConnect : Failed to offload the connection"
+      ActiveConnect = 3
+      Exit function
+   End If
+
+   ActiveConnect = 0
+End Function
+
+
+'
+' Function to establish a connection
+'
+Function PassiveConnect(usSrcPort, usDestPort, ByRef ulSessionId, ByRef ulSeqNumber, ByRef ulAckNumber)
+   Dim ulStatus, ulTID, pTCPPacket, ulStartSeqNumber, ulCounter, pSYNPacket, ulBytesRcvd
+   '
+   ' Create the SYN packet
+   '   
+   Set pSYNPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_SYN, 0)
+   pSYNPacket.TCPHeader.TCPOption(0).AddMSS(usMSS)
+   
+   '
+   ' Ask AutoSrv to issue an accept, send the SYN and grab the SYN-ACK
+   ' 
+   ulStartSeqNumber = ulSeqNumber
+   Set pTCPPacket=GrabSynAck(pSYNPacket, usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId)  
+   if (pTCPPacket is Nothing) then
+      Core.log "PassiveConnect: Failed to receive SYN-ACK"
+      PassiveConnect = 1
+      exit Function
+   end if
+   
+   '
+   ' Verify the ACK number 
+   '
+   if (ulSeqNumber <> (ulStartSeqNumber + 1)) then   
+      Core.log "PassiveConnect: Incorrect ACK# " & ulSeqNumber & " <> " & (ulStartSeqNumber + 1)
+      PassiveConnect = 1
+      exit Function
+   end if 
+      
+   '
+   ' Send the ACK
+   '
+   Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+   IFace.Send(pTCPPacket)
+      
+   '
+   ' Check if connection is offloaded
+   '
+   If Not IsConnectionOffloaded(usSrcPort, usDestPort, ulSessionId) and g_fTestOffload And g_fTOENic Then
+      Core.Log "PassiveConnect : Failed to offload the connection"
+      PassiveConnect = 3
+      Exit function
+   End If
+
+   PassiveConnect = 0
+End Function
+
+
+'
+' Function to do data exchange
+'
+Function DataExchange(usSrcPort, usDestPort, ByRef ulSessionId, ByRef ulSeqNumber, ByRef ulAckNumber)
+   Dim ulStatus, ulTID, pTCPPacket, ulStartSeqNumber, ulCounter, ulBytesRcvd
+
+   '
+   ' Ask AutoSrv to post a receive
+   '   
+   ulStatus = pControllerObj.Receive(ulSessionId, 1, 0, 65535, ulTID)
+   if (ulStatus <> 0) then
+      Core.Log "DataExchange: Receive - " & ulStatus
+      DataExchange = ulStatus
+      exit Function
+   end if
+
+
+   For ulCounter = 1 to 5
+      '
+      ' Send a data packet   
+      '   
+      Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK or TCP_PUSH, 200)      
+      IFace.Send(pTCPPacket)
+   
+      '
+      ' Receive the ACK
+      '   
+      ulStartSeqNumber = ulSeqNumber
+      Set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 500)
+      if (pTCPPacket is Nothing) then
+         Core.log "DataExchange: Didn't receive a SYN-ACK"
+         DataExchange = 1
+         exit Function
+      end if
+   
+      '
+      ' Verify the ACK number 
+      '
+      if (ulSeqNumber <> (ulStartSeqNumber + 200)) then   
+         Core.log "DataExchange: Incorrect ACK# " & ulSeqNumber & " <> " & (ulStartSeqNumber + 200)
+         DataExchange = 1
+         exit Function
+      end if 
+   Next
+            
+   DataExchange = 0
+End Function
+
+
+'
+' Function to close a connection
+'
+Function CloseConnection(usSrcPort, usDestPort, ByRef ulSessionId, ByRef ulSeqNumber, ByRef ulAckNumber)
+   Dim ulStatus, ulTID, pTCPPacket, ulStartSeqNumber, ulBytesRcvd
+
+   '
+   ' Ask AutoSrv to issue a shutdown
+   '   
+   ulStatus = pControllerObj.Shutdown(ulSessionId, ulTID)
+   if (ulStatus <> 0) then
+      Core.Log "CloseConnection: Shutdown - " & ulStatus
+      CloseConnection = ulStatus
+      exit Function
+   end if
+
+
+   '
+   ' Receive the FIN-ACK
+   '   
+   ulStartSeqNumber = ulSeqNumber
+   Set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_FIN or TCP_ACK, 500)
+   if (pTCPPacket is Nothing) then
+      Core.log "CloseConnection: Didn't receive a FIN-ACK"
+      CloseConnection = 1
+      exit Function
+   end if
+   
+   '
+   ' Verify the ACK number 
+   '
+   if (ulSeqNumber <> ulStartSeqNumber) then   
+      Core.log "CloseConnection: Incorrect ack# in FIN-ACK " & ulSeqNumber & " <> " & ulStartSeqNumber
+      CloseConnection = 1
+      exit Function
+   end if 
+
+   If not IsConnectionOffloaded(usSrcPort, usDestPort, ulSessionId) and g_fTestOffload And g_fTOENic Then
+      Core.Log "CloseConnection : Failed to offload the connection"
+      CloseConnection = 1
+      exit Function
+   End If
+      
+   '
+   ' Send the FIN-ACK
+   '
+   Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_FIN or TCP_ACK, 0)
+   IFace.Send(pTCPPacket)
+   
+
+   '
+   ' Receive the ACK
+   '   
+   ulStartSeqNumber = ulSeqNumber
+   Set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 500)
+   if (pTCPPacket is Nothing) then
+      Core.log "CloseConnection: Didn't receive an ACK"
+      CloseConnection = 1
+      exit Function
+   end if
+   
+   '
+   ' Verify the ACK number 
+   '
+   if (ulSeqNumber <> (ulStartSeqNumber + 1)) then   
+      Core.log "CloseConnection: Incorrect ack# in ACK " & ulSeqNumber & " <> " & (ulStartSeqNumber + 1)
+      CloseConnection = 1
+      exit Function
+   end if 
+            
+   CloseConnection = 0
+End Function
+
+      </script>
+   </job>
+</package>

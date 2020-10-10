@@ -1,0 +1,370 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, 802_5, FDDI
+</MEDIA>
+<WHQL>
+802_3, 802_5, FDDI
+</WHQL>
+<CARDMACH>
+1C,1M
+</CARDMACH>
+<RUNORDER>
+1200
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[This script will run 10 variations of the stress test. All of the packets 
+are loopback packets.
+The stress test is designed to create packets with many different buffer configurations 
+(many buffers, zero length, one byte length, random sized).
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="1c_LoopbackStress" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      
+      <!-- Begin Wireless Specific Includes -->
+      <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	   <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	   <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	   <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	   <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+      <!-- End Wireless Specific Includes -->
+      
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/> 
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script id="1c_LoopbackStress" language="VBScript">
+'==========================================================================
+' Script Name:    1c_LoopbackStress
+'==========================================================================
+Option Explicit 
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0)) 
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard, arrTestOpen()
+   Private m_lTestAdapterIndex
+   
+   Private Sub Class_Initialize
+      ReDim arrTestOpen(8)      
+   End Sub
+   
+   Private Sub Class_Terminate
+      Dim nCount
+      
+      For nCount = 0 To 7
+         Set arrTestOpen(nCount) = Nothing
+      Next
+      
+      Set oTestCard = Nothing
+   End Sub
+   
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+
+      If (UseIPHeaders) Then
+         EXit Function
+      End If      
+      
+      Set pAdapterList = oNDInfo.AdapterList
+      
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+      
+      If (Not oTestCard.vbCreateAdapter(pAdapterList(m_lTestAdapterIndex))) Then
+         Exit Function
+      End If
+      
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+         
+         Dim oOpen : Set oOpen = oTestCard.vbOpenAdapter()
+         
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")           
+         If(vbAssociateWep(oOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If	
+         
+         Set oOpen = Nothing
+                                    
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+      
+      oLog.Variation("CreateOpen")
+      Dim nCount
+      For nCount = 0 To 7
+         Set arrTestOpen(nCount) = oTestCard.vbOpenAdapter()
+         If(arrTestOpen(nCount) is Nothing) Then
+            Exit Function
+         End If
+      Next
+      
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+   
+   Public Function RunTest (lTestAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+      
+      Call ExecuteTestCore
+   End Function
+   
+   
+   Private Function ExecuteTestCore
+      
+      Dim nTestId
+      Dim nCount, bResult
+      Dim nMaxPacketSize
+      
+      Dim arrOpenInstance(8)
+      
+      Dim Iterations(10)
+      Dim PacketSize(10)
+      Dim OptionsMask(10)
+      
+      nMaxPacketSize = arrTestOpen(0).vbGetMaxPacketSize()
+      
+      nTestId = oNDTSupp.Random(1, 32765)
+      oLog.Variation("Setting up open instances")
+      
+      ' Set the local/remote id for this test
+      arrTestOpen(0).vbSetChannelId(nTestId)
+      arrTestOpen(1).vbSetChannelId(nTestId)
+      
+      ' Stress tests are not on busy networks
+      arrTestOpen(0).vbSetReceiveOption(RECEIVE_DEFAULT)
+      arrTestOpen(1).vbSetReceiveOption(RECEIVE_DEFAULT)
+      
+      Call arrTestOpen(0).vbSetPacketFilter(DIRECTED)
+      Call arrTestOpen(1).vbSetPacketFilter(DIRECTED)
+      
+      '
+      ' set up variables for all the tests...
+      '
+      
+      '
+      ' Estimated duration: 1 minutes
+      '
+      Iterations(0) = 10000
+      PacketSize(0) = nMaxPacketSize   
+      OptionsMask(0) = STRESS_RANDOMSIZE Or STRESS_ZEROS Or STRESS_ACK Or STRESS_WINDOWING_ON
+      
+      '
+      ' Estimated duration: 1 minutes
+      '
+      Iterations(1) = 10000
+      PacketSize(1) = nMaxPacketSize   
+      OptionsMask(1) = STRESS_RANDOMSIZE Or STRESS_ONES Or STRESS_ACK Or STRESS_WINDOWING_ON
+      
+      '
+      ' Estimated duration: 1 minutes
+      '
+      Iterations(2) = 10000
+      PacketSize(2) = 256
+      OptionsMask(2) = STRESS_RANDOMSIZE Or STRESS_SMALL Or STRESS_ACK Or STRESS_WINDOWING_ON
+      
+      '
+      ' Estimated duration: 1 minutes
+      '
+      Iterations(3) = 100
+      PacketSize(3) = 500
+      OptionsMask(3) = STRESS_CYCLICAL Or STRESS_RAND Or STRESS_ACK Or STRESS_WINDOWING_ON
+      
+      '
+      ' Estimated duration: 3-5 minutes
+      '
+      Iterations(4) = (80000 / nMaxPacketSize)
+      PacketSize(4) = nMaxPacketSize
+      OptionsMask(4) = STRESS_CYCLICAL Or STRESS_RAND Or STRESS_FULLRESP Or STRESS_WINDOWING_ON
+      
+      '
+      ' Estimated duration: 1 minutes
+      '
+      Iterations(5) = 10000
+      PacketSize(5) = 100
+      OptionsMask(5) = STRESS_FIXEDSIZE Or STRESS_SMALL Or STRESS_ACK Or STRESS_WINDOWING_ON
+      
+      '
+      ' Estimated duration: 1 minutes
+      '
+      Iterations(6) = 10000
+      PacketSize(6) = 256
+      OptionsMask(6) = STRESS_RANDOMSIZE Or STRESS_SMALL Or STRESS_ACK10 Or STRESS_WINDOWING_OFF
+      
+      '
+      ' Estimated duration: 1 minutes
+      '
+      Iterations(7) = 10000
+      PacketSize(7) = nMaxPacketSize
+      OptionsMask(7) = STRESS_RANDOMSIZE Or STRESS_RAND Or STRESS_NORESP Or STRESS_WINDOWING_OFF
+      
+      '
+      ' Estimated duration: 1 minutes
+      '
+      Iterations(8) = 10000
+      PacketSize(8) = nMaxPacketSize
+      OptionsMask(8) = STRESS_RANDOMSIZE Or STRESS_RAND Or STRESS_FULLRESP Or STRESS_WINDOWING_OFF
+      
+      '
+      ' Estimated duration: 1 minutes
+      '
+      Iterations(9) = 10000
+      PacketSize(9) = 60
+      OptionsMask(9) = STRESS_FIXEDSIZE Or STRESS_RAND Or STRESS_FULLRESP Or STRESS_WINDOWING_OFF
+      
+      '
+      'Now run the tests...
+      '
+      nCount = CLng(0)
+      
+      Do While (nCount < 10)
+         oLog.Variation("Running stress iteration " & (nCount+1))
+         
+         ' StartStress ClientOpen, ServerOpen, PacketSize, OptionsMask, Iterations, TestDuration
+         bResult = arrTestOpen(0).vbStartStress(arrTestOpen(1), PacketSize(nCount), OptionsMask(nCount), Iterations(nCount), 0)
+         
+         If (bResult) Then
+            bResult = arrTestOpen(0).vbWaitStress()
+            If (bResult) Then
+               bResult = arrTestOpen(0).vbGetStressResults()
+               If(Not bResult) Then
+                  call oLog.Failed ("Unable to obtain stress results" , 21813)
+               End If
+            End If
+         Else
+            call oLog.Failed ("Unable to start stress test" , 21814)
+            nCount = nCount + 1
+            Exit Do
+         End If
+         
+         Call arrTestOpen(0).vbClearEvents()
+         Call arrTestOpen(1).vbClearEvents()
+         
+         nCount = nCount + 1
+      Loop
+      
+      oLog.Variation("NdisClose")
+      ' To avoid confusion, first, we close all the instances
+      bResult = arrTestOpen(0).vbNdisClose()
+      If(Not bResult) Then
+         call oLog.Failed ("Ndis close returned an error" , 21815)
+      End If
+      Set arrTestOpen(0) = Nothing
+      
+      bResult = arrTestOpen(1).vbNdisClose()
+      If(Not bResult) Then
+         call oLog.Failed ("Ndis close returned an error" , 21816)
+      End If
+      Set arrTestOpen(1) = Nothing
+      
+      ' For a total of 4 simultaneous stress instances, we get 8 instances
+      oLog.Variation("Open/Setup multiple instances")
+      
+      ' Here, we go for a random number slightly lower than before,
+      ' so that for each talk, the IDs are one element diff
+      nTestId = oNDTSupp.Random(1, 32000)
+      For nCount = 0 To 7
+         Set arrTestOpen(nCount) = oTestCard.vbOpenAdapter()
+         If(arrTestOpen(nCount) is Nothing) Then
+            Exit Function
+         End If
+         
+         arrTestOpen(nCount).vbSetChannelId(nTestId)
+         
+         If (nCount Mod 2 = 1) Then
+            nTestId = nTestId + 1
+         End If
+         
+         arrTestOpen(nCount).vbSetReceiveOption(RECEIVE_DEFAULT)
+         
+         Call arrTestOpen(nCount).vbSetPacketFilter(DIRECTED)
+         
+      Next
+      
+      '
+      ' Estimated duration: 1-3 minutes
+      ' 
+      oLog.Variation("Running simultaneous stress")
+      ' Originally we used stress from Open1 to 4 other opens. Now, the variation has been converted to 
+      ' running simultaneous stress between multiple open instances
+      
+      bResult = arrTestOpen(0).vbStartStress(arrTestOpen(1), PacketSize(4), OptionsMask(4), (1+(Iterations(4)/10)), 0)
+      bResult = arrTestOpen(2).vbStartStress(arrTestOpen(3), PacketSize(4), OptionsMask(4), (1+(Iterations(4)/10)), 0) And bResult
+      bResult = arrTestOpen(4).vbStartStress(arrTestOpen(5), PacketSize(4), OptionsMask(4), (1+(Iterations(4)/10)), 0) And bResult
+      bResult = arrTestOpen(6).vbStartStress(arrTestOpen(7), PacketSize(4), OptionsMask(4), (1+(Iterations(4)/10)), 0) And bResult
+      
+      If (bResult) Then
+         bResult = arrTestOpen(0).vbWaitStress()
+         bResult = arrTestOpen(2).vbWaitStress() And bResult
+         bResult = arrTestOpen(4).vbWaitStress() And bResult
+         bResult = arrTestOpen(6).vbWaitStress() And bResult
+         
+         oLog.Variation("Obtaining the stress results")
+         If (bResult) Then
+            bResult = arrTestOpen(0).vbGetStressResults()
+            bResult = arrTestOpen(2).vbGetStressResults() And bResult
+            bResult = arrTestOpen(4).vbGetStressResults() And bResult
+            bResult = arrTestOpen(6).vbGetStressResults() And bResult
+            If(Not bResult) Then
+               call oLog.Failed ("Unable to obtain stress results" , 21820)
+            End If
+         End If
+      Else
+         call oLog.Failed ("Unable to start multiple stress tests" , 21821)
+      End If
+      
+      For nCount = 0 To 7   
+         Call arrTestOpen(nCount).vbClearEvents()
+      Next
+      
+   End Function
+End Class
+
+</script>
+</job>
+</package>
+
+
+<!--- CRC = 0x59f78648 --->

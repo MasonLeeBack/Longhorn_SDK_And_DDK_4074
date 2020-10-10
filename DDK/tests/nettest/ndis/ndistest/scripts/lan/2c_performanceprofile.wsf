@@ -1,0 +1,344 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, 802_5, FDDI
+</MEDIA>
+<WHQL>
+802_3, 802_5, FDDI
+</WHQL>
+<CARDMACH>
+2C,1M,2M
+</CARDMACH>
+<RUNORDER>
+1590
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[
+The test runs following three variations of performance test on the test card :
+1. Send large number of packets after checking if test card support promiscuous mode filter.
+2. Receive large number of packets on test card after setting the packet filter to directed receive.
+3. Receive and verify packets send by support card.
+This test runs in a loop for different packet sizes starting from minumum (64/96 bytes) to 
+maximum size that media supports.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="2c_PerformanceProfile" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      
+        <!-- Begin Wireless Specific Includes -->
+        <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	     <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	     <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	     <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	     <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+        <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+        <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+        <!-- End Wireless Specific Includes -->
+        
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/> 
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script language="VBScript" src="..\inc\ConstLAN.vbs"/>
+      <script id="2c_PerformanceBlast" language="VBScript">
+'==========================================================================
+' Script Name:    2c_PerformanceBlast
+'==========================================================================
+Option Explicit 
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0), GetSupportAdapterIndex (oNDInfo.AdapterList, 0)) 
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard, oTestOpen
+   Private oSuppCard, oSuppOpen
+   Private m_lTestAdapterIndex, m_lSuppAdapterIndex
+   
+   Private Sub Class_Initialize
+      
+   End Sub
+   
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+      Set oTestOpen = Nothing
+      
+      Set oSuppCard = Nothing
+      Set oSuppOpen = Nothing
+   End Sub
+   
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+      
+      Set pAdapterList = oNDInfo.AdapterList
+      
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oTestOpen = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpen is Nothing) Then
+         Exit Function
+      End If
+      
+      oLog.Variation ("Setting up Support Adapter")
+      Set oSuppCard = New CLanCard
+      If (oSuppCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oSuppOpen = oSuppCard.vbSetupBasicTest(pAdapterList (m_lSuppAdapterIndex))
+      If (oSuppOpen is Nothing) Then
+         Exit Function
+      End If
+      
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+               
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")           
+         If(vbAssociateWep(oTestOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If	
+         
+         oLog.Variation ("Associating support device with " & NDTESTAP2 & " ...")       
+         If(vbAssociateWep(oSuppOpen, NDTESTAP2) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate support device with " & NDTESTAP2, 88888
+            Exit Function
+         End If	
+                           
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+      
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+   
+   Public Function RunTest (lTestAdapterIndex, lSuppAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      m_lSuppAdapterIndex = lSuppAdapterIndex
+      
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+
+      ExecuteTestCore
+      
+   End Function
+   
+   Private Function ExecuteTestCore
+      Dim nTestId
+      
+      Dim bResult
+      Dim bForceNdis30
+      
+      Dim nMaxPacketSize, nTestMaxPacketSize, nSupportMaxPacketSize
+      
+      Dim lDuration
+      Dim nBytesSent
+      Dim nBytesReceived
+      
+      Dim lPktsPerBurst
+      
+      Dim lSpeed, Mode
+      
+      Dim lSize, lSizeInc, nSizeMin, nSizeMax
+      
+      Dim nResultSize
+      Dim AvailFilters
+      
+      Dim TestAddr
+      
+      oLog.Variation("Setup IP Related Information for Test and support Card")
+      bResult = SetupTestForIP(oTestOpen, m_lTestAdapterIndex, oSuppOpen, m_lSuppAdapterIndex)
+      
+      lPktsPerBurst = 0
+      nResultSize = 4
+      bResult = oTestOpen.vbFastNdisRequest(OID_GEN_MAXIMUM_SEND_PACKETS, lPktsPerBurst, nResultSize)
+      If (Not bResult) Then
+         call oLog.Failed ("Unable to query OID_GEN_MAXIMUM_SEND_PACKETS on Test adapter.", 21378)
+         Exit Function
+      End If
+      
+      If (lPktsPerBurst = 0) Then
+         lPktsPerBurst = 8
+      End If
+      
+      lSpeed = 0
+      
+      nResultSize = 4
+      bResult = oTestOpen.vbFastNdisRequest(OID_GEN_LINK_SPEED, lSpeed, nResultSize)
+      If (Not bResult) Then
+         call oLog.Failed ("Unable to get query OID_GEN_LINK_SPEED on Test adapter.", 21379)
+         Exit Function
+      End If
+      
+      nTestId = oNDTSupp.Random(1, 32765)
+      
+      oLog.Variation("Setup Instances")      
+      oTestOpen.vbSetChannelId(nTestId)
+      oSuppOpen.vbSetChannelId(nTestId)
+      
+      oTestOpen.vbSetReceiveOption(RECEIVE_DEFAULT)
+      oSuppOpen.vbSetReceiveOption(RECEIVE_DEFAULT)
+      
+      If (Not oTestOpen.vbSetPacketFilter(0)) Then
+         Exit Function
+      End If
+      
+      AvailFilters = oTestOpen.vbGetFilters()
+      TestAddr = oTestOpen.vbGetCardAddress()
+      
+      
+      '
+      ' set size of packets to use
+      ' take maximum size of cooperating server into account..
+      '
+      nTestMaxPacketSize = oTestOpen.vbGetMaxPacketSize()
+      nSupportMaxPacketSize = oSuppOpen.vbGetMaxPacketSize()
+      nMaxPacketSize = nSupportMaxPacketSize
+      If (nTestMaxPacketSize < nSupportMaxPacketSize) Then
+         nMaxPacketSize = nTestMaxPacketSize
+      End If
+      
+      lSizeInc    = (nMaxPacketSize - glMinimumPacketSize) / 7
+      nSizeMin    = nMaxPacketSize - (7 * lSizeInc)
+      nSizeMax    = nMaxPacketSize
+      
+      '
+      ' first, do send-only test.  Send random_directed packets to oblivion
+      ' if promiscuous mode is supported
+      '
+      Dim bUseIPHeaders
+      bUseIPHeaders = oNDTSession("UseIPPackets")
+      If (IsEmpty (bUseIPHeaders)) OR (bUseIPHeaders <> 1) Then
+         If (AvailFilters And PROMISCUOUS) Then
+            oLog.Write("****************************")
+            oLog.Write("Send random-directed packets")
+            oLog.Write("****************************")
+            ' Set the promiscuous mode filter
+            oSuppOpen.vbSetPacketFilter(PROMISCUOUS)  ' Error ignored
+                        
+            lSize = nSizeMin
+            Do While (lSize <= nSizeMax)
+               oLog.Variation("Random send performance test")
+               
+               '
+               ' All Performance tests last 30 seconds
+               '
+               bResult = oTestOpen.vbStartPerformance(oSuppOpen, RandomAddr, PERFORM_SEND, lSize, lPktsPerBurst, 0, 30, 0, 0)
+               If (Not bResult) Then
+                  call oLog.Failed ("Unable to execute performance command.", 21381)
+               End If
+               bResult = oTestOpen.vbWaitPerformance()
+               If (Not bResult) Then
+                  call oLog.Failed ("Unable to wait for performance tests to complete.", 21382)
+               End If
+               bResult = oTestOpen.vbGetPerformanceResults(lDuration, nBytesSent, nBytesReceived)
+               If (Not bResult) Then
+                  call oLog.Failed ("Unable to get performance results.", 21383)
+               End If
+               WSCript.Sleep 5000
+               
+               lSize = lSize + lSizeInc
+            Loop
+         End If
+      End If
+      
+      '
+      ' now, do the directed receive tests
+      '
+      oLog.Write("**********************************")
+      oLog.Write("Test reception of directed packets")
+      oLog.Write("**********************************")
+      
+      
+      If(Not oTestOpen.vbSetPacketFilter(DIRECTED)) Then
+         Exit Function
+      End If
+      
+      If(Not oSuppOpen.vbSetPacketFilter(DIRECTED)) Then
+         Exit Function
+      End If
+      
+      
+      lSize = nSizeMin
+      Do While lSize <= nSizeMax
+         '
+         ' All Performance tests will last for 30 seconds
+         '       
+         Mode = PERFORM_RECEIVE
+         oLog.Variation("Directed receive performace test")
+         bResult = oTestOpen.vbStartPerformance(oSuppOpen, TestAddr, Mode, lSize, lPktsPerBurst, 0, 30, 0, 0)
+         If (Not bResult) Then
+            call oLog.Failed ("Unable to execute performance command.", 21386)
+         End If
+         bResult = oTestOpen.vbWaitPerformance()
+         If (Not bResult) Then
+            call oLog.Failed ("Unable to wait for performance tests to complete.", 21387)
+         End If
+         bResult = oTestOpen.vbGetPerformanceResults(lDuration, nBytesSent, nBytesReceived)
+         If (Not bResult) Then
+            call oLog.Failed ("Unable to get performance results.", 21388)
+         End If
+         WSCript.Sleep 5000
+         
+         Mode = PERFORM_RECEIVE + PERFORM_VERIFY_RECEIVES
+         oLog.Variation("Directed receive and veryify performance test")
+         bResult = oTestOpen.vbStartPerformance(oSuppOpen, TestAddr, Mode, lSize, lPktsPerBurst, 0, 30, 0, 0)
+         If (Not bResult) Then
+            call oLog.Failed ("Unable to execute performance command.", 21389)
+         End If
+         bResult = oTestOpen.vbWaitPerformance()
+         If (Not bResult) Then
+            call oLog.Failed ("Unable to wait for performance tests to complete.", 21390)
+         End If
+         bResult = oTestOpen.vbGetPerformanceResults(lDuration, nBytesSent, nBytesReceived)
+         If (Not bResult) Then
+            call oLog.Failed ("Unable to get performance results.", 21391)
+         End If
+         WSCript.Sleep 5000
+         
+         lSize = lSize + lSizeInc
+      Loop
+   End Function
+End Class
+
+</script>
+</job>
+</package>
+
+
+
+<!--- CRC = 0x0d35b931 --->

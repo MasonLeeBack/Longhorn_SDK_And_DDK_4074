@@ -1,0 +1,452 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- edited with XMLSPY v5 rel. 4 U (http://www.xmlspy.com) by Shane McRoberts (Microsoft) -->
+<xs:schema targetNamespace="http://schemas.microsoft.com/help/taskdata/2003/10" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:taskdata="http://schemas.microsoft.com/help/taskdata/2003/10" elementFormDefault="qualified" attributeFormDefault="unqualified" version="1.0.0.2">
+	<xs:element name="taskdata">
+		<xs:annotation>
+			<xs:documentation>This is the root element of this file. It maps to the "assembly" in the corresponding WinFS schema.</xs:documentation>
+		</xs:annotation>
+		<xs:complexType>
+			<xs:sequence>
+				<xs:element name="head" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>The head element contains data that applies to the entire .Help file.</xs:documentation>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="contentSetMembership" maxOccurs="unbounded">
+								<xs:annotation>
+									<xs:documentation>contentSetMembership elements are references to contentSets, which are typically defined in a separate file. All resources, tasks, and categories defined in this file are members of the specified contentSet(s). contentSetMembership does *not* apply to contentSets defined in this file (if any). </xs:documentation>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:simpleContent>
+										<xs:extension base="taskdata:string2048Type">
+											<xs:attribute name="id" type="xs:ID"/>
+											<xs:attribute name="parentSet" type="taskdata:nameRefType">
+												<xs:annotation>
+													<xs:documentation>This is a reference to a contentSet. No children are defined, because all tasks, resources, and categories in this file are children of the specified parent contentSet.</xs:documentation>
+												</xs:annotation>
+											</xs:attribute>
+										</xs:extension>
+									</xs:simpleContent>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="displayName" type="taskdata:displayNameType" minOccurs="0">
+								<xs:annotation>
+									<xs:documentation>This displayName applies to the .Help file as a whole. This may be used as a "location" attribute to assist users in disambiguating tasks.</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+						</xs:sequence>
+						<xs:attribute name="id" type="xs:ID"/>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="tasks" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>These are the tasks packaged in this .Help file. Tasks topics that have metadata so that they can be navigated to or executed.</xs:documentation>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="task" type="taskdata:taskType" minOccurs="0" maxOccurs="unbounded">
+								<xs:annotation>
+									<xs:documentation>Tasks are navigation targets and executable topics. Extensive metadata can be authored to enhance discoverability of tasks.</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+						</xs:sequence>
+						<xs:attribute name="id" type="xs:ID"/>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="resources" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>These are the non-task resources that are packaged in this .Help file. Unlike tasks, resources cannot be navigation targets.</xs:documentation>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="resource" minOccurs="0" maxOccurs="unbounded">
+								<xs:annotation>
+									<xs:documentation>An resource is a file that is not a topic. Typical examples include images (.jpg, .gif), style sheets (.css), or MAML fragments.</xs:documentation>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:complexContent>
+										<xs:extension base="taskdata:resourceType"/>
+									</xs:complexContent>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+						<xs:attribute name="id" type="xs:ID"/>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="categories" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>The taxonomy (AKA table of contents) is defined in the category section. Taxonomy categories and categoryRelations, like resources and tasks, are scoped to the contentSets identified int he contentSetMembership items in the head of this file.</xs:documentation>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="category" type="taskdata:categoryType" minOccurs="0" maxOccurs="unbounded">
+								<xs:annotation>
+									<xs:documentation>A category is a declaration of a taxonomy node. Categories can be declared in any file and referenced in any other file, but should not be declared more than once per contentSet.</xs:documentation>
+								</xs:annotation>
+							</xs:element>
+							<xs:element name="categoryRelation" minOccurs="0" maxOccurs="unbounded">
+								<xs:annotation>
+									<xs:documentation>categoryRelation elements define the parent/child relationship between categories and other categories or tasks. To preserve componentization, categoryRelations should, whenever possible, be produced and distributed as part of the help file where the *child* element of the relationship is defined. categoryRelations that have no parent specified define root (top-level) categories.</xs:documentation>
+								</xs:annotation>
+								<xs:complexType mixed="false">
+									<xs:choice maxOccurs="unbounded">
+										<xs:element name="childCategory" type="taskdata:orderedRefType">
+											<xs:annotation>
+												<xs:documentation>childCategory elements define the children of the parent category (specified in the categoryRelation attributes).</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+										<xs:element name="childTask" type="taskdata:orderedRefType">
+											<xs:annotation>
+												<xs:documentation>childTask elements define the task children of the parent category (specified in the categoryRelation attributes).</xs:documentation>
+											</xs:annotation>
+										</xs:element>
+									</xs:choice>
+									<xs:attribute name="id" type="xs:ID" use="optional"/>
+									<xs:attribute name="parentCategory">
+										<xs:annotation>
+											<xs:documentation>The parentCategory node is optional because top-level nodes have no parents.</xs:documentation>
+										</xs:annotation>
+										<xs:simpleType>
+											<xs:restriction base="taskdata:nameRefType">
+												<xs:minLength value="0"/>
+											</xs:restriction>
+										</xs:simpleType>
+									</xs:attribute>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+						<xs:attribute name="id" type="xs:ID"/>
+					</xs:complexType>
+				</xs:element>
+				<xs:element name="contentSets" minOccurs="0">
+					<xs:annotation>
+						<xs:documentation>contentSets define collection scoping. contentSets are hierarchical (contentSets can contain other contentSets). contentSets are the only items declared in a taskdata file that are not scoped by the contentSetMembership element in the head of the taskdata.</xs:documentation>
+					</xs:annotation>
+					<xs:complexType>
+						<xs:sequence>
+							<xs:element name="contentSet" minOccurs="0" maxOccurs="unbounded">
+								<xs:annotation>
+									<xs:documentation>contentSet elements are declarations of parent or child contentSets (with no relationship specified).</xs:documentation>
+								</xs:annotation>
+								<xs:complexType>
+									<xs:complexContent>
+										<xs:extension base="taskdata:categoryType">
+											<xs:attribute name="defaultSessionFile" type="xs:anyURI"/>
+										</xs:extension>
+									</xs:complexContent>
+								</xs:complexType>
+							</xs:element>
+							<xs:element name="contentSetRelation" minOccurs="0" maxOccurs="unbounded">
+								<xs:annotation>
+									<xs:documentation>contentSetRelation elements define the relationship between contentSets (parent + child). ContentSets with no parents specified are top-level contentSets. contentSetRelation elements should always be produced/published in the file containing the *child* contentSet.</xs:documentation>
+								</xs:annotation>
+								<xs:complexType mixed="false">
+									<xs:choice maxOccurs="unbounded">
+										<xs:element name="childContentSet">
+											<xs:complexType>
+												<xs:complexContent>
+													<xs:restriction base="taskdata:refType"/>
+												</xs:complexContent>
+											</xs:complexType>
+										</xs:element>
+									</xs:choice>
+									<xs:attribute name="id" type="xs:ID"/>
+									<xs:attribute name="parentContentSet">
+										<xs:annotation>
+											<xs:documentation>The parentCategory node is optional because top-level nodes have no parents.</xs:documentation>
+										</xs:annotation>
+										<xs:simpleType>
+											<xs:restriction base="taskdata:nameRefType">
+												<xs:minLength value="0"/>
+											</xs:restriction>
+										</xs:simpleType>
+									</xs:attribute>
+								</xs:complexType>
+							</xs:element>
+						</xs:sequence>
+						<xs:attribute name="id" type="xs:ID"/>
+					</xs:complexType>
+				</xs:element>
+			</xs:sequence>
+			<xs:attribute name="id" type="xs:ID"/>
+			<xs:attribute name="version" type="taskdata:string256Type"/>
+		</xs:complexType>
+	</xs:element>
+	<xs:simpleType name="nameType">
+		<xs:annotation>
+			<xs:documentation>Unique name identifier type</xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:NCName">
+			<xs:maxLength value="256"/>
+			<xs:minLength value="1"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="nameRefType">
+		<xs:annotation>
+			<xs:documentation>Type for reference to unique name identifier</xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:NCName">
+			<xs:minLength value="0"/>
+			<xs:maxLength value="256"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="string256Type">
+		<xs:annotation>
+			<xs:documentation>String limited to 256 characters</xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="256"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="string512Type">
+		<xs:annotation>
+			<xs:documentation>String limited to 512 characters</xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="512"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="string2048Type">
+		<xs:annotation>
+			<xs:documentation>String limited to 2048 characters</xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:maxLength value="2048"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="taskTypeType">
+		<xs:annotation>
+			<xs:documentation>Enumeration of task types</xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:string">
+			<xs:enumeration value="normalTopic"/>
+			<xs:enumeration value="largeTopic"/>
+			<xs:enumeration value="automatedTopic"/>
+			<xs:enumeration value="immediateAutoTopic"/>
+			<xs:enumeration value="shellExecute"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:simpleType name="coreKeywordType">
+		<xs:annotation>
+			<xs:documentation>Originally intended to be equivalent to Core.Keyword type in WinFS, but 256 characters is too short.</xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="taskdata:string512Type"/>
+	</xs:simpleType>
+	<xs:simpleType name="subUrlType">
+		<xs:annotation>
+			<xs:documentation>path+filename to a resource within the file; starts with a '/' [TODO: set a pattern to validate]</xs:documentation>
+		</xs:annotation>
+		<xs:restriction base="xs:anyURI">
+			<xs:minLength value="2"/>
+			<xs:maxLength value="260"/>
+		</xs:restriction>
+	</xs:simpleType>
+	<xs:complexType name="itemType" abstract="true">
+		<xs:annotation>
+			<xs:documentation>Base type for all items</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="displayName" type="taskdata:displayNameType" minOccurs="0">
+				<xs:annotation>
+					<xs:documentation>This is the displayName (title) of the item (task, resource, category, etc.), when it is presented in a result list or disambiguation list. To facilitate localization, this is an element rather than an attribute.</xs:documentation>
+				</xs:annotation>
+			</xs:element>
+		</xs:sequence>
+		<xs:attribute name="name" type="taskdata:nameType" use="required"/>
+		<xs:attribute name="id" type="xs:ID">
+			<xs:annotation>
+				<xs:documentation>This ID is an identifier within the XML document and is not intended to be promoted or otherwise used. It is here only to facilitate localization (which requires that each element have an ID).</xs:documentation>
+			</xs:annotation>
+		</xs:attribute>
+		<xs:attribute name="version" type="taskdata:string256Type"/>
+	</xs:complexType>
+	<xs:complexType name="resourceType">
+		<xs:annotation>
+			<xs:documentation>Generic resource type (for images, css, etc.) and base for tasks.</xs:documentation>
+		</xs:annotation>
+		<xs:complexContent>
+			<xs:extension base="taskdata:itemType">
+				<xs:attribute name="subUrl" type="taskdata:subUrlType" use="required"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="taskType" abstract="0">
+		<xs:annotation>
+			<xs:documentation>This is the core type for tasks</xs:documentation>
+		</xs:annotation>
+		<xs:complexContent>
+			<xs:extension base="taskdata:resourceType">
+				<xs:sequence>
+					<xs:element name="description" minOccurs="0">
+						<xs:annotation>
+							<xs:documentation>This description should be suitable as a tooltip or as explicatory text in a multi-column display. To facilitate localization, this is an element rather than an attribute.</xs:documentation>
+						</xs:annotation>
+						<xs:complexType>
+							<xs:simpleContent>
+								<xs:extension base="taskdata:string2048Type">
+									<xs:attribute name="id" type="xs:ID"/>
+								</xs:extension>
+							</xs:simpleContent>
+						</xs:complexType>
+					</xs:element>
+					<xs:element name="subjectTerms" type="taskdata:termsType" minOccurs="0">
+						<xs:annotation>
+							<xs:documentation>Subject terms are user-visible index items similar to K-keywords in earlier versions of Help.</xs:documentation>
+						</xs:annotation>
+					</xs:element>
+					<xs:element name="linkTerms" type="taskdata:termsType" minOccurs="0">
+						<xs:annotation>
+							<xs:documentation>Link terms are non-user-visible selection terms, similar to A-keywords in earlier verisons of Help. In Longhorn M7, these terms are not yet used or supported, but are reserved for future use.</xs:documentation>
+						</xs:annotation>
+					</xs:element>
+					<xs:element name="searchTerms" type="taskdata:termsType" minOccurs="0">
+						<xs:annotation>
+							<xs:documentation>Search terms are non-user-visible terms that are used to improve search results. Typically, these terms are queries or important phrases (keywords) that can be used to enhance the full-text search. In Longhorn M7, these terms are not yet used or supported, but are reserved for future use.</xs:documentation>
+						</xs:annotation>
+					</xs:element>
+					<xs:element name="experienceTerms" type="taskdata:termsType" minOccurs="0">
+						<xs:annotation>
+							<xs:documentation>Experience terms describe the suitability of this task for certain experiences, such as Top 10 in the Help Place. </xs:documentation>
+						</xs:annotation>
+					</xs:element>
+					<xs:element name="bestBetTerms" type="taskdata:orderedTermsType" minOccurs="0">
+						<xs:annotation>
+							<xs:documentation>Best bet terms indicate that this task should appear at or near the top of the result list when the specified term is entered as a user query. These terms can be presented in an authored order. The order should be set appropriately for the entire corpus/collection (top-level contentSet) to avoid ambiguity. </xs:documentation>
+						</xs:annotation>
+					</xs:element>
+					<xs:element name="exclusionCondition" type="taskdata:conditionType" minOccurs="0" maxOccurs="unbounded">
+						<xs:annotation>
+							<xs:documentation>Exclusion conditions describe user/machine state that, when detected, should prevent the production of this task as an item in a taxonomy or result list.</xs:documentation>
+						</xs:annotation>
+					</xs:element>
+				</xs:sequence>
+				<xs:attribute name="icon" type="taskdata:string512Type"/>
+				<xs:attribute name="isSearchable" type="xs:boolean" default="true"/>
+				<xs:attribute name="type" type="taskdata:taskTypeType" default="normalTopic"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="categoryType">
+		<xs:annotation>
+			<xs:documentation>Category declaration type</xs:documentation>
+		</xs:annotation>
+		<xs:complexContent>
+			<xs:extension base="taskdata:itemType">
+				<xs:sequence>
+					<xs:element name="description" minOccurs="0">
+						<xs:annotation>
+							<xs:documentation>This description should be suitable as a tooltip or as explicatory text in a multi-column display. To facilitate localization, this is an element rather than an attribute.</xs:documentation>
+						</xs:annotation>
+						<xs:complexType>
+							<xs:simpleContent>
+								<xs:extension base="taskdata:string2048Type">
+									<xs:attribute name="id" type="xs:ID"/>
+								</xs:extension>
+							</xs:simpleContent>
+						</xs:complexType>
+					</xs:element>
+				</xs:sequence>
+				<xs:attribute name="icon" type="taskdata:string256Type"/>
+			</xs:extension>
+		</xs:complexContent>
+	</xs:complexType>
+	<xs:complexType name="displayNameType">
+		<xs:annotation>
+			<xs:documentation>Type for display names</xs:documentation>
+		</xs:annotation>
+		<xs:simpleContent>
+			<xs:extension base="taskdata:string512Type">
+				<xs:attribute name="id" type="xs:ID"/>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<xs:complexType name="termType">
+		<xs:annotation>
+			<xs:documentation>Type for terms like keywords, subject terms, etc.</xs:documentation>
+		</xs:annotation>
+		<xs:simpleContent>
+			<xs:extension base="taskdata:coreKeywordType">
+				<xs:attribute name="id" type="xs:ID"/>
+				<xs:attribute name="logId" type="taskdata:string256Type"/>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<xs:complexType name="orderedTermType">
+		<xs:annotation>
+			<xs:documentation>Type for terms like keywords, subject terms, etc.</xs:documentation>
+		</xs:annotation>
+		<xs:simpleContent>
+			<xs:extension base="taskdata:coreKeywordType">
+				<xs:attribute name="id" type="xs:ID"/>
+				<xs:attribute name="logId" type="taskdata:string256Type"/>
+				<xs:attribute name="order">
+					<xs:annotation>
+						<xs:documentation>Order is optional but when not present, the order of items is indeterminate. The viewing experience may apply an order (such as alphabetical) if desired.</xs:documentation>
+					</xs:annotation>
+					<xs:simpleType>
+						<xs:restriction base="xs:float">
+							<xs:minInclusive value="0.0"/>
+						</xs:restriction>
+					</xs:simpleType>
+				</xs:attribute>
+			</xs:extension>
+		</xs:simpleContent>
+	</xs:complexType>
+	<xs:complexType name="termsType">
+		<xs:annotation>
+			<xs:documentation>Type for groups of terms</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="term" type="taskdata:termType" minOccurs="0" maxOccurs="unbounded"/>
+		</xs:sequence>
+		<xs:attribute name="id" type="xs:ID"/>
+	</xs:complexType>
+	<xs:complexType name="orderedTermsType">
+		<xs:annotation>
+			<xs:documentation>Type for groups of terms</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:element name="term" type="taskdata:orderedTermType" minOccurs="0" maxOccurs="unbounded"/>
+		</xs:sequence>
+		<xs:attribute name="id" type="xs:ID"/>
+	</xs:complexType>
+	<xs:complexType name="conditionType">
+		<xs:annotation>
+			<xs:documentation>For state annotations</xs:documentation>
+		</xs:annotation>
+		<xs:sequence>
+			<xs:any namespace="##any" processContents="skip" maxOccurs="unbounded">
+				<xs:annotation>
+					<xs:documentation>Any well-formed XML is acceptable inside the exclusionCondition. No validation is performed on this XML.</xs:documentation>
+				</xs:annotation>
+			</xs:any>
+		</xs:sequence>
+		<xs:attribute name="id" type="xs:ID"/>
+		<xs:attribute name="logId" type="taskdata:string256Type"/>
+	</xs:complexType>
+	<xs:complexType name="refType" mixed="false">
+		<xs:annotation>
+			<xs:documentation>Reference to a named item (category or task)</xs:documentation>
+		</xs:annotation>
+		<xs:attribute name="id" type="xs:ID"/>
+		<xs:attribute name="ref" type="taskdata:nameRefType" use="required"/>
+	</xs:complexType>
+	<xs:complexType name="orderedRefType" mixed="false">
+		<xs:annotation>
+			<xs:documentation>Ordered reference to a named item (category or task)</xs:documentation>
+		</xs:annotation>
+		<xs:attribute name="id" type="xs:ID"/>
+		<xs:attribute name="ref" type="taskdata:nameRefType" use="required"/>
+		<xs:attribute name="order">
+			<xs:annotation>
+				<xs:documentation>Order is optional but when not present, the order of items is indeterminate. The viewing experience may apply an order (such as alphabetical) if desired.</xs:documentation>
+			</xs:annotation>
+			<xs:simpleType>
+				<xs:restriction base="xs:float">
+					<xs:minInclusive value="0.0"/>
+				</xs:restriction>
+			</xs:simpleType>
+		</xs:attribute>
+	</xs:complexType>
+</xs:schema>

@@ -1,0 +1,193 @@
+'
+' File          : TCPv6_StateNonConformance_LAST_ACK.wsf
+' Author        : Sandeep Prabhu [5/14/01]
+'
+' A script to test the state non-conformance scenarios in LAST_ACK state
+'
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\..\common\IPv6Common.Lib"/>
+      <script language="VBScript" src="..\..\common\TCPv6Helper.Lib"/>
+      <script language="VBScript" src="TCPv6StateChangesHelper.Lib"/>
+      <script id="TCPv6_StateNonConformance_LAST_ACK" language="VBScript">
+
+
+option explicit
+    
+Dim Core, Sparta, Autosrv, MediaType, AutoNDObject, IFace, pControllerObj, ExceptionStatus
+
+ 
+StartScript "TCPv6_StateNonConformance_LAST_ACK", g_szLogDirectory, "Tests for state non conformance in LAST_ACK"
+
+
+'
+' Main routine
+'
+Sub Main
+
+   Core.SetAssertionTracking "20600"
+   '/**
+   ' @area name="Offload Compliance Test Assertions"
+   ' @group name="TCP Connection State Transition Assertions"
+   ' @group name="State Nonconformance in LAST_ACK State Assertions for TCP/IP v6" 
+   ' @define name="Offload" Offload Compliance Test Assertions
+   ' @define name="TCPStates" TCP Connection State Transition Assertions
+   ' @define name="StateNonConfv6" State Nonconformance in LAST_ACK State Assertions for TCP/IP v6
+   ' @hierarchy Offload TCPStates StateNonConfv6
+   ' @key Reference="WLP# - x.x.x.x; RFC-793 Sections 3.2, 3.4, 3.5, RFC-1122 Section 4.2.2.8, 4.2.2.12, 4.2.2.13"
+   ' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+   ' @key TestName="TCPv6 Connection State Nonconformance in LAST_ACK Tests"
+   ' @key TestLog="TCPv6_StateNonConformance_LAST_ACK.log"
+   '*/
+   Core.StartTest "LAST_ACK state"
+   '/**
+   ' @test name="The stack must repond correctly to the below scenarios when the TCP connection is in LAST_ACK state"
+   ' Application on the test machine accepts a connection from the remote end.
+   ' Test verifies that Stack transitions the connection to ESTABLISHED state. 
+   ' Upon stack receiving a FIN-ACK, test verifies that Stack sends an ACK and transitions the connection to CLOSE_WAIT state. 
+   ' Application closes the connection.
+   ' Test verifies that Stack sends FIN and transitions the connection to LAST_ACK state. <br/>
+   ' While the connection is at LAST_ACK state, <br/>
+   ' - upon Stack receiving a RST, test verifies that Stack transitions the connection to CLOSED state. <br/>
+   ' - upon Stack receiving a SYN, test verifies that Stack sends a RST and transitions the connection to CLOSED state. <br/>
+   ' - upon Stack receiving data, test verifies that Stack ignores and does not receive it. <br/>
+   ' - upon Stack receiving a FIN, test verifies that Stack ignores and does not receive it. <br/>
+   '*/
+   LAST_ACKNonConformance
+   Core.EndTest
+   Core.Sleep 2500
+
+End Sub
+
+
+'
+' Routine to do the non conformance tests in LAST_ACK state
+' Checks done -
+'     1. RST should transition the connection to CLOSED state
+'     2. SYN should result in a RST and transition the connection to CLOSED state
+'     3. Send data and ensure its not received
+'     4. Send a FIN and check its ignored
+'
+Sub LAST_ACKNonConformance
+   Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim ulBytesRcvd, pPacket, AutoNDObject, pIFace, PacketType, ulCounter, bResponse
+   Dim ulBytesSent, bType
+
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 17000
+   usDestPort = 17001
+   
+   Set AutoNDObject = Sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, g_szLocalSpoofIp6Address, FALSE)    
+   Set pIFace = CreateInterface(TRUE, g_szRemoteMacAddress, g_szRemoteIp6Address, g_szLocalSpoofIp6Address)
+   pIFace.StartListening
+   PacketType = Array(TCP_SYN, TCP_RST, TCP_ACK or TCP_PUSH, TCP_FIN)
+   
+   For ulCounter = lBound(PacketType) to uBound(PacketType)
+      bType = PacketType(ulCounter)
+   
+      '
+      ' Establish a TCP connection
+      '
+      Core.StartVariation
+      ulStatus = ActiveConnect(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "LAST_ACKNonConformance: ActiveConnect - " & ulStatus
+         exit sub
+      end if
+      
+      '
+      ' do loop used to get around using goto
+      '
+      do
+         '
+         ' Transition the connection to CLOSE_WAIT state
+         '
+         ulStatus = ESTD__CLOSE_WAIT(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+         if (ulStatus <> 0) then
+            Core.FailSev1Variation "LAST_ACKNonConformance: ESTD__CLOSE_WAIT - " & ulStatus
+            exit sub
+         end if
+
+         '
+         ' Transition the connection to LAST_ACK state
+         '
+         ulStatus = CLOSE_WAIT__LAST_ACK(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+         if (ulStatus <> 0) then
+            Core.FailSev1Variation "LAST_ACKNonConformance: CLOSE_WAIT__LAST_ACK - " & ulStatus
+            exit sub
+         end if
+                  
+         '
+         ' Send appropriate packet and check for a response
+         '   
+         Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, bType, 0)
+         if (bType = (TCP_ACK or TCP_PUSH)) then
+            pPacket.UserData 100, "This is a test"
+         end if
+         pIFace.Send(pPacket)
+
+         bResponse = TCP_ACK         
+         If (bType = TCP_SYN) then
+            bResponse = TCP_RST
+         end if
+         
+         '
+         ' Wait for the response
+         ' 
+         Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, bResponse, 200, pIFace)    
+         if ((pPacket is Nothing) AND (bType=TCP_SYN)) then
+            Core.FailSev1Variation "LAST_ACKNonConformance: Failed to receive a response"
+            exit do
+         elseif (Not(pPacket is Nothing) AND (bType<>TCP_SYN)) then
+            Core.FailSev1Variation "LAST_ACKNonConformance: Received a response"
+            exit do
+         end if
+
+         Core.StartVariation         
+         if ((bType=TCP_RST) OR (bType=TCP_SYN)) then
+            '
+            ' Ensure the connection has transitioned to CLOSED state 
+            '
+            Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+            pIFace.Send(pPacket)
+            
+            Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_RST, 200, pIFace)                
+            if (pPacket is Nothing) then            
+               Core.FailSev1Variation "LAST_ACKNonConformance: Connection not in CLOSED state"
+               exit do
+            end if
+         elseif (bType=(TCP_PUSH or TCP_ACK)) then         
+            '
+            ' Ensure the data is not received
+            '
+            ulStatus = pControllerObj.GetSessionStats(ulSessionId, ulBytesSent, ulBytesRcvd)
+            if (ulStatus <> 0) then
+                Core.BlockVariation "LAST_ACKNonConformance: GetSessionStats - " & ulStatus
+                Exit do
+            elseif (ulBytesRcvd <> 0) then
+                Core.FailSev1Variation "LAST_ACKNonConformance: Received " & ulBytesRcvd & " bytes"
+                exit do
+            end if
+         end if
+      loop while (FALSE)
+       
+      '
+      ' Reset the connection
+      '
+      ulStatus = ResetConnectionEx(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId)
+      if (ulStatus <> 0) then
+         Core.log "ERROR: LAST_ACKNonConformance: ResetConnectionEx - " & ulStatus
+      end if
+   Next
+End Sub
+
+      </script>
+   </job>
+</package>
+

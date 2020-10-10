@@ -1,0 +1,277 @@
+<!-- CRC = 0xe4a6b289 -->
+<package>
+<SCRIPTDEF>
+<RUNORDER>
+1900
+</RUNORDER>
+<MEDIA>
+802_3
+</MEDIA>
+<PHYMEDIA>
+WIRELESSLAN
+</PHYMEDIA>
+<WHQL>
+802_3
+</WHQL>
+<CARDMACH>
+2C,1M,2M
+</CARDMACH>
+<DESCRIPTION>
+<![CDATA[
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+<job id="Job" prompt="no">
+		<?job error="true" debug="true"?>
+	<reference guid="{97B1B574-D0D4-4896-93B6-A2679336A8E1}" version="1.0"/>
+	<reference object="NDInfo.Info.1" version="1.0"/>
+	<reference object="NDTCore.base.1" version="1.0"/>
+	<object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+	<object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+	<object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+	<object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+	<object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+	<!-- Begin Wireless Specific Includes -->
+	<script language="VBScript" src="..\inc\CNDTStructMngr.vbs"/>
+	<script language="VBScript" src="..\inc\WlanConstants.vbs"/>
+	<script language="VBScript" src="..\inc\WlanLibrary.vbs"/>
+	<script language="VBScript" src="..\inc\CNDT1XSupp.vbs"/>
+	<script language="VBScript" src="..\inc\CWlanOpen.vbs"/>
+	<script language="VBScript" src="..\inc\CWlanCard.vbs"/>
+	<!-- End Wireless Specific Includes -->
+	<script language="VBScript" src="..\inc\Events.vbs"/>
+	<script language="VBScript" src="..\inc\clog.vbs"/>
+	<script language="VBScript" src="..\inc\Constants.vbs"/>
+	<script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+	<script language="VBScript" src="..\inc\utilities.vbs"/>
+	<script language="VBScript" src="..\inc\devchars.vbs"/>
+	<script language="VBScript" src="..\inc\general.vbs"/>
+	<script language="VBScript">
+Option Explicit 
+Dim oTest : Set oTest = Nothing
+
+Initialize()
+
+Do
+
+   Set oTest = New CTest
+   If(oTest.SetupTest(GetTestAdapterIndex(oNDInfo.AdapterList, 0), GetSupportAdapterIndex(oNDInfo.AdapterList, 0)) = False) Then
+      Exit Do
+   End If
+   
+   oTest.RunTest()
+   
+Loop While(False)
+
+oTest.CleanupTest()
+Set oTest = Nothing
+
+Terminate()
+
+Class CTest
+   
+   Private m_testCard
+   Private m_testOpen
+   Private m_testIndex
+   Private m_testGUID
+   Private m_testMAC
+   
+   Private m_suppCard
+   Private m_suppOpen
+   Private m_suppIndex
+   Private m_suppGUID
+   Private m_suppMAC
+   
+   Private m_adapterList
+     
+   '================================================================================================='
+   Private Sub Class_Initialize
+      
+      Set m_adapterList    = oNDInfo.AdapterList
+      
+   End Sub
+   
+   '================================================================================================='
+   Private Sub Class_Terminate
+   
+      Set m_testCard       = Nothing
+      Set m_testOpen       = Nothing
+      
+      Set m_suppCard       = Nothing
+      Set m_suppOpen       = Nothing
+      
+   End Sub
+      
+   '================================================================================================='
+   Public Function SetupTest(byval testIndex, byval suppIndex)
+   Dim result        : result       = -1
+   Dim ndisStatus    : ndisStatus   = -1
+   
+      SetupTest = False
+
+      m_testIndex = testIndex
+      m_suppIndex = suppIndex
+      
+      m_testGUID  = m_adapterList(m_testIndex).GUID
+      m_suppGUID  = m_adapterList(m_suppIndex).GUID
+
+      '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+      oLog.VariationEx "Setup test", Null
+      Do
+      
+         Set m_testCard = New CWlanCard
+         If (m_testCard is Nothing) Then
+            oLog.FailedEx "Failed to create CWlanCard class", Null, 88888
+            Exit Do
+         End If
+                  
+         Set m_testOpen = m_testCard.vbSetupBasicTest(m_adapterList(m_testIndex))
+         If (m_testOpen is Nothing) Then
+            Exit Do
+         End If
+         
+         Set m_suppCard = New CWlanCard
+         If (m_suppCard is Nothing) Then
+            oLog.FailedEx "Failed to create CWlanCard class", Null, 88888
+            Exit Do
+         End If
+                  
+         Set m_suppOpen = m_suppCard.vbSetupBasicTest(m_adapterList(m_suppIndex))
+         If (m_suppOpen is Nothing) Then
+            Exit Do
+         End If
+         
+         If(m_testOpen.vbIsWPASupported = False) Then
+            oLog.Write "<b>" & m_testCard.vbAdapterName & " does not support WPA, aborting script</b>"
+            Exit Function
+         End If
+                  
+         If(m_testOpen.vbGetCardAddress(m_testMAC) = False) Then
+            oLog.Failed "vbGetCardAddress() failed", 88888
+            Exit Function
+         End If
+         
+         If(m_suppOpen.vbGetCardAddress(m_suppMAC) = False) Then
+            oLog.Failed "vbGetCardAddress() failed", 88888
+            Exit Function
+         End If
+         
+         'If(m_testOpen.vbInitializeSupplicant(m_testGUID) = False) Then
+         '   oLog.Failed "vbInitializeSupplicant() failed for " & m_testCard.vbAdapterName, 88888
+         '   Exit Function
+         'End If
+                
+         SetupTest = True 
+      
+      Loop While(False)
+                       
+   End Function
+   
+   '================================================================================================='
+   Public Function CleanupTest()
+   Dim ndisStatus    : ndisStatus   = -1
+	   
+	   m_testOpen.vbWlanReset(True)
+	   m_suppOpen.vbWlanReset(True)
+	   
+	   oLog.Write ""
+	   oLog.Write "<b>TEST DEVICE TYPE:    " & vbDeviceTypeToString(m_testOpen.vbDeviceType) & "</b>"
+	   oLog.Write "<b>SUPPORT DEVICE TYPE: " & vbDeviceTypeToString(m_suppOpen.vbDeviceType) & "</b>"  
+	   oLog.Write ""
+                           
+   End Function
+  
+   '================================================================================================='
+   Function RunTest()
+   
+      If(ExecuteTest(WLAN_WPA_AP1) = False) Then
+      End If
+                         
+   End Function
+   
+   '================================================================================================='
+   Function ExecuteTest(byval testSsid)
+   Dim encryptionModes        : encryptionModes       = Null
+   Dim retval	               : retval	               = False
+   Dim ndisStatus             : ndisStatus            = -1
+   Dim index                  : index                 = 0
+   Dim authenticationMode     : authenticationMode    = 0
+   Dim authMode               : authMode              = 0
+   Dim packetsReceived        : packetsReceived       = 0
+   Dim packetsToSend          : packetsToSend         = 50
+   Dim packetsSent            : packetsSent           = 0
+   Dim minDirectedPass        : minDirectedPass       = (WLAN_PERCENT_TO_PASS_DIRECTED * packetsToSend) / 100
+   Dim minBroadcastPass       : minBroadcastPass      = (WLAN_PERCENT_TO_PASS_BROADCAST * packetsToSend) / 100
+   Dim authenticationModes    : authenticationModes   = Array(Ndis802_11AuthModeOpen,        _
+                                                              Ndis802_11AuthModeShared,      _
+                                                              Ndis802_11AuthModeWPA,         _
+                                                              Ndis802_11AuthModeWPAPSK,      _
+                                                              Ndis802_11AuthModeWPANone)
+      
+      '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'      
+      oLog.VariationEx  "Set OID_802_11_AUTHENTICATION_MODE with invalid value", _
+                        "This test will set OID_802_11_AUTHENTICATION_MODE with an invalid authentication mode and verify the request fails"
+      Do
+      
+         ndisStatus = m_testOpen.vbSetWlanAuthenticationMode(20)
+         If(ndisStatus <> NDIS_STATUS_INVALID_DATA) Then
+            oLog.FailedEx  "Should have returned NDIS_STATUS_INVALID_DATA", _
+                           "Driver must return NDIS_STATUS_INVALID_DATA when OID_802_11_AUTHENTICATION_MODE is set with an invalid authentication mode", 88888
+            Exit Do
+         End If
+      
+      Loop While(False)
+      
+      '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+      oLog.Variation("Verifying all valid authentication modes are supported ...") 
+      For Each authenticationMode In authenticationModes
+                     
+         ndisStatus = m_testOpen.vbSetWlanAuthenticationMode(authenticationMode)
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to set OID_802_11_AUTHENTICATION_MODE (" & vbAuthenticationModeToString(authenticationMode) &  ")", 88888
+            Exit For
+         End If
+               
+         ndisStatus = m_testOpen.vbGetWlanAuthenticationMode(authMode)
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to query OID_802_11_AUTHENTICATION_MODE", 88888
+            Exit For
+         End If
+               
+         ' Verify the value returned is the value previously set
+         If(Not authenticationMode = authMode) Then
+            oLog.FailedEx  "Should have returned " & vbAuthenticationModeToString(authenticationMode), _
+                           "Driver must return the authentication mode previously set", 88888
+         End If
+                     
+      Next 
+            
+      '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+      oLog.VariationEx  "Associate with with Open AP using WPAPSK", _
+                        "This test will associate with an Open AP using WPAPSK and verify the associate fails"
+      Do
+      
+         ndisStatus = m_testOpen.vbAssociate(Ndis802_11Infrastructure,     _
+                                             Ndis802_11AuthModeWPAPSK,     _
+                                             Ndis802_11Encryption2Enabled, _
+                                             Null,                         _
+                                             Null,                         _
+                                             Null,                         _
+                                             WLAN_WEP_AP1,                 _
+                                             WLAN_ASSOCIATE_TIMEOUT)      
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.FailedEx  "Should not have associate with " & WLAN_WEP_AP1, _
+                           "Should not have been able to associate with an AP using Open Authentication when the device authentication mode is WPAPSK", 88888
+            Exit Do
+         End If	  
+      
+      Loop While(False)
+      
+   End Function
+     
+End Class
+
+	</script>
+</job>
+</package>
+<!--- CRC = 0xdab58706 --->

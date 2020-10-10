@@ -1,0 +1,1306 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3
+</MEDIA>
+<CARDMACH>
+2C,1M
+</CARDMACH>
+<RUNORDER>
+3030
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[
+This tests the stress send/receive code paths of NDIS 6.0 miniport drivers.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="2c_Mini6Stress" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore6" progid="NDTCore6.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oCoreFactory" progid="NDTCore6.Factory.1" events="true"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\inc\Constants6.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard6.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen6.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanEndPointEx6.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script language="VBScript" src="..\inc\StressConfig.vbs"/>      
+      <script language="VBScript" src="..\inc\CommEngineLib.vbs"/>
+      <script id="2c_Mini6Stress" language="VBScript">
+'==========================================================================
+' Script Name:    2c_Mini6Stress
+'==========================================================================
+Option Explicit
+
+Const MINI6_STRESS_WARN_ON_PADDING     = &H01000000&
+Const MINI6_STRESS_IGNORE_CORRUPTION   = &H02000000&
+Const MINI6_STRESS_WARN_ON_ORDER_ERROR = &H04000000&
+
+
+' Internal status code constants
+Const STRESS_STATUS_SUCCESS            = 0
+Const STRESS_STATUS_EXECUTE_FAILURE    = 1
+Const STRESS_STATUS_SEND_ERROR         = 2
+Const STRESS_STATUS_RECV_ERROR         = 3
+Const STRESS_STATUS_PACKET_CORRUPTION  = 4
+Const STRESS_STATUS_PACKET_PADDED      = 5
+Const STRESS_STATUS_OUT_OF_ORDER_RECV  = 6
+
+' Number of stress test iterations we want to run
+Const MINI6_STRESS_MAXIMUM_TESTCASES   = 14
+
+Dim oTestObj
+
+' We are going to be using ndis 6 protocol
+g_UseNdis6Protocol = TRUE
+
+' We would also be using the trick to point oNDTCore to oNDTCore6, so that anyone who
+' uses oNDTCore would automatically get oNDTCore6. Only problem is we might be masking
+' some errors, so this would not be done just yet
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0), GetSupportAdapterIndex (oNDInfo.AdapterList, 0))
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Dim m_lTestAdapterIndex, oTestCard
+   Dim oTestOpen, oTestHelper
+   
+   Dim m_lSuppAdapterIndex, oSuppCard
+   Dim oSuppOpen, oSuppHelper
+
+   ' When we dont want anything specific, we use these config
+   Dim m_oDefaultMDLChainAllocatorConfig     
+   Dim m_oDefaultPayloadDataFillerConfig
+   Dim m_oDefaultMDLLengthFragmenterConfig
+   Dim m_oDefaultDataLengthProviderConfig
+   Dim m_oDefaultNetBufferPadHelperConfig
+   Dim m_oDefaultTrafficManagerConfig
+
+   Dim nBaseTestId
+
+   ' This is the computed maximum packet size we are allowed to send on the wire 
+   Dim nMaxPacketSize
+   
+   ' This is the maximum dummy padding size we would use.  The dummy padding size
+   ' is used to attach empty MDLs before (NET_BUFFER_DATA_OFFSET > length of 
+   ' NET_BUFFER_FIRST_MDL) and after the NET_BUFFER data MDLs (NET_BUFFER_DATA_LENGTH
+   ' < length of MDL chain). It is generally <= MaxPacketSize
+   Dim nMaxDummyPaddingSize
+
+   ' This is the maximum padding we would use inside our data MDLs (ie set non zero
+   ' NET_BUFFER_CURRENT_MDL_OFFSET & set NET_BUFFER_DATA_LENGTH < length of MDL chain)
+   Dim nMaxDataPaddingSize
+
+   ' These are the maximum number of NET_BUFFERs per NET_BUFFER_LIST that we
+   ' would use during a send
+   Dim nNetBuffersPerNetBufferlist
+
+   ' These are the maximum number of NET_BUFFER_LISTs per NdisSend we would use during
+   ' a send
+   Dim nNetBufferListsPerSend
+
+   Dim nMaxPendingNetBufferCount
+
+   Dim nDefaultTotalNumCallsToSend, nDefaultSendDuration
+
+   ' Percentage of packets that can be padded
+   Dim nAllowedPadPercentage
+
+   Private Sub Class_Initialize
+      ' Setup some defaults
+      nNetBuffersPerNetBufferlist = 10
+      nNetBufferListsPerSend = 10
+      ' These are the maximum number of NET_BUFFERs that we allow to pend. This 
+      ' must be greater than (nNetBuffersPerNetBufferlist * nNetBufferListsPerSend)
+      nMaxPendingNetBufferCount = 400
+      
+      ' Default number of times we want to call the NdisSend routines (for all the 
+      ' number based test)
+      nDefaultTotalNumCallsToSend = 1000
+      ' Default duration in milliseconds to run the send test (for all the duration based
+      ' tests)
+      nDefaultSendDuration = 30000
+
+      ' We allow 90 percent of the packets to get padded. If more than
+      ' that get padded, we would warn
+      nAllowedPadPercentage = 90
+   End Sub
+
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+      Set oTestOpen = Nothing
+      Set oTestHelper = Nothing
+
+      Set oSuppCard = Nothing
+      Set oSuppOpen = Nothing
+      Set oSuppHelper = Nothing
+   End Sub
+
+   '=========================================================================='
+   '/**
+   'This function does the Send setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      Dim nTestMaxPacketSize, nSupportMaxPacketSize
+      
+      SetupTest = FALSE
+
+      oNDTCore6.DebugLevel = NORMAL_LOGGING_LEVEL
+
+      Set pAdapterList = oNDInfo.AdapterList
+
+      oLog.VariationEx "Setting up Test Adapter", _
+         "Creates an NDISTest 6.0 Protocol binding to the Test Adapter"
+         
+      Set oTestCard = New CLanCard6
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+
+      Set oTestOpen = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpen is Nothing) Then
+         Exit Function
+      End If
+
+      ' Create a single open now, additional opens would be created later
+      Set oTestHelper = oTestOpen.vbSetupForCommunication(CLENDPOINT_EX, STRESS_SEND_RECEIVE_TRAFFIC)
+      If (oTestHelper is Nothing) Then
+         Exit Function
+      End If
+
+      oLog.VariationEx "Setting up Support Adapter", _
+         "Creates an NDISTest 6.0 Protocol binding to the Support Adapter"
+
+      Set oSuppCard = New CLanCard6
+      If (oSuppCard is Nothing) Then
+         Exit Function
+      End If
+
+      ' Create a single open now, additional opens would be created later
+      Set oSuppOpen = oSuppCard.vbSetupBasicTest(pAdapterList (m_lSuppAdapterIndex))
+      If (oSuppOpen is Nothing) Then
+         Exit Function
+      End If
+
+      Set oSuppHelper = oSuppOpen.vbSetupForCommunication(CLENDPOINT_EX, STRESS_SEND_RECEIVE_TRAFFIC)
+      If (oSuppHelper is Nothing) Then
+         Exit Function
+      End If
+
+      ' create the default config objects
+      oLog.VariationEx "Setting up default config objects", _
+         "Collects parameters for the test and sets up default test config objects"
+         
+      ' Choose the smaller of the OID_GEN_MAXIMUM_TOTAL_SIZE between test 
+      ' and support adapter
+      nTestMaxPacketSize = oTestOpen.vbGetMaxPacketSize()
+      nSupportMaxPacketSize = oSuppOpen.vbGetMaxPacketSize()
+      If (nTestMaxPacketSize > nSupportMaxPacketSize) Then
+         nMaxPacketSize = nTestMaxPacketSize
+      Else
+         nMaxPacketSize = nSupportMaxPacketSize
+      End If
+      oLog.Write ("The tests would be run using a maximum total packet size = " & nMaxPacketSize)
+
+      ' The maximum padding we would use 
+      If (nMaxPacketSize > 1500) Then
+         ' We will never do dummy pads with more than 1500 bytes
+         nMaxDummyPaddingSize = 1500
+      Else
+         nMaxDummyPaddingSize = nMaxPacketSize
+      End If
+      oLog.Write ("The tests would be run using a maximum dummy padding size = " & nMaxDummyPaddingSize)
+
+      nBaseTestId = oNDTSupp.Random (1, 32765)     ' All individual test IDs would be based on this
+
+      ' Now create all the default config objects. Defaults can be used when we do not want
+      ' to test a specific scenario
+
+      ' Traffic Manager
+      Set m_oDefaultTrafficManagerConfig = New CStressTrafficManagerSendConfig
+      m_oDefaultTrafficManagerConfig.MaximumPendingNetBuffers = nMaxPendingNetBufferCount
+      ' Default is duration based test
+      Call m_oDefaultTrafficManagerConfig.SendConfigure(nNetBufferListsPerSend, nNetBuffersPerNetBufferlist, _
+         0, nDefaultSendDuration)
+
+      ' MDL Chain allocator
+      Set m_oDefaultMDLChainAllocatorConfig = ConstructMDLChainAllocatorConfig(STRESS_SIMPLE_MDL_CHAIN_ALLOCATOR)
+      m_oDefaultMDLChainAllocatorConfig.NumNetBuffersToPreallocate = nMaxPendingNetBufferCount
+
+      ' Data length provider
+      Set m_oDefaultDataLengthProviderConfig = ConstructDataLengthProviderConfig(STRESS_FIXED_LENGTH_PROVIDER)
+      m_oDefaultDataLengthProviderConfig.Length = nMaxPacketSize
+
+      ' MDL Length fragmenter
+      Set m_oDefaultMDLLengthFragmenterConfig = ConstructMDLLengthFragmenterConfig(STRESS_FIXED_LENGTH_FRAGMENTER)
+      m_oDefaultMDLLengthFragmenterConfig.Length = STRESS_DEFAULT_MDL_SIZE
+
+      ' Payload data filler
+      Set m_oDefaultPayloadDataFillerConfig = ConstructPayloadDataFillerConfig(STRESS_NORMAL_PATTERN_MAPPING_FILLER)
+      m_oDefaultPayloadDataFillerConfig.bCreateMdlMap = FALSE
+
+      ' Net buffer pad helper
+      Set m_oDefaultNetBufferPadHelperConfig = ConstructNetBufferPadHelperConfig(STRESS_DUMMY_NET_BUFFER_PAD_HELPER)
+      ' No config for dummy pad helper
+      
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+
+   Public Function RunTest (lSendAdapterIndex, lRecvAdapterIndex)
+      m_lTestAdapterIndex = lSendAdapterIndex
+      m_lSuppAdapterIndex = lRecvAdapterIndex
+      
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+
+      ' Run our directed test cases
+      ExecuteDirectedStressTests
+
+      ' Execute a random mode test
+      ExecuteRandomStressTests
+   End Function
+
+   Private Function VerifyStressSendReceive(oSendHelper, oRecvHelper, ReceiveVerificationLevel, VerificationStatus)
+      Dim NetBuffersSent, NetBufferListSendAttempted, NetBufferListsSentSuccessfully
+      Dim NumValidNetBuffersReceived, NumInvalidNetBuffersReceived, AllowedPaddedReceives
+      Dim Status 
+
+      ' Assume our verification attempt succeeds
+      VerificationStatus = STRESS_STATUS_SUCCESS
+
+      Do
+         Status = oSendHelper.vbGetSendResults(NetBuffersSent, _
+            NetBufferListSendAttempted, NetBufferListsSentSuccessfully _
+            )
+         If (Status <> NDIS_STATUS_SUCCESS) Then
+            Exit Do
+         End If
+            
+         Status = oRecvHelper.vbGetReceiveResults(NumValidNetBuffersReceived, _
+            NumInvalidNetBuffersReceived _
+            )
+         If (Status <> NDIS_STATUS_SUCCESS) Then
+            Exit Do
+         End If
+
+         ' Check that atleast one packet was sent and atleast one was received
+         If (NetBufferListsSentSuccessfully = 0) Then
+            Call oLog.FailedEx("Not a single NET_BUFFER_LIST/NET_BUFFER was sent successfully", _
+               "The send code path on the driver might be the problem.", _
+               88888)
+            VerificationStatus = STRESS_STATUS_SEND_ERROR
+         Else
+            ' We sent something. Ensure that we received it.
+            If (NumValidNetBuffersReceived = 0) Then
+               Call oLog.FailedEx("Not a single NET_BUFFER_LIST/NET_BUFFER sent was received", _
+                  "Either test/support card connectivity or the send code path on the driver " & _
+                  "might be the problem.", _
+                  88888)
+               VerificationStatus = STRESS_STATUS_RECV_ERROR
+            End If            
+         End If
+
+         ' Extra verification
+         If ((ReceiveVerificationLevel And MINI6_STRESS_WARN_ON_PADDING) <> 0) Then
+            ' Check if the packets were padded.
+            ' Get the padding allowed value
+            AllowedPaddedReceives = CLng(NumValidNetBuffersReceived * nAllowedPadPercentage / 100)
+            
+            If (oSuppHelper.NetBuffersPadded > AllowedPaddedReceives) Then
+               Call oLog.WarnedEx("Miniport receive indicated many NET_BUFFERs which were larger than expected", _
+                  "This is generally okay, but in this test case, protocol had inserted bogus padding " & _
+                  "in the sent NET_BUFFER's MDL chain and it is possible that the driver incorrectly " & _
+                  "sent the pad bytes on the wire. Ensure that the driver send path correctly interprets " & _
+                  "NET_BUFFER_DATA_OFFSET and NET_BUFFER_DATA_LENGTH to ignore padding")
+               ' Overwriting previous errors
+               VerificationStatus = STRESS_STATUS_PACKET_PADDED
+            End If
+         End If
+
+         If ((ReceiveVerificationLevel And MINI6_STRESS_IGNORE_CORRUPTION) = 0) Then
+            ' Check if the packets were corrupted
+            If (oSuppHelper.NetBuffersCorrupted > 0) Then
+               Call oLog.FailedEx("NET_BUFFERs were corrupted during the send/receives", _
+                  "The contents of the NET_BUFFER indicated were not the same as the ones sent." & _
+                  "This normally happens because of bugs in the send code path.", 88888)
+               ' Overwriting previous errors
+               VerificationStatus = STRESS_STATUS_PACKET_CORRUPTION
+            End If
+         End If
+
+         If ((ReceiveVerificationLevel And MINI6_STRESS_WARN_ON_ORDER_ERROR) <> 0) Then
+            ' Check if the packets were corrupted
+            If (oSuppHelper.NetBuffersOutOfOrder > 0) Then
+               Call oLog.WarnedEx("Sent NET_BUFFERs were either dropped or received out of order", _
+                  "This might be okay since we are sending large bursts of packets. Packets " & _
+                  "may get dropped because of busy transmission medium. Run the test on a dedicated " & _
+                  "wire/channel. Else it might be because of bugs in the send code path")
+               ' Overwriting previous errors
+               VerificationStatus = STRESS_STATUS_OUT_OF_ORDER_RECV
+            End If
+         End If         
+      Loop While (FALSE)
+
+      ' We return success if we were able to do verification. 
+      ' VerificationStatus contains the result from verification attempt
+      VerifyStressSendReceive = Status
+   End Function
+
+   Private Function RunSingleSendReceive(nTestCaseID, DestAddr, _
+         oTrafficManagerSendConfig, oPayloadSendConfig, _
+         ReceiveVerificationLevel)
+      Dim Status, VerificationStatus
+
+      ' Assume our test attempt succeeds
+      RunSingleSendReceive = STRESS_STATUS_SUCCESS
+      Do
+         ' Set the test id to uniquely identify this test case
+         oSuppHelper.TestID = nBaseTestId + nTestCaseID
+         oTestHelper.TestID = nBaseTestId + nTestCaseID
+      
+         Status = oSuppHelper.vbStartReceive(ReceiveVerificationLevel)
+         If (Status <> NDIS_STATUS_SUCCESS) Then
+            Exit Do
+         End If
+         
+         Status = oTestHelper.vbStartSend(DestAddr, _
+            oTrafficManagerSendConfig.COMConfig, _
+            oPayloadSendConfig.COMConfig _
+            )
+         If (Status <> NDIS_STATUS_SUCCESS) Then
+            Exit Do
+         End If
+
+         Status = oTestHelper.vbWaitForSendsToComplete
+         If (Status <> NDIS_STATUS_SUCCESS) Then
+            Exit Do
+         End If
+
+         Status = oSuppHelper.vbStopReceive()
+         If (Status <> NDIS_STATUS_SUCCESS) Then
+            Exit Do
+         End If
+
+         ' Verify the send/receive stats
+         Status = VerifyStressSendReceive(oTestHelper, _
+            oSuppHelper, ReceiveVerificationLevel, VerificationStatus _
+            )
+         ' Store the result from the verification attempt
+         RunSingleSendReceive = VerificationStatus
+      Loop While (FALSE)
+
+      If (Status <> NDIS_STATUS_SUCCESS) Then
+         ' Catch all failure. Individual commands might also fail
+         Call oLog.Failed("Unable to run stress test " & nTestCaseID, 88888)
+         ' If we were unable to run the test, we fail again
+         RunSingleSendReceive = STRESS_STATUS_EXECUTE_FAILURE
+      End If
+      
+   End Function
+
+   Private Function RunMultipleSendReceive( _
+      SuppAddr, oTestTrafficManagerConfig, oTestPayloadConfig, SuppVerificationLevel, _
+      TestAddr, oSuppTrafficManagerConfig, oSuppPayloadConfig, TestVerificationLevel _
+      )
+
+      Dim NetBuffersSent, NetBufferListSendAttempted, NetBufferListsSentSuccessfully
+      Dim NumValidNetBuffersReceived, NumInvalidNetBuffersReceived         
+      Dim Status, VerificationStatus
+
+      ' Assume our test attempt succeeds
+      RunMultipleSendReceive = STRESS_STATUS_SUCCESS
+      Do
+         ' Set the test id to uniquely identify this test case
+         oSuppHelper.TestID = nBaseTestId
+         oTestHelper.TestID = nBaseTestId
+
+         ' Start support adapter receive
+         Status = oSuppHelper.vbStartReceive(SuppVerificationLevel)
+         If (Status <> NDIS_STATUS_SUCCESS) Then
+            Exit Do
+         End If
+
+         ' Start test adapter receive
+         Status = oTestHelper.vbStartReceive(TestVerificationLevel)
+         If (Status <> NDIS_STATUS_SUCCESS) Then
+            Exit Do
+         End If
+
+         ' Start test adapter sending
+         Status = oTestHelper.vbStartSend(SuppAddr, _
+            oTestTrafficManagerConfig.COMConfig, _
+            oTestPayloadConfig.COMConfig _
+            )
+         If (Status <> NDIS_STATUS_SUCCESS) Then
+            Exit Do
+         End If
+
+         ' Start support adapter send
+         Status = oSuppHelper.vbStartSend(TestAddr, _
+            oSuppTrafficManagerConfig.COMConfig, _
+            oSuppPayloadConfig.COMConfig _
+            )
+         If (Status <> NDIS_STATUS_SUCCESS) Then
+            Exit Do
+         End If
+
+         ' Wait for sending to complete on test adapter
+         Status = oTestHelper.vbWaitForSendsToComplete
+         If (Status <> NDIS_STATUS_SUCCESS) Then
+            Exit Do
+         End If
+
+         ' Wait for sending to complete on support adapter
+         Status = oSuppHelper.vbWaitForSendsToComplete
+         If (Status <> NDIS_STATUS_SUCCESS) Then
+            Exit Do
+         End If
+
+         ' Stop receives on support adapter
+         Status = oSuppHelper.vbStopReceive()
+         If (Status <> NDIS_STATUS_SUCCESS) Then
+            Exit Do
+         End If
+
+         ' Verify test adapter -> support adapter results
+         oLog.Write ("Verifying Test Adapter -> Support Adapter stress results")
+         Status = VerifyStressSendReceive(oTestHelper, oSuppHelper, _
+            SuppVerificationLevel, VerificationStatus)
+         If (Status <> NDIS_STATUS_SUCCESS) Then
+            Exit Do
+         End If
+
+         ' Verify support adapter -> test adapter results
+         oLog.Write ("Verifying Support Adapter -> Test Adapter stress results")
+         Status = VerifyStressSendReceive(oSuppHelper, oTestHelper, _
+            TestVerificationLevel, VerificationStatus)
+         If (Status <> NDIS_STATUS_SUCCESS) Then
+            Exit Do
+         End If
+
+         RunMultipleSendReceive = VerificationStatus
+      Loop While (FALSE)
+
+      If (Status <> NDIS_STATUS_SUCCESS) Then
+         ' Catch all failure. Individual commands might also fail
+         Call oLog.Failed("Unable to run stress test", 88888)
+         ' If we were unable to run the test, we fail again
+         RunMultipleSendReceive = STRESS_STATUS_EXECUTE_FAILURE
+      End If
+      
+   End Function
+
+
+   Private Function ConfigureTestCase(nTestCaseID, ByRef strTestDescription, oTrafficManagerSendConfig, oPayloadSendConfig, fVerificationLevel)
+      Dim oPayloadDataFillerConfig, oMDLLengthFragmenterConfig
+      Dim oDataLengthProviderConfig, oNetBufferPadHelperConfig
+      Dim AveragePacketSize
+   
+      ' Return parameter tells if this test instance will be run or not      
+      ConfigureTestCase = TRUE
+
+      AveragePacketSize = nMaxPacketSize / 2
+
+      ' Set parameters we would use normally (can still get modified)
+      oTrafficManagerSendConfig.SendMechanism = SEND_AT_PASSIVE
+      oTrafficManagerSendConfig.MaximumPendingNetBuffers = nMaxPendingNetBufferCount
+      
+      Select Case nTestCaseID
+         Case 1:
+            oLog.Write ("Configuring Test Case " & nTestCaseID)
+
+            ' Extra small sized packets (randomly generated)
+            Set oDataLengthProviderConfig = ConstructDataLengthProviderConfig(STRESS_RANDOM_LENGTH_PROVIDER)
+            oDataLengthProviderConfig.MinLength = 0
+            oDataLengthProviderConfig.MaxLength = glMinimumPacketSize
+            Set oPayloadSendConfig.DataLengthProviderConfig = oDataLengthProviderConfig
+
+            ' Random MDL lengths
+            Set oMDLLengthFragmenterConfig = ConstructMDLLengthFragmenterConfig(STRESS_RANDOM_LENGTH_FRAGMENTER)
+            oMDLLengthFragmenterConfig.MinLength = 0
+            oMDLLengthFragmenterConfig.MaxLength = nMaxPacketSize
+            oMDLLengthFragmenterConfig.MaxCount = STRESS_MAX_MDL_COUNT_DEFAULT
+            Set oPayloadSendConfig.MDLLengthFragmenterConfig = oMDLLengthFragmenterConfig
+
+            ' Default data mapping
+            Set oPayloadDataFillerConfig = ConstructPayloadDataFillerConfig(STRESS_NORMAL_PATTERN_MAPPING_FILLER)
+            oPayloadDataFillerConfig.bCreateMdlMap = FALSE
+            Set oPayloadSendConfig.PayloadDataFillerConfig = oPayloadDataFillerConfig
+
+            ' No padding
+            Set oNetBufferPadHelperConfig = ConstructNetBufferPadHelperConfig(STRESS_DUMMY_NET_BUFFER_PAD_HELPER)
+            Set oPayloadSendConfig.NetBufferPadHelperConfig = oNetBufferPadHelperConfig
+
+            ' Default MDL chain allocator
+            Set oPayloadSendConfig.MDLChainAllocatorConfig = m_oDefaultMDLChainAllocatorConfig      
+
+            Call oTrafficManagerSendConfig.SendConfigure(nNetBufferListsPerSend, nNetBuffersPerNetBufferlist, _
+               nDefaultTotalNumCallsToSend, 0)
+
+            ' Default verification
+            fVerificationLevel = NDT_STRESS_DEFAULT_VERIFICATION
+            
+            strTestDescription = _
+               "<li>Random NET_BUFFER data lengths: upto " & glMinimumPacketSize & _
+               "<li>Random sized payload MDLs in the NET_BUFFER" & _
+               "<li>No padding in the NET_BUFFER" & _
+               "<li>NdisSendNBL called at IRQL PASSIVE_LEVEL" & _
+               "<li>Upto " & nNetBufferListsPerSend & " NET_BUFFER_LISTs per NdisSendNBL call " & _
+                  nNetBuffersPerNetBufferlist & " NET_BUFFERs per NET_BUFFER_LIST"            
+
+         Case 2:
+            oLog.Write ("Configuring Test Case " & nTestCaseID)
+
+            ' Extra small sized packets (randomly generated)
+            Set oDataLengthProviderConfig = ConstructDataLengthProviderConfig(STRESS_RANDOM_LENGTH_PROVIDER)
+            oDataLengthProviderConfig.MinLength = 0
+            oDataLengthProviderConfig.MaxLength = glMinimumPacketSize
+            Set oPayloadSendConfig.DataLengthProviderConfig = oDataLengthProviderConfig
+
+            ' Small sized MDL lengths
+            Set oMDLLengthFragmenterConfig = ConstructMDLLengthFragmenterConfig(STRESS_RANDOM_LENGTH_FRAGMENTER)
+            oMDLLengthFragmenterConfig.MinLength = 0
+            oMDLLengthFragmenterConfig.MaxLength = glMinimumPacketSize
+            oMDLLengthFragmenterConfig.MaxCount = STRESS_MAX_MDL_COUNT_DEFAULT
+            Set oPayloadSendConfig.MDLLengthFragmenterConfig = oMDLLengthFragmenterConfig
+
+            ' Default data mapping
+            Set oPayloadDataFillerConfig = ConstructPayloadDataFillerConfig(STRESS_NORMAL_PATTERN_MAPPING_FILLER)
+            oPayloadDataFillerConfig.bCreateMdlMap = FALSE
+            Set oPayloadSendConfig.PayloadDataFillerConfig = oPayloadDataFillerConfig
+
+            ' No padding
+            Set oNetBufferPadHelperConfig = ConstructNetBufferPadHelperConfig(STRESS_DUMMY_NET_BUFFER_PAD_HELPER)
+            Set oPayloadSendConfig.NetBufferPadHelperConfig = oNetBufferPadHelperConfig
+
+            ' Default MDL chain allocator
+            Set oPayloadSendConfig.MDLChainAllocatorConfig = m_oDefaultMDLChainAllocatorConfig      
+
+            Call oTrafficManagerSendConfig.SendConfigure(nNetBufferListsPerSend, nNetBuffersPerNetBufferlist, _
+               nDefaultTotalNumCallsToSend, 0)
+
+            ' Default verification
+            fVerificationLevel = NDT_STRESS_DEFAULT_VERIFICATION
+            
+            strTestDescription = _
+               "<li>Random NET_BUFFER data lengths: upto " & glMinimumPacketSize & _
+               "<li>Small sized payload MDLs in the NET_BUFFER" & _
+               "<li>No padding in the NET_BUFFER" & _
+               "<li>NdisSendNBL called at IRQL PASSIVE_LEVEL" & _
+               "<li>Upto " & nNetBufferListsPerSend & " NET_BUFFER_LISTs per NdisSendNBL call " & _
+                  nNetBuffersPerNetBufferlist & " NET_BUFFERs per NET_BUFFER_LIST"            
+
+         Case 3:
+            oLog.Write ("Configuring Test Case " & nTestCaseID)
+
+            ' Extra small sized packets (randomly generated)
+            Set oDataLengthProviderConfig = ConstructDataLengthProviderConfig(STRESS_RANDOM_LENGTH_PROVIDER)
+            oDataLengthProviderConfig.MinLength = 0
+            oDataLengthProviderConfig.MaxLength = glMinimumPacketSize
+            Set oPayloadSendConfig.DataLengthProviderConfig = oDataLengthProviderConfig
+
+            ' Specifically asking for 0 length MDLs
+            Set oMDLLengthFragmenterConfig = ConstructMDLLengthFragmenterConfig(STRESS_BIASED_RANDOM_LENGTH_FRAGMENTER)
+            oMDLLengthFragmenterConfig.BiasedLength = 0            
+            oMDLLengthFragmenterConfig.MaxLength = glMinimumPacketSize
+            oMDLLengthFragmenterConfig.MaxCount = STRESS_MAX_MDL_COUNT_DEFAULT
+            Set oPayloadSendConfig.MDLLengthFragmenterConfig = oMDLLengthFragmenterConfig
+
+            ' Default data mapping
+            Set oPayloadDataFillerConfig = ConstructPayloadDataFillerConfig(STRESS_NORMAL_PATTERN_MAPPING_FILLER)
+            oPayloadDataFillerConfig.bCreateMdlMap = FALSE
+            Set oPayloadSendConfig.PayloadDataFillerConfig = oPayloadDataFillerConfig
+
+            ' No padding
+            Set oNetBufferPadHelperConfig = ConstructNetBufferPadHelperConfig(STRESS_DUMMY_NET_BUFFER_PAD_HELPER)
+            Set oPayloadSendConfig.NetBufferPadHelperConfig = oNetBufferPadHelperConfig
+
+            ' Default MDL chain allocator
+            Set oPayloadSendConfig.MDLChainAllocatorConfig = m_oDefaultMDLChainAllocatorConfig      
+
+            Call oTrafficManagerSendConfig.SendConfigure(nNetBufferListsPerSend, nNetBuffersPerNetBufferlist, _
+               nDefaultTotalNumCallsToSend, 0)
+
+            ' Default verification
+            fVerificationLevel = NDT_STRESS_DEFAULT_VERIFICATION
+            
+            strTestDescription = _
+               "<li>Random NET_BUFFER data lengths: upto " & glMinimumPacketSize & _
+               "<li>Small sized payload MDLs in the NET_BUFFER with some zero length MDLs" & _
+               "<li>No padding in the NET_BUFFER" & _
+               "<li>NdisSendNBL called at IRQL PASSIVE_LEVEL" & _
+               "<li>Upto " & nNetBufferListsPerSend & " NET_BUFFER_LISTs per NdisSendNBL call " & _
+                  nNetBuffersPerNetBufferlist & " NET_BUFFERs per NET_BUFFER_LIST"            
+
+         Case 4:
+            oLog.Write ("Configuring Test Case " & nTestCaseID)
+
+            ' Average sized packets (randomly generated)
+            Set oDataLengthProviderConfig = ConstructDataLengthProviderConfig(STRESS_RANDOM_LENGTH_PROVIDER)
+            oDataLengthProviderConfig.MinLength = 0
+            oDataLengthProviderConfig.MaxLength = AveragePacketSize
+            Set oPayloadSendConfig.DataLengthProviderConfig = oDataLengthProviderConfig
+
+            ' Random sized MDLs
+            Set oMDLLengthFragmenterConfig = ConstructMDLLengthFragmenterConfig(STRESS_RANDOM_LENGTH_FRAGMENTER)
+            oMDLLengthFragmenterConfig.MinLength = 0
+            oMDLLengthFragmenterConfig.MaxLength = nMaxPacketSize
+            oMDLLengthFragmenterConfig.MaxCount = STRESS_MAX_MDL_COUNT_DEFAULT
+            Set oPayloadSendConfig.MDLLengthFragmenterConfig = oMDLLengthFragmenterConfig
+
+            ' Default data mapping
+            Set oPayloadDataFillerConfig = ConstructPayloadDataFillerConfig(STRESS_NORMAL_PATTERN_MAPPING_FILLER)
+            oPayloadDataFillerConfig.bCreateMdlMap = FALSE
+            Set oPayloadSendConfig.PayloadDataFillerConfig = oPayloadDataFillerConfig
+
+            ' No padding
+            Set oNetBufferPadHelperConfig = ConstructNetBufferPadHelperConfig(STRESS_DUMMY_NET_BUFFER_PAD_HELPER)
+            Set oPayloadSendConfig.NetBufferPadHelperConfig = oNetBufferPadHelperConfig
+
+            ' Default MDL chain allocator
+            Set oPayloadSendConfig.MDLChainAllocatorConfig = m_oDefaultMDLChainAllocatorConfig      
+
+            Call oTrafficManagerSendConfig.SendConfigure(nNetBufferListsPerSend, nNetBuffersPerNetBufferlist, _
+               nDefaultTotalNumCallsToSend, 0)
+
+            ' Default verification
+            fVerificationLevel = NDT_STRESS_DEFAULT_VERIFICATION
+            
+            strTestDescription = _
+               "<li>Random NET_BUFFER data lengths: upto " & AveragePacketSize & _
+               "<li>Random sized payload MDLs in the NET_BUFFER" & _
+               "<li>No padding in the NET_BUFFER" & _
+               "<li>NdisSendNBL called at IRQL PASSIVE_LEVEL" & _
+               "<li>Upto " & nNetBufferListsPerSend & " NET_BUFFER_LISTs per NdisSendNBL call " & _
+                  nNetBuffersPerNetBufferlist & " NET_BUFFERs per NET_BUFFER_LIST"            
+
+         Case 5:
+            oLog.Write ("Configuring Test Case " & nTestCaseID)
+
+            ' Average sized packets (randomly generated)
+            Set oDataLengthProviderConfig = ConstructDataLengthProviderConfig(STRESS_RANDOM_LENGTH_PROVIDER)
+            oDataLengthProviderConfig.MinLength = 0
+            oDataLengthProviderConfig.MaxLength = AveragePacketSize
+            Set oPayloadSendConfig.DataLengthProviderConfig = oDataLengthProviderConfig
+
+            ' Specifically asking for 0 length MDLs
+            Set oMDLLengthFragmenterConfig = ConstructMDLLengthFragmenterConfig(STRESS_BIASED_RANDOM_LENGTH_FRAGMENTER)
+            oMDLLengthFragmenterConfig.BiasedLength = 0            
+            oMDLLengthFragmenterConfig.MaxLength = glMinimumPacketSize
+            oMDLLengthFragmenterConfig.MaxCount = STRESS_MAX_MDL_COUNT_DEFAULT
+            Set oPayloadSendConfig.MDLLengthFragmenterConfig = oMDLLengthFragmenterConfig
+
+            ' Default data mapping
+            Set oPayloadDataFillerConfig = ConstructPayloadDataFillerConfig(STRESS_NORMAL_PATTERN_MAPPING_FILLER)
+            oPayloadDataFillerConfig.bCreateMdlMap = FALSE
+            Set oPayloadSendConfig.PayloadDataFillerConfig = oPayloadDataFillerConfig
+
+            ' No padding
+            Set oNetBufferPadHelperConfig = ConstructNetBufferPadHelperConfig(STRESS_DUMMY_NET_BUFFER_PAD_HELPER)
+            Set oPayloadSendConfig.NetBufferPadHelperConfig = oNetBufferPadHelperConfig
+
+            ' Default MDL chain allocator
+            Set oPayloadSendConfig.MDLChainAllocatorConfig = m_oDefaultMDLChainAllocatorConfig      
+
+            Call oTrafficManagerSendConfig.SendConfigure(nNetBufferListsPerSend, nNetBuffersPerNetBufferlist, _
+               nDefaultTotalNumCallsToSend, 0)
+
+            ' Default verification
+            fVerificationLevel = NDT_STRESS_DEFAULT_VERIFICATION
+            
+            strTestDescription = _
+               "<li>Random NET_BUFFER data lengths: upto " & AveragePacketSize & _
+               "<li>Small sized payload MDLs in the NET_BUFFER" & _
+               "<li>No padding in the NET_BUFFER" & _
+               "<li>NdisSendNBL called at IRQL PASSIVE_LEVEL" & _
+               "<li>Upto " & nNetBufferListsPerSend & " NET_BUFFER_LISTs per NdisSendNBL call " & _
+                  nNetBuffersPerNetBufferlist & " NET_BUFFERs per NET_BUFFER_LIST"            
+                  
+         Case 6:
+            oLog.Write ("Configuring Test Case " & nTestCaseID)
+
+            ' Average sized packets (randomly generated)
+            Set oDataLengthProviderConfig = ConstructDataLengthProviderConfig(STRESS_RANDOM_LENGTH_PROVIDER)
+            oDataLengthProviderConfig.MinLength = 0
+            oDataLengthProviderConfig.MaxLength = AveragePacketSize
+            Set oPayloadSendConfig.DataLengthProviderConfig = oDataLengthProviderConfig
+
+            ' Random sized MDLs
+            Set oMDLLengthFragmenterConfig = ConstructMDLLengthFragmenterConfig(STRESS_RANDOM_LENGTH_FRAGMENTER)
+            oMDLLengthFragmenterConfig.MinLength = 0
+            oMDLLengthFragmenterConfig.MaxLength = nMaxPacketSize
+            oMDLLengthFragmenterConfig.MaxCount = STRESS_MAX_MDL_COUNT_DEFAULT
+            Set oPayloadSendConfig.MDLLengthFragmenterConfig = oMDLLengthFragmenterConfig
+
+            ' Use pages mapping that may map data crossing page boundaries
+            Set oPayloadDataFillerConfig = ConstructPayloadDataFillerConfig(STRESS_PAGE_END_PATTERN_MAPPING_FILLER)
+            oPayloadDataFillerConfig.bCreateMdlMap = FALSE
+            Set oPayloadSendConfig.PayloadDataFillerConfig = oPayloadDataFillerConfig
+
+            ' No padding
+            Set oNetBufferPadHelperConfig = ConstructNetBufferPadHelperConfig(STRESS_DUMMY_NET_BUFFER_PAD_HELPER)
+            Set oPayloadSendConfig.NetBufferPadHelperConfig = oNetBufferPadHelperConfig
+
+            ' Default MDL chain allocator
+            Set oPayloadSendConfig.MDLChainAllocatorConfig = m_oDefaultMDLChainAllocatorConfig      
+
+            Call oTrafficManagerSendConfig.SendConfigure(nNetBufferListsPerSend, nNetBuffersPerNetBufferlist, _
+               nDefaultTotalNumCallsToSend, 0)
+
+            ' Default verification
+            fVerificationLevel = NDT_STRESS_DEFAULT_VERIFICATION
+            
+            strTestDescription = _
+               "<li>Random NET_BUFFER data lengths: upto " & AveragePacketSize & _
+               "<li>Random sized payload MDLs in the NET_BUFFER" & _
+               "<li>No padding in the NET_BUFFER" & _
+               "<li>Payload MDLs that map data crossing page boundaries" & _
+               "<li>NdisSendNBL called at IRQL PASSIVE_LEVEL" & _
+               "<li>Upto " & nNetBufferListsPerSend & " NET_BUFFER_LISTs per NdisSendNBL call " & _
+                  nNetBuffersPerNetBufferlist & " NET_BUFFERs per NET_BUFFER_LIST"            
+
+         Case 7:
+            oLog.Write ("Configuring Test Case " & nTestCaseID)
+
+            ' Average sized packets (randomly generated)
+            Set oDataLengthProviderConfig = ConstructDataLengthProviderConfig(STRESS_RANDOM_LENGTH_PROVIDER)
+            oDataLengthProviderConfig.MinLength = 0
+            oDataLengthProviderConfig.MaxLength = AveragePacketSize
+            Set oPayloadSendConfig.DataLengthProviderConfig = oDataLengthProviderConfig
+
+            ' Random sized MDLs
+            Set oMDLLengthFragmenterConfig = ConstructMDLLengthFragmenterConfig(STRESS_RANDOM_LENGTH_FRAGMENTER)
+            oMDLLengthFragmenterConfig.MinLength = 0
+            oMDLLengthFragmenterConfig.MaxLength = nMaxPacketSize
+            oMDLLengthFragmenterConfig.MaxCount = STRESS_MAX_MDL_COUNT_DEFAULT
+            Set oPayloadSendConfig.MDLLengthFragmenterConfig = oMDLLengthFragmenterConfig
+
+            ' Default data mapping
+            Set oPayloadDataFillerConfig = ConstructPayloadDataFillerConfig(STRESS_NORMAL_PATTERN_MAPPING_FILLER)
+            oPayloadDataFillerConfig.bCreateMdlMap = FALSE
+            Set oPayloadSendConfig.PayloadDataFillerConfig = oPayloadDataFillerConfig
+
+            ' No padding
+            Set oNetBufferPadHelperConfig = ConstructNetBufferPadHelperConfig(STRESS_DUMMY_NET_BUFFER_PAD_HELPER)
+            Set oPayloadSendConfig.NetBufferPadHelperConfig = oNetBufferPadHelperConfig
+
+            ' Default MDL chain allocator
+            Set oPayloadSendConfig.MDLChainAllocatorConfig = m_oDefaultMDLChainAllocatorConfig      
+
+            ' Send at both passive and dispatch
+            oTrafficManagerSendConfig.SendMechanism = SEND_AT_PASSIVE_AND_DISPATCH
+            Call oTrafficManagerSendConfig.SendConfigure(nNetBufferListsPerSend, nNetBuffersPerNetBufferlist, _
+               nDefaultTotalNumCallsToSend, 0)
+
+            ' Default verification
+            fVerificationLevel = NDT_STRESS_DEFAULT_VERIFICATION
+            
+            strTestDescription = _
+               "<li>Random NET_BUFFER data lengths: upto " & AveragePacketSize & _
+               "<li>Random sized payload MDLs in the NET_BUFFER" & _
+               "<li>No padding in the NET_BUFFER" & _
+               "<li>NdisSendNBL called both at IRQL PASSIVE_LEVEL or DISPATCH_LEVEL" & _
+               "<li>Upto " & nNetBufferListsPerSend & " NET_BUFFER_LISTs per NdisSendNBL call " & _
+                  nNetBuffersPerNetBufferlist & " NET_BUFFERs per NET_BUFFER_LIST"            
+
+         Case 8:
+            oLog.Write ("Configuring Test Case " & nTestCaseID)
+
+            ' Upto Maximum sized packets (randomly generated)
+            Set oDataLengthProviderConfig = ConstructDataLengthProviderConfig(STRESS_RANDOM_LENGTH_PROVIDER)
+            oDataLengthProviderConfig.MinLength = 0
+            oDataLengthProviderConfig.MaxLength = nMaxPacketSize
+            Set oPayloadSendConfig.DataLengthProviderConfig = oDataLengthProviderConfig
+
+            ' Random sized MDLs
+            Set oMDLLengthFragmenterConfig = ConstructMDLLengthFragmenterConfig(STRESS_RANDOM_LENGTH_FRAGMENTER)
+            oMDLLengthFragmenterConfig.MinLength = 0
+            oMDLLengthFragmenterConfig.MaxLength = nMaxPacketSize
+            oMDLLengthFragmenterConfig.MaxCount = STRESS_MAX_MDL_COUNT_DEFAULT
+            Set oPayloadSendConfig.MDLLengthFragmenterConfig = oMDLLengthFragmenterConfig
+
+            ' Default data mapping
+            Set oPayloadDataFillerConfig = ConstructPayloadDataFillerConfig(STRESS_NORMAL_PATTERN_MAPPING_FILLER)
+            oPayloadDataFillerConfig.bCreateMdlMap = FALSE
+            Set oPayloadSendConfig.PayloadDataFillerConfig = oPayloadDataFillerConfig
+
+            ' Add dummy padding MDL before header
+            Set oNetBufferPadHelperConfig = ConstructNetBufferPadHelperConfig(STRESS_FIXED_LENGTH_NET_BUFFER_PAD_HELPER)
+            oNetBufferPadHelperConfig.DummyMdlPrepadSize = nMaxDummyPaddingSize
+            Set oPayloadSendConfig.NetBufferPadHelperConfig = oNetBufferPadHelperConfig
+
+            ' Default MDL chain allocator
+            Set oPayloadSendConfig.MDLChainAllocatorConfig = m_oDefaultMDLChainAllocatorConfig      
+
+            Call oTrafficManagerSendConfig.SendConfigure(nNetBufferListsPerSend, nNetBuffersPerNetBufferlist, _
+               nDefaultTotalNumCallsToSend, 0)
+
+            ' Default verification
+            fVerificationLevel = NDT_STRESS_DEFAULT_VERIFICATION Or MINI6_STRESS_WARN_ON_PADDING
+            
+            strTestDescription = _
+               "<li>Random NET_BUFFER data lengths: upto " & AveragePacketSize & _
+               "<li>Random sized payload MDLs in the NET_BUFFER" & _
+               "<li>Adding padding MDLs before actual NET_BUFFER data " &_
+                  "(NET_BUFFER_DATA_OFFSET > sizeof(NET_BUFFER_FIRST_MDL))" & _
+               "<li>NdisSendNBL called at IRQL PASSIVE_LEVEL" & _
+               "<li>Upto " & nNetBufferListsPerSend & " NET_BUFFER_LISTs per NdisSendNBL call " & _
+                  nNetBuffersPerNetBufferlist & " NET_BUFFERs per NET_BUFFER_LIST"            
+
+         Case 9:
+            oLog.Write ("Configuring Test Case " & nTestCaseID)
+
+            ' Upto Maximum sized packets (randomly generated)
+            Set oDataLengthProviderConfig = ConstructDataLengthProviderConfig(STRESS_RANDOM_LENGTH_PROVIDER)
+            oDataLengthProviderConfig.MinLength = 0
+            oDataLengthProviderConfig.MaxLength = nMaxPacketSize
+            Set oPayloadSendConfig.DataLengthProviderConfig = oDataLengthProviderConfig
+
+            ' Random sized MDLs
+            Set oMDLLengthFragmenterConfig = ConstructMDLLengthFragmenterConfig(STRESS_RANDOM_LENGTH_FRAGMENTER)
+            oMDLLengthFragmenterConfig.MinLength = 0
+            oMDLLengthFragmenterConfig.MaxLength = nMaxPacketSize
+            oMDLLengthFragmenterConfig.MaxCount = STRESS_MAX_MDL_COUNT_DEFAULT
+            Set oPayloadSendConfig.MDLLengthFragmenterConfig = oMDLLengthFragmenterConfig
+
+            ' Default data mapping
+            Set oPayloadDataFillerConfig = ConstructPayloadDataFillerConfig(STRESS_NORMAL_PATTERN_MAPPING_FILLER)
+            oPayloadDataFillerConfig.bCreateMdlMap = FALSE
+            Set oPayloadSendConfig.PayloadDataFillerConfig = oPayloadDataFillerConfig
+
+            ' Add padding at start of CURRENT_MDL 
+            Set oNetBufferPadHelperConfig = ConstructNetBufferPadHelperConfig(STRESS_FIXED_LENGTH_NET_BUFFER_PAD_HELPER)
+            oNetBufferPadHelperConfig.DataMdlPrepadSize = nMaxDataPaddingSize
+            Set oPayloadSendConfig.NetBufferPadHelperConfig = oNetBufferPadHelperConfig
+
+            ' Default MDL chain allocator
+            Set oPayloadSendConfig.MDLChainAllocatorConfig = m_oDefaultMDLChainAllocatorConfig      
+
+            Call oTrafficManagerSendConfig.SendConfigure(nNetBufferListsPerSend, nNetBuffersPerNetBufferlist, _
+               nDefaultTotalNumCallsToSend, 0)
+
+            ' Default verification
+            fVerificationLevel = NDT_STRESS_DEFAULT_VERIFICATION Or MINI6_STRESS_WARN_ON_PADDING
+            
+            strTestDescription = _
+               "<li>Random NET_BUFFER data lengths: upto " & AveragePacketSize & _
+               "<li>Random sized payload MDLs in the NET_BUFFER" & _
+               "<li>Adding padding bytes in current MDL of NET_BUFFER " &_
+                  "(NET_BUFFER_CURRENT_MDL_OFFSET > 0)" & _
+               "<li>NdisSendNBL called at IRQL PASSIVE_LEVEL" & _
+               "<li>Upto " & nNetBufferListsPerSend & " NET_BUFFER_LISTs per NdisSendNBL call " & _
+                  nNetBuffersPerNetBufferlist & " NET_BUFFERs per NET_BUFFER_LIST"            
+
+         Case 10:
+            oLog.Write ("Configuring Test Case " & nTestCaseID)
+
+            ' Upto Maximum sized packets (randomly generated)
+            Set oDataLengthProviderConfig = ConstructDataLengthProviderConfig(STRESS_RANDOM_LENGTH_PROVIDER)
+            oDataLengthProviderConfig.MinLength = 0
+            oDataLengthProviderConfig.MaxLength = nMaxPacketSize
+            Set oPayloadSendConfig.DataLengthProviderConfig = oDataLengthProviderConfig
+
+            ' Random sized MDLs
+            Set oMDLLengthFragmenterConfig = ConstructMDLLengthFragmenterConfig(STRESS_RANDOM_LENGTH_FRAGMENTER)
+            oMDLLengthFragmenterConfig.MinLength = 0
+            oMDLLengthFragmenterConfig.MaxLength = nMaxPacketSize
+            oMDLLengthFragmenterConfig.MaxCount = STRESS_MAX_MDL_COUNT_DEFAULT
+            Set oPayloadSendConfig.MDLLengthFragmenterConfig = oMDLLengthFragmenterConfig
+
+            ' Default data mapping
+            Set oPayloadDataFillerConfig = ConstructPayloadDataFillerConfig(STRESS_NORMAL_PATTERN_MAPPING_FILLER)
+            oPayloadDataFillerConfig.bCreateMdlMap = FALSE
+            Set oPayloadSendConfig.PayloadDataFillerConfig = oPayloadDataFillerConfig
+
+            ' Add padding/padding MDLs at start of CURRENT_MDL 
+            Set oNetBufferPadHelperConfig = ConstructNetBufferPadHelperConfig(STRESS_RANDOM_LENGTH_NET_BUFFER_PAD_HELPER)
+            oNetBufferPadHelperConfig.MaxDataMdlPrepadSize = nMaxDataPaddingSize
+            oNetBufferPadHelperConfig.MaxDummyMdlPrepadSize = nMaxDummyPaddingSize
+            Set oPayloadSendConfig.NetBufferPadHelperConfig = oNetBufferPadHelperConfig
+
+            ' Default MDL chain allocator
+            Set oPayloadSendConfig.MDLChainAllocatorConfig = m_oDefaultMDLChainAllocatorConfig      
+
+            Call oTrafficManagerSendConfig.SendConfigure(nNetBufferListsPerSend, nNetBuffersPerNetBufferlist, _
+               nDefaultTotalNumCallsToSend, 0)
+
+            ' Default verification
+            fVerificationLevel = NDT_STRESS_DEFAULT_VERIFICATION Or MINI6_STRESS_WARN_ON_PADDING
+            
+            strTestDescription = _
+               "<li>Random NET_BUFFER data lengths: upto " & AveragePacketSize & _
+               "<li>Random sized payload MDLs in the NET_BUFFER" & _
+               "<li>Adding padding bytes/MDL before data in NET_BUFFER " &_
+                  "(NET_BUFFER_CURRENT_MDL_OFFSET > 0) + (NET_BUFFER_DATA_OFFSET > sizeof(NET_BUFFER_FIRST_MDL))" & _
+               "<li>NdisSendNBL called at IRQL PASSIVE_LEVEL" & _
+               "<li>Upto " & nNetBufferListsPerSend & " NET_BUFFER_LISTs per NdisSendNBL call " & _
+                  nNetBuffersPerNetBufferlist & " NET_BUFFERs per NET_BUFFER_LIST"            
+
+         Case 11:
+            oLog.Write ("Configuring Test Case " & nTestCaseID)
+
+            ' Upto Maximum sized packets (randomly generated)
+            Set oDataLengthProviderConfig = ConstructDataLengthProviderConfig(STRESS_RANDOM_LENGTH_PROVIDER)
+            oDataLengthProviderConfig.MinLength = 0
+            oDataLengthProviderConfig.MaxLength = nMaxPacketSize
+            Set oPayloadSendConfig.DataLengthProviderConfig = oDataLengthProviderConfig
+
+            ' Random sized MDLs
+            Set oMDLLengthFragmenterConfig = ConstructMDLLengthFragmenterConfig(STRESS_RANDOM_LENGTH_FRAGMENTER)
+            oMDLLengthFragmenterConfig.MinLength = 0
+            oMDLLengthFragmenterConfig.MaxLength = nMaxPacketSize
+            oMDLLengthFragmenterConfig.MaxCount = STRESS_MAX_MDL_COUNT_DEFAULT
+            Set oPayloadSendConfig.MDLLengthFragmenterConfig = oMDLLengthFragmenterConfig
+
+            ' Default data mapping
+            Set oPayloadDataFillerConfig = ConstructPayloadDataFillerConfig(STRESS_NORMAL_PATTERN_MAPPING_FILLER)
+            oPayloadDataFillerConfig.bCreateMdlMap = FALSE
+            Set oPayloadSendConfig.PayloadDataFillerConfig = oPayloadDataFillerConfig
+
+            ' Add dummy padding MDL after valid data MDL chain
+            Set oNetBufferPadHelperConfig = ConstructNetBufferPadHelperConfig(STRESS_FIXED_LENGTH_NET_BUFFER_PAD_HELPER)
+            oNetBufferPadHelperConfig.DummyMdlPostpadSize = nMaxDummyPaddingSize
+            Set oPayloadSendConfig.NetBufferPadHelperConfig = oNetBufferPadHelperConfig
+
+            ' Default MDL chain allocator
+            Set oPayloadSendConfig.MDLChainAllocatorConfig = m_oDefaultMDLChainAllocatorConfig      
+
+            Call oTrafficManagerSendConfig.SendConfigure(nNetBufferListsPerSend, nNetBuffersPerNetBufferlist, _
+               nDefaultTotalNumCallsToSend, 0)
+
+            ' Default verification
+            fVerificationLevel = NDT_STRESS_DEFAULT_VERIFICATION Or MINI6_STRESS_WARN_ON_PADDING
+            
+            strTestDescription = _
+               "<li>Random NET_BUFFER data lengths: upto " & AveragePacketSize & _
+               "<li>Random sized payload MDLs in the NET_BUFFER" & _
+               "<li>Adding padding MDLs after actual NET_BUFFER data " &_
+                  "(NET_BUFFER_DATA_LENGTH < sizeof(NET_BUFFER MDL CHAIN))" & _
+               "<li>NdisSendNBL called at IRQL PASSIVE_LEVEL" & _
+               "<li>Upto " & nNetBufferListsPerSend & " NET_BUFFER_LISTs per NdisSendNBL call " & _
+                  nNetBuffersPerNetBufferlist & " NET_BUFFERs per NET_BUFFER_LIST"            
+
+         Case 12:
+            oLog.Write ("Configuring Test Case " & nTestCaseID)
+
+            ' Upto Maximum sized packets (randomly generated)
+            Set oDataLengthProviderConfig = ConstructDataLengthProviderConfig(STRESS_RANDOM_LENGTH_PROVIDER)
+            oDataLengthProviderConfig.MinLength = 0
+            oDataLengthProviderConfig.MaxLength = nMaxPacketSize
+            Set oPayloadSendConfig.DataLengthProviderConfig = oDataLengthProviderConfig
+
+            ' Random sized MDLs
+            Set oMDLLengthFragmenterConfig = ConstructMDLLengthFragmenterConfig(STRESS_RANDOM_LENGTH_FRAGMENTER)
+            oMDLLengthFragmenterConfig.MinLength = 0
+            oMDLLengthFragmenterConfig.MaxLength = nMaxPacketSize
+            oMDLLengthFragmenterConfig.MaxCount = STRESS_MAX_MDL_COUNT_DEFAULT
+            Set oPayloadSendConfig.MDLLengthFragmenterConfig = oMDLLengthFragmenterConfig
+
+            ' Default data mapping
+            Set oPayloadDataFillerConfig = ConstructPayloadDataFillerConfig(STRESS_NORMAL_PATTERN_MAPPING_FILLER)
+            oPayloadDataFillerConfig.bCreateMdlMap = FALSE
+            Set oPayloadSendConfig.PayloadDataFillerConfig = oPayloadDataFillerConfig
+
+            ' Add padding at end of last data MDL
+            Set oNetBufferPadHelperConfig = ConstructNetBufferPadHelperConfig(STRESS_FIXED_LENGTH_NET_BUFFER_PAD_HELPER)
+            oNetBufferPadHelperConfig.DataMdlPostpadSize = nMaxDataPaddingSize
+            Set oPayloadSendConfig.NetBufferPadHelperConfig = oNetBufferPadHelperConfig
+
+            ' Default MDL chain allocator
+            Set oPayloadSendConfig.MDLChainAllocatorConfig = m_oDefaultMDLChainAllocatorConfig      
+
+            Call oTrafficManagerSendConfig.SendConfigure(nNetBufferListsPerSend, nNetBuffersPerNetBufferlist, _
+               nDefaultTotalNumCallsToSend, 0)
+
+            ' Default verification
+            fVerificationLevel = NDT_STRESS_DEFAULT_VERIFICATION Or MINI6_STRESS_WARN_ON_PADDING
+            
+            strTestDescription = _
+               "<li>Random NET_BUFFER data lengths: upto " & AveragePacketSize & _
+               "<li>Random sized payload MDLs in the NET_BUFFER" & _
+               "<li>Adding padding bytes in last MDL of NET_BUFFER " &_
+                  "(NET_BUFFER_DATA_LENGTH < sizeof (NET_BUFFER MDL CHAIN))" & _
+               "<li>NdisSendNBL called at IRQL PASSIVE_LEVEL" & _
+               "<li>Upto " & nNetBufferListsPerSend & " NET_BUFFER_LISTs per NdisSendNBL call " & _
+                  nNetBuffersPerNetBufferlist & " NET_BUFFERs per NET_BUFFER_LIST"            
+
+         Case 13:
+            oLog.Write ("Configuring Test Case " & nTestCaseID)
+
+            ' Upto Maximum sized packets (randomly generated)
+            Set oDataLengthProviderConfig = ConstructDataLengthProviderConfig(STRESS_RANDOM_LENGTH_PROVIDER)
+            oDataLengthProviderConfig.MinLength = 0
+            oDataLengthProviderConfig.MaxLength = nMaxPacketSize
+            Set oPayloadSendConfig.DataLengthProviderConfig = oDataLengthProviderConfig
+
+            ' Random sized MDLs
+            Set oMDLLengthFragmenterConfig = ConstructMDLLengthFragmenterConfig(STRESS_RANDOM_LENGTH_FRAGMENTER)
+            oMDLLengthFragmenterConfig.MinLength = 0
+            oMDLLengthFragmenterConfig.MaxLength = nMaxPacketSize
+            oMDLLengthFragmenterConfig.MaxCount = STRESS_MAX_MDL_COUNT_DEFAULT
+            Set oPayloadSendConfig.MDLLengthFragmenterConfig = oMDLLengthFragmenterConfig
+
+            ' Default data mapping
+            Set oPayloadDataFillerConfig = ConstructPayloadDataFillerConfig(STRESS_NORMAL_PATTERN_MAPPING_FILLER)
+            oPayloadDataFillerConfig.bCreateMdlMap = FALSE
+            Set oPayloadSendConfig.PayloadDataFillerConfig = oPayloadDataFillerConfig
+
+            ' Add padding/padding MDLs at end of NET_BUFFER data
+            Set oNetBufferPadHelperConfig = ConstructNetBufferPadHelperConfig(STRESS_RANDOM_LENGTH_NET_BUFFER_PAD_HELPER)
+            oNetBufferPadHelperConfig.MaxDataMdlPostpadSize = nMaxDataPaddingSize
+            oNetBufferPadHelperConfig.MaxDummyMdlPostpadSize = nMaxDummyPaddingSize
+            Set oPayloadSendConfig.NetBufferPadHelperConfig = oNetBufferPadHelperConfig
+
+            ' Default MDL chain allocator
+            Set oPayloadSendConfig.MDLChainAllocatorConfig = m_oDefaultMDLChainAllocatorConfig      
+
+            Call oTrafficManagerSendConfig.SendConfigure(nNetBufferListsPerSend, nNetBuffersPerNetBufferlist, _
+               nDefaultTotalNumCallsToSend, 0)
+
+            ' Default verification
+            fVerificationLevel = NDT_STRESS_DEFAULT_VERIFICATION Or MINI6_STRESS_WARN_ON_PADDING
+            
+            strTestDescription = _
+               "<li>Random NET_BUFFER data lengths: upto " & AveragePacketSize & _
+               "<li>Random sized payload MDLs in the NET_BUFFER" & _
+               "<li>Adding padding bytes/MDL before data in NET_BUFFER " &_
+                  "(NET_BUFFER_DATA_LENGTH < sizeof (NET_BUFFER MDL CHAIN))" & _
+               "<li>NdisSendNBL called at IRQL PASSIVE_LEVEL" & _
+               "<li>Upto " & nNetBufferListsPerSend & " NET_BUFFER_LISTs per NdisSendNBL call " & _
+                  nNetBuffersPerNetBufferlist & " NET_BUFFERs per NET_BUFFER_LIST"
+
+         Case 14:
+            oLog.Write ("Configuring Test Case " & nTestCaseID)
+
+            ' Maximum sized packets 
+            Set oDataLengthProviderConfig = ConstructDataLengthProviderConfig(STRESS_FIXED_LENGTH_PROVIDER)
+            oDataLengthProviderConfig.Length = nMaxPacketSize
+            Set oPayloadSendConfig.DataLengthProviderConfig = oDataLengthProviderConfig
+
+            ' Random sized MDLs with many 1 byte MDLs
+            Set oMDLLengthFragmenterConfig = ConstructMDLLengthFragmenterConfig(STRESS_BIASED_RANDOM_LENGTH_FRAGMENTER)
+            oMDLLengthFragmenterConfig.BiasedLength = 1
+            oMDLLengthFragmenterConfig.BiasThreshold = 5    ' 50% 1 byte packet
+            oMDLLengthFragmenterConfig.MaxLength = AveragePacketSize
+            oMDLLengthFragmenterConfig.MaxCount = 50        ' Upto 50 payload MDLs
+            Set oPayloadSendConfig.MDLLengthFragmenterConfig = oMDLLengthFragmenterConfig
+
+            ' Default data mapping
+            Set oPayloadDataFillerConfig = ConstructPayloadDataFillerConfig(STRESS_NORMAL_PATTERN_MAPPING_FILLER)
+            oPayloadDataFillerConfig.bCreateMdlMap = FALSE
+            Set oPayloadSendConfig.PayloadDataFillerConfig = oPayloadDataFillerConfig
+
+            ' No padding
+            Set oNetBufferPadHelperConfig = ConstructNetBufferPadHelperConfig(STRESS_DUMMY_NET_BUFFER_PAD_HELPER)
+            Set oPayloadSendConfig.NetBufferPadHelperConfig = oNetBufferPadHelperConfig
+
+            ' Default MDL chain allocator
+            Set oPayloadSendConfig.MDLChainAllocatorConfig = m_oDefaultMDLChainAllocatorConfig
+
+            ' Only one NET_BUFFER_LIST per call to NdisSend
+            Call oTrafficManagerSendConfig.SendConfigure(1, nNetBuffersPerNetBufferlist, _
+               nDefaultTotalNumCallsToSend, 0)
+
+            ' Reduce maximum number of pending NET_BUFFERs
+            oTrafficManagerSendConfig.MaximumPendingNetBuffers = 50
+            
+            ' Default verification
+            fVerificationLevel = NDT_STRESS_DEFAULT_VERIFICATION
+            
+            strTestDescription = _
+               "<li>Fixed length NET_BUFFER: " & nMaxPacketSize & _
+               "<li>Random sized payload MDLs in the NET_BUFFER with many 1 byte MDLs" & _
+               "<li>No padding in the NET_BUFFER" & _
+               "<li>NdisSendNBL called at IRQL PASSIVE_LEVEL" & _
+               "<li>Upto " & 1 & " NET_BUFFER_LISTs per NdisSendNBL call " & _
+                  nNetBuffersPerNetBufferlist & " NET_BUFFERs per NET_BUFFER_LIST"
+                  
+         Case MINI6_STRESS_MAXIMUM_TESTCASES + 1:
+            ' Final case, we ignore it. Its here just to ensure that
+            ' the constant gets updated. A case repetition means 
+            ' its not updated
+            ConfigureTestCase = FALSE
+         Case Else:
+            Call oLog.Write ("Single Open stress test instance " & nTestCaseID & " skipped.")
+            ConfigureTestCase = FALSE
+      End Select
+
+   End Function
+   
+   Private Sub ExecuteDirectedStressTests
+      Dim Status, DestAddr
+      Dim oTrafficManagerSendConfig, oPayloadSendConfig
+      Dim ReceiveVerificationLevel
+      Dim nTestCaseID, TestDescription, bRunTestCase
+   
+      ' Get receivers address
+      DestAddr = oSuppOpen.vbGetCardAddress()
+      Call oSuppOpen.vbSetPacketFilter(DIRECTED)
+
+      ' Create/Configure the stress send module
+      Set oTrafficManagerSendConfig = New CStressTrafficManagerSendConfig
+      Set oPayloadSendConfig = New CStressPayloadSendConfig
+
+      For nTestCaseID = 1 To MINI6_STRESS_MAXIMUM_TESTCASES
+      
+         ' Call the configuration function to create the appropriate config object
+         bRunTestCase = ConfigureTestCase(nTestCaseID, TestDescription, oTrafficManagerSendConfig, _
+            oPayloadSendConfig, ReceiveVerificationLevel)
+            
+         If (bRunTestCase) Then
+            oLog.VariationEx "Single open stress test " & nTestCaseID, _
+               "Stress test sending from Test to Support adapter with:" & TestDescription
+            
+            ' Run the test case
+            Status = RunSingleSendReceive(nTestCaseID, DestAddr, _
+               oTrafficManagerSendConfig, oPayloadSendConfig, _
+               ReceiveVerificationLevel _
+               )
+
+            If (Status <> STRESS_STATUS_SUCCESS) Then
+               ' If we know a possible cause for the current bug, we will print
+               ' debugging information here
+            End If
+         End If
+      Next
+
+      ' Clear packet filter
+      Call oSuppOpen.vbSetPacketFilter(0)      
+   End Sub
+
+   Private Sub ExecuteRandomStressTests
+      Dim Status, SuppAddr, TestAddr
+      Dim oTestStressPayloadSendConfig, oSuppStressPayloadSendConfig
+      Dim oPayloadDataFillerConfig, oMDLLengthFragmenterConfig
+      Dim oDataLengthProviderConfig, oNetBufferPadHelperConfig
+      Dim oTestTrafficManagerConfig, oSuppTrafficManagerConfig
+      Dim TestReceiveVerificationLevel, SuppReceiveVerificationLevel
+      
+      oLog.VariationEx "Random unidirectional Test", _
+         "Stress test sending from Test to Support adapter with:" & _
+         "<li>Random NET_BUFFER data lengths: upto " & nMaxPacketSize & _
+         "<li>Random sized payload MDLs in the NET_BUFFER" & _
+         "<li>Payload MDLs possibly mapping data crossing page boundaries" & _
+         "<li>Random sized padding in the NET_BUFFER" & _
+         "<li>NdisSendNBL called both at IRQL PASSIVE_LEVEL or DISPATCH_LEVEL" & _
+         "<li>Upto " & nNetBufferListsPerSend & " NET_BUFFER_LISTs per NdisSendNBL call " & _
+            nNetBuffersPerNetBufferlist & " NET_BUFFERs per NET_BUFFER_LIST"
+
+      ' Get receivers address
+      SuppAddr = oSuppOpen.vbGetCardAddress()
+      Call oSuppOpen.vbSetPacketFilter(DIRECTED)
+
+      Set oTestTrafficManagerConfig = New CStressTrafficManagerSendConfig
+      ' Send at both passive and dispatch (sequentially)
+      oTestTrafficManagerConfig.SendMechanism = SEND_AT_PASSIVE_AND_DISPATCH
+      oTestTrafficManagerConfig.MaximumPendingNetBuffers = nMaxPendingNetBufferCount
+      Call oTestTrafficManagerConfig.SendConfigure(nNetBufferListsPerSend, nNetBuffersPerNetBufferlist, _
+         0, nDefaultSendDuration)
+
+      Set oSuppTrafficManagerConfig = New CStressTrafficManagerSendConfig
+      ' Send at passive
+      oSuppTrafficManagerConfig.SendMechanism = SEND_AT_PASSIVE
+      oSuppTrafficManagerConfig.MaximumPendingNetBuffers = nMaxPendingNetBufferCount
+      Call oSuppTrafficManagerConfig.SendConfigure(nNetBufferListsPerSend, nNetBuffersPerNetBufferlist, _
+         0, nDefaultSendDuration)
+
+      
+      ' Create/Configure the stress payload send modules
+      Set oTestStressPayloadSendConfig = New CStressPayloadSendConfig
+      Set oSuppStressPayloadSendConfig = New CStressPayloadSendConfig
+
+      ' Random NET_BUFFER length provider
+      Set oDataLengthProviderConfig = ConstructDataLengthProviderConfig(STRESS_RANDOM_LENGTH_PROVIDER)
+      oDataLengthProviderConfig.MinLength = 0
+      oDataLengthProviderConfig.MaxLength = nMaxPacketSize
+      Set oTestStressPayloadSendConfig.DataLengthProviderConfig = oDataLengthProviderConfig
+      Set oSuppStressPayloadSendConfig.DataLengthProviderConfig = oDataLengthProviderConfig
+
+      ' Random MDL lengths
+      Set oMDLLengthFragmenterConfig = ConstructMDLLengthFragmenterConfig(STRESS_RANDOM_LENGTH_FRAGMENTER)
+      oMDLLengthFragmenterConfig.MinLength = 0
+      oMDLLengthFragmenterConfig.MaxLength = nMaxPacketSize
+      oMDLLengthFragmenterConfig.MaxCount = STRESS_MAX_MDL_COUNT_DEFAULT
+      Set oTestStressPayloadSendConfig.MDLLengthFragmenterConfig = oMDLLengthFragmenterConfig
+      Set oSuppStressPayloadSendConfig.MDLLengthFragmenterConfig = oMDLLengthFragmenterConfig
+
+      ' Map data from both page boundary and regular location. Also 
+      ' store MDL map inside packet so it can be reviwed in case of a failure
+      Set oPayloadDataFillerConfig = ConstructPayloadDataFillerConfig(STRESS_MIXED_PATTERN_MAPPING_FILLER)
+      oPayloadDataFillerConfig.bCreateMdlMap = TRUE
+      Set oTestStressPayloadSendConfig.PayloadDataFillerConfig = oPayloadDataFillerConfig
+      Set oSuppStressPayloadSendConfig.PayloadDataFillerConfig = oPayloadDataFillerConfig
+
+      ' Randomly determine how many padding bytes to use
+      Set oNetBufferPadHelperConfig = ConstructNetBufferPadHelperConfig(STRESS_RANDOM_LENGTH_NET_BUFFER_PAD_HELPER)
+      oNetBufferPadHelperConfig.MaxDummyMdlPrepadSize = nMaxDummyPaddingSize
+      oNetBufferPadHelperConfig.MaxDataMdlPrepadSize = nMaxDataPaddingSize
+      oNetBufferPadHelperConfig.MaxDataMdlPostpadSize = nMaxDataPaddingSize
+      oNetBufferPadHelperConfig.MaxDummyMdlPostpadSize = nMaxDummyPaddingSize
+      Set oTestStressPayloadSendConfig.NetBufferPadHelperConfig = oNetBufferPadHelperConfig
+      Set oSuppStressPayloadSendConfig.NetBufferPadHelperConfig = oNetBufferPadHelperConfig
+
+      ' Default MDL chain allocator
+      Set oTestStressPayloadSendConfig.MDLChainAllocatorConfig = m_oDefaultMDLChainAllocatorConfig      
+      Set oSuppStressPayloadSendConfig.MDLChainAllocatorConfig = m_oDefaultMDLChainAllocatorConfig      
+
+      ' Do not verify the sequence numbers
+      SuppReceiveVerificationLevel = NDT_STRESS_MINIMAL_VERIFICATION
+      TestReceiveVerificationLevel = NDT_STRESS_MINIMAL_VERIFICATION
+      
+      Status = RunSingleSendReceive(0, SuppAddr, _ 
+         oTestTrafficManagerConfig, oTestStressPayloadSendConfig, SuppReceiveVerificationLevel _
+         )
+
+      oLog.VariationEx "Random bidirectional Test", _
+         "Stress test with test and support adapter adapters sending:" & _
+         "<li>Random NET_BUFFER data lengths: upto " & nMaxPacketSize & _
+         "<li>Random sized payload MDLs in the NET_BUFFER" & _
+         "<li>Payload MDLs possibly mapping data crossing page boundaries" & _
+         "<li>Random sized padding in the NET_BUFFER" & _
+         "<li>NdisSendNBL called both at IRQL PASSIVE_LEVEL or DISPATCH_LEVEL on " &_
+            "test adapter and IRQL PASSIVE_LEVEL on support adapter" & _
+         "<li>Upto " & nNetBufferListsPerSend & " NET_BUFFER_LISTs per NdisSendNBL call " & _
+            nNetBuffersPerNetBufferlist & " NET_BUFFERs per NET_BUFFER_LIST"
+
+      ' Setup the test open to receive
+      TestAddr = oTestOpen.vbGetCardAddress()
+      Call oTestOpen.vbSetPacketFilter(DIRECTED)
+
+      Status = RunMultipleSendReceive( _
+         SuppAddr, oTestTrafficManagerConfig, oTestStressPayloadSendConfig, SuppReceiveVerificationLevel, _
+         TestAddr, oSuppTrafficManagerConfig, oSuppStressPayloadSendConfig, TestReceiveVerificationLevel _
+         )
+      
+      Call oTestOpen.vbClearEvents()
+      Call oSuppOpen.vbClearEvents()
+   End Sub
+
+End Class
+</script>
+</job>
+</package>
+
+
+
+<!--- CRC = 0x5971f1f2 --->

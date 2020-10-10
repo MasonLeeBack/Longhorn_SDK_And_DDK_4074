@@ -1,0 +1,12 @@
+<Security>
+      <ApplicationRequestMinimum>
+        <PermissionSet class="System.Security.PermissionSet" version="1" ID="SafeVisualizationDefinition">
+          <IPermission class="System.Security.Permissions.FileDialogPermission" version="1" Unrestricted="true" />
+          <IPermission class="System.Security.Permissions.IsolatedStorageFilePermission" version="1" Allowed="DomainIsolationByUser" UserQuota="5242880" />
+          <IPermission class="System.Security.Permissions.SecurityPermission" version="1" Flags="Execution" />
+          <IPermission class="System.Security.Permissions.UIPermission" version="1" Window="SafeTopLevelWindows" Clipboard="OwnClipboard" />
+	  <IPermission class="MSAvalon.Windows.AVTempUIPermission, PresentationFramework, Version=6.0.4030.0, Culture=neutral, PublicKeyToken=a29c01bbd4e39ac5" version="1"  NewWindow="LaunchNewWindows" FullScreen=" UnrestrictedFullScreen"/>
+        </PermissionSet>
+        <AssemblyRequest name="BouncingBallsScreenSaver" PermissionSetReference="SafeVisualizationDefinition" />
+      </ApplicationRequestMinimum>
+</Security>

@@ -1,0 +1,1023 @@
+'************************* RouteAndAddressChange.wsf *********************************
+'*                                                                                   *
+'* Author            :    Kamil Ustuntas                                             *
+'* Revision history  :                                                               *
+'*                                                                                   *
+'*    03/21/2003     kamilu        Created                                           *
+'*                                                                                   *
+'* This script will test ;                                                           *
+'*         - Redirects                                                               *
+'*         - PMTU updates                                                            *
+'*         - ARP update and timeouts                                                 *
+'*         - Route changes                                                           *
+'************************* RouteAndAddressChange.wsf *********************************
+'*         - Start a connection
+'*         - Send an RA for GW1
+'*         - Controller.Send data
+'*         - Send an RA for GW3
+'*         - Controller.Send data
+'*         - Send redirect for GW2
+'*         - Controller.Send data
+'*         - Change Mac of GW2 to GW4
+'*         - Controller.Send data
+'*         - Wait for timeout of ARP entry
+'*         - Controller.send data 
+'*         - Change Arp entry
+'*         - Controller.send data 
+'*         - Send PMTU update
+'*         - Controller.Send data
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\common\Common.Lib"/>
+      <script language="VBScript" src="..\common\TCPHelper.Lib"/>
+      <script id="RouteAndAddressChange" language="VBScript">
+
+
+option explicit
+
+Dim Core, Sparta, Autosrv, MediaType, AutoArpObject, IFace, pController, ExceptionStatus
+Dim fVersion6
+
+const g_szJunkMacAddress   = "AA-AA-AA-AA-AA-AA"
+const g_szGw1IpAddress     = "fe80:0:0:0:5:1:1:1"
+const g_szGw1Ip4Address     = "10.11.0.1"
+const g_szGw1MacAddress    = "33-33-aa-aa-aa-01" 
+const g_szGw2IpAddress     = "fe80:0:0:0:5:1:1:2"
+const g_szGw2Ip4Address     = "10.11.0.2"
+const g_szGw2MacAddress    = "33-33-aa-aa-aa-02"
+const g_szGw3IpAddress     = "fe80:0:0:0:5:1:1:3"
+const g_szGw3Ip4Address     = "10.11.0.3"
+const g_szGw3MacAddress    = "33-33-aa-aa-aa-03"
+const g_szGw4IpAddress     = "fe80:0:0:0:5:1:1:4"
+const g_szGw4Ip4Address     = "10.11.0.4"
+const g_szGw4MacAddress    = "33-33-aa-aa-aa-04"
+const g_szDestAddress      = "fec0:0:0:0:1:1:1:1"
+'const g_szDestAddress      = g_szLocalSpoofIp6Address
+
+const g_ulTimeout = 3000
+'
+' Start the script
+'
+StartScript "RouteAndAddressChange", g_szLogDirectory, "Tests for Route and Address changes"
+
+
+' ==================================================================================================
+' Main routine
+' ==================================================================================================
+
+Sub Main
+
+   Core.SetAssertionTracking "30700"
+   '/**
+   ' @area name="Offload Compliance Test Assertions"
+   ' @group name="TCP Miscellaneous Test Assertions"
+   ' @group name="TCP Route Change Test Assertions"
+   ' @define name="Offload" Offload Compliance Test Assertions
+   ' @define name="TCPMisc" TCP Miscellaneous Test Assertions
+   ' @define name="Route" TCP Route Change Test Assertions
+   ' @hierarchy Offload TCPMisc Route
+   ' @key Reference="WLP# - x.x.x.x; RFC-792;RFC-826;RFC-1256;RFC-2461"
+   ' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+   ' @key TestName="TCP Route Change Tests"
+   ' @key TestParam="-v6: uses IPv6 [Default: IPv4]"   
+   ' @key TestLog="RouteAndAddressChange.log"
+   '*/
+
+    '
+    ' Parse arguments for IPv6 option
+    '
+    dim ValueArray, Status, OldRegValue
+    ValueArray = Array(false, false, false, false)
+    ParseArguments array("-v6", "-offload", "-nocap", "-popup"), array(vbBoolean, vbBoolean, vbBoolean, vbBoolean), ValueArray
+    fVersion6 = ValueArray(0)
+
+    '/**
+    ' @config conf="Set PerformRouterDiscovery = 1 to enable RouterAdvertisements listened and add to route table"
+    '*/
+
+    if not fVersion6 then
+        '
+        ' Set PerformRouterDiscovery = 1 to enable RouterAdvertisements listened and add to route table
+        '
+        Shout "Set PerformRouterDiscovery = 1 to enable RouterAdvertisements"
+        Status = SetRegKey(g_szRemoteIpAddress, TcpParamPath(fVersion6), "PerformRouterDiscovery", 1, false, OldRegValue)
+        if (Status <> 0) then
+            Block "SetRegKey - " & Status      
+            exit sub
+        end if
+    end if
+
+    '/**
+    ' @test name="Stack must use Destination MAC address as updated by Host TCP Stack"
+    ' Test uses different methods, like router advertisement, redirect, arp/neighbor packets, 
+    ' to update the mac address of the gateway and verifies that connection uses the updated mac address.
+    '*/
+    
+    '
+    ' Test Route changes by Router Advertisement and Redirect packets
+    ' Test Arp changes
+    '
+    if ShouldExecuteTest("ARPRouteChanges") then
+        Shout "Test ARP and Route Changes"
+        StartTest "ARP and Route Changes"
+        TestARPRouteChanges
+        EndTest
+    end if
+
+    '/**
+    ' @test name="The stack must perform PMTU handling for existing TCP connections"
+    ' Stack must rexmit the packet with corrected size if it receives ICMP PMTU
+    ' message. Also stack must send subsequent packets with correct size too.
+    '*/
+    
+    '
+    ' Test PMTU updates
+    '
+    if ShouldExecuteTest("PMTU") then
+        Shout "Test PMTU updates"
+        StartTest "PMTU Updates"
+        TestPMTUUpdates
+        EndTest
+    end if
+
+end Sub
+
+
+' ==================================================================================================
+'
+' Tests 
+'    - Route changes by Router Advertisement and Redirect packets
+'    - Arp changes
+'
+' ==================================================================================================
+
+Sub TestARPRouteChanges
+    Dim ulStatus, usSrcPort, usDestPort, ulIfIndex
+    Dim usLocalAddress, usRemoteAddress, usUnspecifiedAddress, pAutoDisc1, pAutoDisc2, pAutoDisc3, pAutoDisc4, pAutoDisc5, pIFace1, pIFace2, pIFace3, pIFace4, pIFace5, pIFace
+    Dim pPacket, ulTID, ulSessionId, ulSeqNumber, ulAckNumber, ulBytesRcvd
+    Dim ulType, ulPathMTU, fIsStale, szNextHop, szStdColonIp, Gw1IP, Gw2IP, Gw3IP, Gw4IP, pTCPDataPacket
+
+    usSrcPort = 5000
+    usDestPort = 5001
+
+    StartVariation
+
+    if (fVersion6) then
+        usLocalAddress = g_szLocalSpoofIp6Address
+        usRemoteAddress = g_szRemoteIp6Address
+        usUnspecifiedAddress = g_szIp6UnspecifiedAddress
+        usLocalAddress = g_szDestAddress
+        Gw1IP = g_szGw1IpAddress
+        Gw2IP = g_szGw2IpAddress
+        Gw3IP = g_szGw3IpAddress
+        Gw4IP = g_szGw4IpAddress
+        Set pAutoDisc1 = Sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, usLocalAddress, TRUE)
+        Set pAutoDisc2 = Sparta.AutoNeighbor(g_szLocalMacAddress, g_szGw1MacAddress, Gw1IP, TRUE)
+        Set pAutoDisc3 = Sparta.AutoNeighbor(g_szLocalMacAddress, g_szGw2MacAddress, Gw2IP, TRUE)
+        Set pAutoDisc4 = Sparta.AutoNeighbor(g_szLocalMacAddress, g_szGw3MacAddress, Gw3IP, TRUE)
+        Set pAutoDisc5 = Sparta.AutoNeighbor(g_szLocalMacAddress, g_szGw4MacAddress, Gw4IP, TRUE)
+    else
+        usLocalAddress = g_szLocalSpoofIp
+        usRemoteAddress = g_szRemoteIpAddress
+        usUnspecifiedAddress = "0.0.0.0"
+        usLocalAddress = "20.11.22.33"
+        Gw1IP = g_szGw1Ip4Address
+        Gw2IP = g_szGw2Ip4Address
+        Gw3IP = g_szGw3Ip4Address
+        Gw4IP = g_szGw4Ip4Address
+        set pAutoDisc1 = sparta.AutoArp(g_szLocalMacAddress, g_szLocalMacAddress, usLocalAddress)
+        set pAutoDisc2 = sparta.AutoArp(g_szLocalMacAddress, g_szGw1MacAddress, Gw1IP)
+        set pAutoDisc3 = sparta.AutoArp(g_szLocalMacAddress, g_szGw2MacAddress, Gw2IP)
+        set pAutoDisc4 = sparta.AutoArp(g_szLocalMacAddress, g_szGw3MacAddress, Gw3IP)
+        set pAutoDisc5 = sparta.AutoArp(g_szLocalMacAddress, g_szGw4MacAddress, Gw4IP)
+    end if
+
+    '
+    ' Create interface 
+    '
+
+    Set pIFace = Sparta.DriverInterface (g_szLocalMacAddress)
+
+    '
+    ' Set filters for the second interface and start listening 
+    '
+
+    Dim pMacAddrObj, ulMediaType, pPattern
+    ulMediaType = pIFace.MediaType
+    pIFace.EnablePromiscuousReceiveMode
+    pIFace.EnablePatternFiltering
+    set pPattern = Sparta.CreateIpSrcAddressPattern (ulMediaType, usRemoteAddress)
+    pIFace.AddPatternFilter pPattern
+    set pPattern = Sparta.CreateIpDestAddressPattern (ulMediaType, usLocalAddress)
+    pIFace.AddPatternFilter pPattern
+    pIFace.StartListening
+
+    pIFace.StartListening
+
+    '
+    ' Get the interface index
+    '
+    if fVersion6 then
+        ulStatus = pController.GetInterfaceIndex(usRemoteAddress, ulIfIndex)
+    else
+        ulStatus = pController.GetIndexByIp(usRemoteAddress, ulIfIndex)
+    end if
+    
+    Shout "GetInterfaceIndex for " & usRemoteAddress & " : " & ulIfIndex
+    if (ulStatus <> 0) then
+      Shout "GetInterfaceIndex for " & usRemoteAddress
+      Block "TestARPRouteChanges: GetInterfaceIndex - " & ulStatus
+      exit sub
+    end if
+
+    '
+    ' Cleanup
+    '
+    ulStatus = Cleanup(ulIfIndex, Array(Array(usUnspecifiedAddress, 0, Gw1IP), _
+                                    Array(usUnspecifiedAddress, 0, Gw2IP), _
+                                    Array(usUnspecifiedAddress, 0, Gw3IP), _
+                                    Array(usUnspecifiedAddress, 0, Gw4IP) ))
+    if (ulStatus <> 0) then
+      Block "TestARPRouteChanges: Cleanup - " & ulStatus
+      exit sub
+    end if
+
+    '
+    ' Send a RA and add a default router
+    '
+    Shout "Send a RA and add a default router"
+    Set pPacket = CreateRAPacket(300, Gw1IP, g_szGw1MacAddress, 990)
+    pIFace.Send(pPacket)
+    Core.Sleep g_ulTimeout
+
+    '
+    ' do loop used to get around using goto
+    '
+    do
+        '
+        ' Create a connected TCP socket
+        '
+        Shout "Create a connected TCP socket"
+        ulStatus = ActiveConnect(fVersion6, usSrcPort, usDestPort, usLocalAddress, usRemoteAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+        if (ulStatus <> 0) then
+            Block "TestARPRouteChanges: CreateAndConnect - " & ulStatus
+            exit do
+        end if
+
+
+        '
+        ' Verify Route Change
+        '
+        Shout "Verify Route Change"
+        if not VerifyRouteChange(ulSessionId, ulIfIndex, usLocalAddress, g_szGw1MacAddress, pIFace, pTCPDataPacket) then
+            exit do
+        end if
+
+        '
+        ' Send another RA and change the default router
+        '
+        Shout "Send a RA and add a default router"
+        Set pPacket = CreateRAPacket(300, Gw3IP, g_szGw3MacAddress, 991)  
+        pIFace.Send(pPacket)
+
+        '
+        ' Verify Route Change
+        '
+        Shout "Verify Route Change"
+        if not VerifyRouteChange(ulSessionId, ulIfIndex, usLocalAddress, g_szGw3MacAddress, pIFace, pTCPDataPacket) then
+            MsgBox "look at the route table"
+            exit do
+        end if
+
+        '
+        ' Send a redirect
+        '
+        Shout "Send a redirect"
+        Set pPacket=CreateRedirectPacket(Gw2IP, usLocalAddress, g_szGw2MacAddress, pTCPDataPacket)
+        pPacket.IpHeader.SourceAddress = Gw3IP
+        pIFace.Send(pPacket)
+
+        '
+        ' Verify Route Change
+        '
+        Shout "Verify Route Change"
+        if not VerifyRouteChange(ulSessionId, ulIfIndex, usLocalAddress, g_szGw2MacAddress, pIFace, pTCPDataPacket) then
+            exit do
+        end if
+
+        '
+        ' Modify arp-neighbor cache
+        '
+        Shout "Send an ARP"
+        Set pPacket = CreateARPNeighborPacket(Gw2IP, g_szGw4MacAddress, usRemoteAddress, g_szRemoteMacAddress)
+        pIFace.Send(pPacket)
+       
+        '
+        ' Verify Route Change
+        '
+        Shout "Verify Route Change"
+        if not VerifyRouteChange(ulSessionId, ulIfIndex, usLocalAddress, g_szGw4MacAddress, pIFace, pTCPDataPacket) then
+            exit do
+        end if
+
+        '
+        ' Wait for arp-neighbor timeout
+        '
+        Shout "Wait for ARP_Neighbor cahce timeout"
+        'MsgBox "look arp"
+        WaitARPNeighborTimeout
+        'MsgBox "look arp"
+       
+        '
+        ' Verify Route Change
+        '
+        Shout "Verify Route Change"
+        if fVersion6 then
+            '
+            ' Neighbor solicitation is sent unicast to (GW2, Gw4Mac), no reply is received, 
+            ' therefore stack switches back to default gateway GW3.
+            '
+            if not VerifyRouteChange(ulSessionId, ulIfIndex, usLocalAddress, g_szGw3MacAddress, pIFace, pTCPDataPacket) then
+                exit do
+            end if
+        else
+            ' 
+            ' Arp is sent to broadcast address, therefore GW2 replies with its mac address Gw2Mac
+            '
+            if not VerifyRouteChange(ulSessionId, ulIfIndex, usLocalAddress, g_szGw2MacAddress, pIFace, pTCPDataPacket) then
+                exit do
+            end if
+        end if
+
+    loop while(FALSE)
+
+    ResetConnectionEx fVersion6, usSrcPort, usDestPort, usLocalAddress, usRemoteAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+    '
+    ' Close the socket
+    '
+    ulStatus = pController.Close(ulSessionId, ulTID)
+
+    '
+    ' Cleanup
+    '
+    ulStatus = Cleanup(ulIfIndex, Array(Array(usUnspecifiedAddress, 0, Gw1IP)))
+    if (ulStatus <> 0) then
+      Shout "TestARPRouteChanges: Cleanup - " & ulStatus
+    end if
+    
+
+    pIFace.StopListening
+    Set pIFace = Nothing
+    set pAutoDisc1 = Nothing
+    set pAutoDisc2 = Nothing
+    set pAutoDisc3 = Nothing
+    set pAutoDisc4 = Nothing
+    set pAutoDisc5 = Nothing
+End Sub
+
+
+' ==================================================================================================
+'
+' Verify Route Change
+'
+' ==================================================================================================
+
+Function VerifyRouteChange(ulSessionId, ulIfIndex, usLocalAddress, usGwMacAddress, pIFace, byref pTCPDataPacket)
+    VerifyRouteChange = FALSE
+    
+    Dim ulStatus, ulType, ulPathMTU, fIsStale, szNextHop, szStdColonIp, ulTID, pPacket, ulSeqNumber, ulAckNumber, ulBytesRcvd, pAckPacket, fReceived
+
+    Core.Sleep g_ulTimeout
+    
+    '
+    ' Ask Autosrv to start sending data
+    '
+    Shout "Ask Autosrv to start sending data again"
+    ulStatus = pController.Send(ulSessionId, 1, 500, 100, ulTID)
+    if (ulStatus <> 0) then
+        Block "TestARPRouteChanges: Send - " & ulStatus
+        exit function
+    end if
+
+    '
+    ' Verify the TCP packets are sent to the new next hop
+    '
+    Shout "Verify the TCP packets are sent to the new next hop"
+    fReceived = false
+    
+    '
+    ' Try to receive the correct packet by ignoring the intermidiate packets
+    ' Receive fails after a packet is not received within 10 secs of timeout
+    '
+    do
+        Set pPacket=RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 10000, pIFace)
+        if (pPacket is Nothing) then
+            Sev1 "TestARPRouteChanges: Failed to receive the TCP packet"
+            exit function
+        else
+            if usGwMacAddress <> pPacket.MacHeader.DestAddress.Address then
+                Shout "TestARPRouteChanges: Failed to receive the correct TCP packet - " & pPacket.MacHeader.DestAddress.Address & " <> " & usGwMacAddress
+                'pPacket.Print
+                'exit function
+            else
+                fReceived = true
+            end if
+            Set pTCPDataPacket = pPacket
+        end if
+    loop while not pPacket is nothing and not fReceived
+
+    if fReceived then
+        Set pAckPacket = MakeTCPPacket(fVersion6, pPacket.TCPHeader.DestPort, pPacket.TCPHeader.SrcPort, pPacket.IpHeader.DestAddress, pPacket.IpHeader.SourceAddress, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+        pIFace.Send(pAckPacket)
+    else
+        Sev1 "TestARPRouteChanges: Failed to receive the correct TCP packet"
+    end if
+    VerifyRouteChange = TRUE
+End Function
+
+' ==================================================================================================
+'
+' Test PMTU updates
+'
+' ==================================================================================================
+
+Sub TestPMTUUpdates
+    Dim ulStatus, usSrcPort, usDestPort
+    Dim szSrcAddress, szDestAddress, szUnspecified, pAutoDisc1, pAutoDisc2, pIFace, Gw1IP
+
+    usSrcPort = 5000
+    usDestPort = 5001
+
+    StartVariation
+
+    if (fVersion6) then
+        'szSrcAddress = g_szLocalSpoofIp6Address
+        szSrcAddress = g_szDestAddress
+        szDestAddress = g_szRemoteIp6Address
+        szUnspecified = g_szIp6UnspecifiedAddress
+        Gw1IP = g_szGw1IpAddress
+        Set pAutoDisc1 = Sparta.AutoNeighbor(g_szLocalMacAddress, g_szGw1MacAddress, Gw1IP, TRUE)
+    else
+        'szSrcAddress = g_szLocalSpoofIp
+        szSrcAddress = "20.11.22.33"
+        szDestAddress = g_szRemoteIpAddress
+        szUnspecified = "0.0.0.0"
+        Gw1IP = g_szGw1Ip4Address
+        set pAutoDisc1 = sparta.AutoArp(g_szLocalMacAddress, g_szGw1MacAddress, Gw1IP)
+    end if
+    Set pIFace = CreateInterface(fVersion6, FALSE, g_szRemoteMacAddress, g_szGw1MacAddress, szDestAddress, szSrcAddress)
+    pIFace.StartListening
+
+    '
+    ' ...
+    '
+    Dim PMTUValues
+    PMTUValues = Array(DefaultLinkMtu-100, DefaultLinkMtu+100)
+    PMTUHandlingForExistingTCPConnection PMTUValues, pIFace, szSrcAddress, szDestAddress, szUnspecified, usSrcPort, usDestPort, Gw1IP
+    
+
+    pIFace.StopListening
+    Set pIFace = Nothing
+    set pAutoDisc1 = Nothing
+End Sub
+
+
+' ==================================================================================================
+'
+' Routine to ensure that PMTU messages are correctly handled for existing connections
+'       
+' ==================================================================================================
+
+Sub PMTUHandlingForExistingTCPConnection(PMTUValues, pIFace, szSrcAddress, szDestAddress, szUnspecified, usSrcPort, usDestPort, Gw1IP)
+   Dim ulStatus, szSrcIp, pPacket, AutoNDObject, ulTotalBytesRcvd
+   Dim ulMSS, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, fChanged
+   Dim ulBytesSent, ulTmpSeqNumber, ulCounter, ulBytesRcvd, ulMTU, fFragmentHeader, pPMTUPacket
+   Dim ulIfIndex
+
+   '
+   ' Get the interface index
+   '
+   if fVersion6 then
+        ulStatus = pController.GetInterfaceIndex(szDestAddress, ulIfIndex)
+   else
+        ulStatus = pController.GetIndexByIp(szDestAddress, ulIfIndex)
+   end if
+   if (ulStatus <> 0) then
+      Block "PMTUHandlingForExistingTCPConnection: GetInterfaceIndex - " & ulStatus
+      exit sub
+   end if
+
+   '   
+   ' Cleanup
+   '
+   ulStatus = Cleanup(ulIfIndex, Array(Array(szUnspecified, 0, Gw1IP)))
+   if (ulStatus <> 0) then   
+      Shout "PMTUHandlingForExistingTCPConnection: Cleanup - " & ulStatus
+      exit sub
+   end if
+
+   '
+   ' Add a default route
+   '
+   Set pPacket = CreateRAPacket(300, Gw1IP, g_szGw1MacAddress, 990)
+   pIFace.Send(pPacket)
+
+   '
+   ' Establish a TCP connection
+   '
+   ulStatus = ActiveConnect(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+   if (ulStatus <> 0) then
+      Shout "PMTUHandlingForExistingTCPConnection: ActiveConnect - " & ulStatus
+      exit Sub
+   end if
+   
+   '
+   ' Try out the different MTU values
+   '       
+   fFragmentHeader = FALSE
+   ulMTU = DefaultLinkMtu
+   ulMSS = EthernetMss(fVersion6)
+   For ulCounter = lBound(PMTUValues) to uBound(PMTUValues)
+      StartVariation
+
+      Shout "Trying " & PMTUValues(ulCounter)
+      
+      '
+      ' Ask Autosrv to send data
+      '
+      ulBytesSent = 7000
+      ulStatus = pController.Send(ulSessionId, 1, 0, ulBytesSent, ulTID)
+      if (ulStatus <> 0) then
+         Block "PMTUHandlingForExistingTCPConnection: Send - " & ulStatus
+         exit For
+      end if
+      
+      ' 
+      ' Receive the first packet & verify the size
+      '      
+      Set pPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 200, pIFace)
+      If (pPacket is Nothing) then
+         Sev1 "PMTUHandlingForExistingTCPConnection: Failed to receive TCP packet"
+         exit For
+      end if 
+      if (ulBytesRcvd <> ulMSS) then      
+         Sev1 "PMTUHandlingForExistingTCPConnection: Incorrect packet size " & ulBytesRcvd & " <> " & ulMSS
+         exit For
+      end if
+      ulTmpSeqNumber = ulAckNumber - ulBytesRcvd
+      
+      '
+      ' Send a PMTU notification with the specified MTU value
+      '   
+      Set pPMTUPacket = CreatePMTUPacket(PMTUValues(ulCounter), pPacket, 60)
+      pIFace.Send(pPMTUPacket)
+
+      '
+      ' Compute the new MSS
+      '            
+      fChanged = FALSE
+      if (PMTUValues(ulCounter) < ulMTU) then ' and >= MinLinkMtu(fVersion6)
+         'if ((PMTUValues(ulCounter) < MinLinkMtu(fVersion6)) AND Not(fFragmentHeader)) then
+         '   '
+         '   ' If it wasn't already below MinLinkMtu(fVersion6), we would lower it to MinLinkMtu(fVersion6)
+         '   ' & set the fragment header in outgoing packets
+         '   '
+         '   fChanged = TRUE
+         '   ulMTU = MinLinkMtu(fVersion6)
+         '   fFragmentHeader = TRUE
+         '   ulMSS = EthernetMss(fVersion6) - (DefaultLinkMtu - MinLinkMtu(fVersion6)) - V6FragmentHeaderSize
+         'elseif (PMTUValues(ulCounter) >= MinLinkMtu(fVersion6)) then
+            fChanged = TRUE
+            ulMSS = ulMSS - (ulMTU - PMTUValues(ulCounter))            
+            ulMTU = PMTUValues(ulCounter)
+         'end if
+      end if
+      
+      '
+      ' Ensure the packet is immediately rexmitted/not with the correct size
+      ' Packet should be rexmitted only if the MSS changed
+      '
+      ulTotalBytesRcvd = ulBytesRcvd
+      do
+         Set pPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 200, pIFace)
+         If Not(pPacket is Nothing) then
+            '
+            ' See if this is the rexmitted packet
+            '
+            if (pPacket.TcpHeader.SeqNumber = ulTmpSeqNumber) then    
+               ulTotalBytesRcvd = ulBytesRcvd           
+               exit do
+            end if
+            
+            '
+            ' If we don't expect a rexmit then we need to count the number of bytes
+            '
+            if Not(fChanged) then
+               ulTotalBytesRcvd = ulTotalBytesRcvd + ulBytesRcvd
+            end if
+         end if 
+      loop while Not(pPacket is Nothing)
+      If ((pPacket is Nothing) AND fChanged)then
+         Sev1 "PMTUHandlingForExistingTCPConnection: Failed to receive rexmit"
+         exit For
+      ElseIf (Not(pPacket is Nothing) AND Not(fChanged))then
+         Sev1 "PMTUHandlingForExistingTCPConnection: Packet rexmitted"
+         exit For      
+      end if  
+      if (Not(pPacket is Nothing) AND (ulBytesRcvd <> ulMSS)) then      
+         Sev1 "PMTUHandlingForExistingTCPConnection: Incorrect rexmit size " & ulBytesRcvd & " <> " & ulMSS
+         exit For
+      end if
+
+      if (fVersion6) then     
+          '
+          ' Ensure the fragment header is present/not
+          '
+          if Not(pPacket is Nothing) then
+             If (pPacket.IpHeader.FragmentHeader.IsPresent <> fFragmentHeader) then
+                Sev1 "PMTUHandlingForExistingTCPConnection: Fragment header in Rexmit - " & pPacket.IpHeader.FragmentHeader.IsPresent
+                exit For      
+             elseif (fFragmentHeader) then
+                if (pPacket.IpHeader.FragmentHeader.MoreFragments <> 0) then         
+                   Sev1 "PMTUHandlingForExistingTCPConnection: Incorrect MF - " & pPacket.IpHeader.FragmentHeader.MoreFragments
+                   exit For      
+                elseif (pPacket.IpHeader.FragmentHeader.FragmentOffset <> 0) then         
+                   Sev1 "PMTUHandlingForExistingTCPConnection: Incorrect offset - " & pPacket.IpHeader.FragmentHeader.FragmentOffset
+                   exit For      
+                end if 
+             end if
+          end if 
+      end if
+      '
+      ' Send an ACK
+      '      
+      Set pPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+      'pPacket.IpHeader.SourceAddress = szSrcIp
+      pIFace.Send(pPacket) 
+      
+      '
+      ' Ensure the subsequent packets have the right size
+      '      
+      ulBytesSent = ulBytesSent - ulTotalBytesRcvd
+      ulStatus=DataSizeLimitedByMSS(ulSeqNumber, ulAckNumber, ulSessionId, ulBytesSent, ulMSS, pIFace, FALSE, fFragmentHeader, szSrcAddress, szDestAddress)
+      if (ulStatus <> 0) then
+         Sev1 "PMTUHandlingForExistingTCPConnection: DataSizeLimitedByMSS - " & ulStatus
+         exit for
+      end if     
+   Next
+      
+   '
+   ' Reset the connection
+   '   
+   ulStatus = ResetConnectionEx(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+   if (ulStatus <> 0) then
+      Shout "ERROR: PMTUHandlingForExistingTCPConnection: ResetConnectionEx - " & ulStatus
+   end if    
+      
+   '   
+   ' Cleanup
+   '
+   ulStatus = Cleanup(ulIfIndex, Array(Array(g_szIp6UnspecifiedAddress, 0, Gw1IP)))
+   if (ulStatus <> 0) then   
+      Shout "PMTUHandlingForExistingTCPConnection: Cleanup - " & ulStatus
+      exit sub
+   end if
+
+End Sub
+
+
+' ==================================================================================================
+'
+' Function to make the stack send data and ensure the data size is as per the MSS
+'
+' ==================================================================================================
+
+Function DataSizeLimitedByMSS(ulSeqNumber, ulAckNumber, ulSessionId, ulBytesSent, ulMSS, pIFace, fSend, fFragmentHeader, szSrcAddress, szDestAddress)
+   Dim ulStatus, ulTID, usSrcPort, usDestPort, ulBytesRcvd, pPacket, ulTotalBytesRcvd, szSrcIp
+   Dim ulInterval
+
+   Shout "fFragmentHeader = " & fFragmentHeader   
+   '
+   ' Ask Autosrv to send data
+   '
+   if (fSend) then
+      ulStatus = pController.Send(ulSessionId, 1, 0, ulBytesSent, ulTID)
+      if (ulStatus <> 0) then
+         Shout "ERROR: DataSizeLimitedByMSS: Send - " & ulStatus
+         DataSizeLimitedByMSS = ulStatus
+         Exit Function
+      end if         
+   end if
+   
+   '
+   ' Receive all packets and send a PMTU message for each of them
+   '
+   ulInterval = 3000
+   ulTotalBytesRcvd = 0
+   do 
+      Set pPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, ulInterval, pIFace)
+      if ((pPacket is Nothing) OR (ulBytesRcvd = 0)) then
+         exit do
+      end if
+      ulTotalBytesRcvd = ulTotalBytesRcvd + ulBytesRcvd
+      ulInterval = 200
+      
+      '
+      ' All but the last packet should have the expected MSS size
+      '
+      if ((ulBytesRcvd <> ulMSS) AND ((pPacket.TcpHeader.Flag AND TCP_PUSH)<>TCP_PUSH)) then
+         Shout "ERROR: DataSizeLimitedByMSS: Intermediate packet has incorrect size - " & ulBytesRcvd & " <> " & ulMSS
+         DataSizeLimitedByMSS = 1
+         Exit Function
+      end if
+
+      if (fVersion6) then
+          '
+          ' Ensure the fragment header is present/not
+          '
+          If (pPacket.IpHeader.FragmentHeader.IsPresent <> fFragmentHeader) then
+             Shout "ERROR: DataSizeLimitedByMSS: Fragment header in Rexmit - " & pPacket.IpHeader.FragmentHeader.IsPresent
+             DataSizeLimitedByMSS = 2
+             Exit Function
+          elseif (fFragmentHeader) then
+             if (pPacket.IpHeader.FragmentHeader.MoreFragments <> 0) then         
+                Shout "ERROR: DataSizeLimitedByMSS: Incorrect MF - " & pPacket.IpHeader.FragmentHeader.MoreFragments
+                DataSizeLimitedByMSS = 3
+                Exit Function
+             elseif (pPacket.IpHeader.FragmentHeader.FragmentOffset <> 0) then         
+                Shout "ERROR: DataSizeLimitedByMSS: Incorrect offset - " & pPacket.IpHeader.FragmentHeader.FragmentOffset
+                DataSizeLimitedByMSS = 4
+                Exit Function
+             end if 
+          end if
+      end if
+      
+      '
+      ' Send an ACK
+      '
+      usSrcPort = pPacket.TcpHeader.DestPort
+      usDestPort = pPacket.TcpHeader.SrcPort
+      szSrcIp = pPacket.IpHeader.DestAddress
+      Set pPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+      pPacket.IpHeader.SourceAddress = szSrcIp
+      pIFace.Send(pPacket) 
+   loop while (TRUE)
+   
+   '
+   ' Ensure we have all the data
+   '   
+   if (ulTotalBytesRcvd <> ulBytesSent) then      
+      Shout "ERROR: DataSizeLimitedByMSS: Failed to recv all data - " & ulTotalBytesRcvd & " <> " & ulBytesSent
+      DataSizeLimitedByMSS = 1
+      Exit Function
+   end if
+   
+   DataSizeLimitedByMSS = 0
+End Function
+
+
+' ==================================================================================================
+'
+' Function to create a PMTU packet
+' We try to ensure 
+'            
+' ==================================================================================================
+
+Function CreatePMTUPacket(ulMTU, pPacket, ulPacketSize)
+   Dim pPMTUPacket
+
+   if (fVersion6) then
+       Set pPMTUPacket = MakeICMPPacket(fVersion6, ICMPv6_PACKET_TOO_BIG, ICMP_FRAG_DF_CODE)
+   else
+       Set pPMTUPacket = MakeICMPPacket(fVersion6, ICMP_DEST_UNR_TYPE, ICMP_FRAG_DF_CODE)
+   end if
+
+   pPMTUPacket.IcmpHeader.MTU = ulMTU
+   if Not(IsNull(pPacket)) then
+      pPMTUPacket.IcmpHeader.AttachIPErrPacket pPacket, ulPacketSize
+   end if
+
+   Set CreatePMTUPacket = pPMTUPacket
+   
+End Function
+
+
+' ==================================================================================================
+'
+' Function to do the cleanup - delete default route, flush RC, flush NC
+' Routes is an array of the form (<Prefix1, PrefixLen1, NextHop1>, Prefix2, ....)
+'
+' ==================================================================================================
+
+Function Cleanup(ulIfIndex, Routes)
+   Dim ulStatus, ulCounter
+
+   Cleanup = 0
+
+   if fVersion6 then
+       '
+       ' Delete the default routes
+       '
+       for ulCounter = lBound(Routes) to uBound(Routes)
+          ulStatus = pController.UpdateRoute(Routes(ulCounter)(0), Routes(ulCounter)(1), ulIfIndex, Routes(ulCounter)(2), 0)
+          if (ulStatus <> 0) then
+             Shout "Cleanup: UpdateRoute - " & ulStatus
+             Cleanup = ulStatus
+          end if
+          Core.Sleep 200
+       next
+
+       '
+       ' Flush the route cache table
+       '
+       ulStatus = pController.FlushRouteCache(0)
+       if (ulStatus <> 0) then
+          Shout "Cleanup: FlushRouteCache - " & ulStatus
+          Cleanup = ulStatus
+       end if
+
+       '
+       ' Flush the neighbor cache table
+       '
+       ulStatus = pController.FlushNeighborCache(ulIfIndex)
+       if (ulStatus <> 0) then
+          Shout "Cleanup: FlushNeighborCache - " & ulStatus
+          Cleanup = ulStatus
+       end if
+   else
+       '
+       ' Delete the default routes
+       '
+       ulStatus = pController.System("route delete 0.0.0.0")
+       if (ulStatus <> 0) then
+          Shout "Cleanup: UpdateRoute - " & ulStatus
+          Cleanup = ulStatus
+       end if
+       '
+       ' Flush the ARP cache table
+       '
+       ulStatus = pController.FlushArpCache(ulIfIndex)
+       if (ulStatus <> 0) then
+          Shout "Cleanup: FlushArpCache - " & ulStatus
+          Cleanup = ulStatus
+       end if
+   end if
+End Function
+
+
+' ==================================================================================================
+'
+' Function to create a router advertisement
+'
+' ==================================================================================================
+
+Function CreateRAPacket(ulLifeTime, szRouterIpAddress, szRouterMacAddress, ulPreference)
+   Dim pPacket, pMacAddrObj
+
+   if fVersion6 then
+       Set pPacket = MakeICMPPacket(fVersion6, ICMPv6_ROUTER_ADVERT, 0)
+       pPacket.IpHeader.DestAddress = g_szLinkScopeAllNodeMcastAddress
+       Set pMacAddrObj = Sparta.GetMacMcastAddrForIpv6(MediaType, g_szLinkScopeAllNodeMcastAddress)
+       pPacket.MacHeader.DestAddress = pMacAddrObj
+       if Not(IsNull(szRouterMacAddress)) then
+          Set pMacAddrObj = Sparta.MacAddress(MediaType, szRouterMacAddress)
+          pPacket.IcmpHeader.AddSourceAddressOption pMacAddrObj
+       end if
+       pPacket.IpHeader.HopLimit = 255
+       pPacket.IcmpHeader.ReachableTimer = 120000
+   else
+       Set pPacket = MakeICMPPacket(fVersion6, ICMP_ROUTER_ADVERTISEMENT_TYPE, 0)
+       Set pMacAddrObj = Sparta.MacAddress(MediaType, "01-00-5E-00-00-01")
+       pPacket.MacHeader.DestAddress = pMacAddrObj
+       pPacket.IpHeader.DestAddress = "224.0.0.1"
+       pPacket.IcmpHeader.ActualRouterCount = 1
+       pPacket.IcmpHeader.NumberOfRouter = 1
+       pPacket.IcmpHeader.AddressEntrySize = 2
+       pPacket.IcmpHeader.RouterAddressAt(0) = szRouterIpAddress
+       pPacket.IcmpHeader.PreferenceLevelAt(0) = ulPreference
+       pPacket.IpHeader.TTL = 255
+   end if
+   pPacket.IpHeader.SourceAddress = szRouterIpAddress
+   pPacket.IcmpHeader.RouterLifeTime = ulLifeTime
+   
+   Set CreateRAPacket = pPacket
+End Function
+
+
+' ==================================================================================================
+'
+' Function to create a redirect packet
+'
+' ==================================================================================================
+
+Function CreateRedirectPacket(szTargetAddress, szDestAddress, szDestMacAddress, pTCPPacket)
+   Dim pPacket, pMacAddrObj
+
+   if fVersion6 then
+       Set pPacket = MakeICMPPacket(fVersion6, ICMPv6_REDIRECT, 0)
+       pPacket.IcmpHeader.TargetAddress = szTargetAddress
+       pPacket.IcmpHeader.DestinationAddress = szDestAddress
+       if Not(IsNull(szDestMacAddress)) then
+          Set pMacAddrObj = Sparta.MacAddress(MediaType, szDestMacAddress)
+          pPacket.IcmpHeader.AddTargetAddressOption(pMacAddrObj)
+       end if
+       if Not(IsNull(pTCPPacket)) then
+          pPacket.IcmpHeader.AddHeaderOption 40, 0, 0, pTCPPacket
+       end if
+   else
+       Set pPacket = MakeICMPPacket(fVersion6, ICMP_REDIRECT_TYPE, ICMP_HOST_RE_CODE)
+       pPacket.IcmpHeader.GatewayAddr = szTargetAddress
+       if Not(IsNull(pTCPPacket)) then
+          'pPacket.IcmpHeader.AttachIPErrPacket pTCPPacket, (pTCPPacket.IpHeader.ActualHeaderLength + 8)
+          pPacket.IcmpHeader.AttachIPErrPacket pTCPPacket, pTCPPacket.Length
+       else
+          Dim ulSeqNumber, ulAckNumber
+          Set pTCPPacket = MakeTCPPacket(fVersion6, 5000, 5001, szDestAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+          pTCPPacket.PreparePacketForSend
+          'pPacket.IcmpHeader.AttachIPErrPacket pTCPPacket, (pTCPPacket.IpHeader.ActualHeaderLength + 8)
+          pPacket.IcmpHeader.AttachIPErrPacket pTCPPacket, pTCPPacket.Length
+       end if
+   end if
+
+   Set CreateRedirectPacket = pPacket
+End Function
+
+
+Function CreateARPNeighborPacket(usSrcIP, usSrcMac, usDestIP, usDestMac)
+    dim pPacket, pSrcMacAddressObject
+
+    if fVersion6 then
+        Set pPacket = MakeICMPPacket(fVersion6, ICMPv6_NEIGHBOR_ADVERT, 0)
+        pPacket.IcmpHeader.OverrideFlag = TRUE
+        pPacket.IcmpHeader.SolicitedFlag = TRUE
+        pPacket.Icmpheader.RouterFlag = TRUE
+        pPacket.IpHeader.SourceAddress = usSrcIP
+        pPacket.IpHeader.DestAddress = usDestIP
+        pPacket.IcmpHeader.TargetAddress = usSrcIP
+        if Not(IsNull(usSrcMac)) then   
+            Set pSrcMacAddressObject = Sparta.MacAddress(MediaType, usSrcMac)
+            pPacket.IcmpHeader.AddTargetAddressOption(pSrcMacAddressObject)
+        end if
+    else
+        Set pPacket = Sparta.ArpPacket(MediaType)
+        pPacket.MacHeader.DestAddress = Sparta.MacAddress(MediaType, g_szRemoteMacAddress)
+        pPacket.MacHeader.SourceAddress = Sparta.MacAddress(MediaType, g_szLocalMacAddress)
+        pPacket.MacHeader.ProtocolType = PROTOCOL_TYPE_ARP
+        pPacket.ArpHeader.HardwareType = MediaType
+        pPacket.ArpHeader.ProtocolType = PROTOCOL_TYPE_IP4
+        pPacket.ArpHeader.HardAddrSize = ETHERNET_ADDRESS_LENGTH
+        pPacket.ArpHeader.ProtAddrSize = PROTOCOL_SIZE_IP4
+        pPacket.ArpHeader.Opcode = ARP_REQUEST
+        pPacket.ArpHeader.SourceProtAddr = usSrcIP
+        pPacket.ArpHeader.SourceHardAddr = usSrcMac
+        pPacket.ArpHeader.DestProtAddr = usDestIP
+        pPacket.ArpHeader.DestHardAddr = usDestMac
+    end if
+
+    Set CreateARPNeighborPacket = pPacket
+End Function
+
+Function WaitARPNeighborTimeout
+    if fVersion6 then
+        ' default host value varies from 15 secs to 45 secs
+        ' RA packet specifies 120 secs as ReachableTime
+        ' So, wait more than 2 minutes
+        Core.Sleep 150000
+    else
+        ' wait more than 2 minutes
+        Core.Sleep 150000
+    end if
+End Function
+
+function ResetConnectionEx(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+   dim pPacket, ulTID, ulStatus
+
+   '
+   ' Check connection before it is uploaded
+   '
+   If not IsConnectionOffloaded(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSessionId) and g_fTestOffload And g_fTOENic Then
+      Core.FailSev1Variation "ResetConnection : Failed to offload the connection"
+      ResetConnectionEx = 1
+      Exit Function
+   End If
+
+   set pPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_RST or TCP_ACK, 0)
+   pPacket.IpHeader.SourceAddress = szSrcAddress
+   pPacket.IpHeader.DestAddress = szDestAddress
+   pIFace.Send(pPacket)
+   ulStatus = pController.Reset(ulSessionId, ulTID)
+
+   ResetConnectionEx = ulStatus
+
+end function
+
+      </script>
+   </job>
+</package>
+
+

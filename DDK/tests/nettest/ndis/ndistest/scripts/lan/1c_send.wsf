@@ -1,0 +1,318 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, FDDI, 802_5
+</MEDIA>
+<CARDMACH>
+1C,1M
+</CARDMACH>
+<RUNORDER>
+1270
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[This script tests the ability to send data, both singly and in bursts.
+It tries sending to all the various address types supported by the media
+type of the current driver. As far as it is concerned, no one is listening
+to the data being sent.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="1c_Send" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+            
+      <!-- Begin Wireless Specific Includes -->
+      <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	   <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	   <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	   <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	   <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+      <!-- End Wireless Specific Includes -->
+    
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/> 
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script language="VBScript" src="..\inc\ConstLAN.vbs"/>
+      <script id="1c_Send" language="VBScript">
+'==========================================================================
+' Script Name:    1c_Send
+'==========================================================================
+Option Explicit 
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0)) 
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard
+   Private oOpenOne, oOpenTwo
+   Private m_lTestAdapterIndex
+   
+   Private Sub Class_Initialize
+      
+   End Sub
+   
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+      Set oOpenOne  = Nothing
+      Set oOpenTwo  = Nothing
+   End Sub
+   
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+
+      If (UseIPHeaders) Then
+         Exit Function
+      End If      
+      
+      Set pAdapterList = oNDInfo.AdapterList
+      
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oOpenOne = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oOpenOne is Nothing) Then
+         Exit Function
+      End If
+      
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+   
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")           
+         If(vbAssociateWep(oOpenOne, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If	
+       
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+      
+      Set oOpenTwo = oTestCard.vbOpenAdapter
+      If (oOpenTwo is Nothing) Then
+         Exit Function
+      End If
+      
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+   
+   Public Function RunTest (lTestAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+      
+      ExecuteTestCore
+      
+      oLog.Variation("Clear Events")
+      
+      Call oOpenOne.vbClearEvents()
+      Call oOpenTwo.vbClearEvents()
+      
+   End Function
+   
+   Private Function ExecuteTestCore
+      Dim nMedium, nMaxPacketSize
+      Dim BroadcastAddr, DestAddr
+      Dim bResult, nPass
+      Dim NumAddresses, arrDestAddr(8)
+      
+      nMedium = oTestCard.NdisMedium
+      nMaxPacketSize = oOpenOne.vbGetMaxPacketSize()
+      BroadcastAddr = oTestCard.vbGetBroadcastAddress()
+      
+      If (nMedium = NDISMEDIUM802_3) Then
+         oLog.Variation("Verifying MAXIMUM_TOTAL_SIZE and MAXIMUM_FRAME_SIZE")
+         Dim nMaxTotalSize, nMaxFrameSize
+         
+         bResult = oTestCard.vbFastNdisIOControl(OID_GEN_MAXIMUM_TOTAL_SIZE, nMaxTotalSize, QUERY_GLOBAL_STATS)
+         If(NOT bResult) Then
+            Call oLog.Failed ("Unable to query OID_GEN_MAXIMUM_TOTAL_SIZE", 20973)
+         Else
+            bResult = oTestCard.vbFastNdisIOControl(OID_GEN_MAXIMUM_FRAME_SIZE, nMaxFrameSize, QUERY_GLOBAL_STATS)
+            If(NOT bResult) Then
+               Call oLog.Failed ("Unable to query OID_GEN_MAXIMUM_FRAME_SIZE", 20974)
+            Else 
+               If (nMaxTotalSize - nMaxFrameSize <> 14) Then
+                  Call oLog.Failed ("OID_GEN_MAXIMUM_TOTAL_SIZE (" & nMaxTotalSize & ")  - OID_GEN_MAXIMUM_FRAME_SIZE (" & nMaxFrameSize & ")  does not equal 14", 20975)
+                  Call oLog.Write ("The difference between these two values must be 14 for 802.3 devices.")
+               Else
+                  Call oLog.Write ("OID_GEN_MAXIMUM_TOTAL_SIZE (" & nMaxTotalSize & ")  - OID_GEN_MAXIMUM_FRAME_SIZE (" & nMaxFrameSize & ")  correctly equals 14")
+               End If
+            End If
+         End If
+      End If
+      
+      '
+      ' set so no other tester on net sees these packets
+      '      
+      
+      ' RemoteId sets the message ID that will be sent on
+      oLog.Variation("Setting Remote Id's")
+      Dim nTestId
+
+      nTestId = oNdtSupp.Random(1, 32765)
+      oOpenOne.vbSetRemoteId(nTestId)
+      oOpenTwo.vbSetRemoteId(nTestId)
+      
+      '---------------------------------------------------
+      ' variation -- (pass 0) send to a random ("directed") address
+      '              (pass 1) send to the broadcast address
+      '              (pass 2) send to functional or multicast address
+      '              (pass 3) send to group address
+      '---------------------------------------------------
+      
+      DestAddr = RandomAddr
+      
+      
+      Dim nPacketSize, nPacketsSent
+      nPacketSize = glMinimumPacketSize
+      nPacketsSent = CLng(0)
+      
+      oLog.Variation("Testing sending to a (random) directed address")
+      nPass = CLng(0)
+      Do While(TRUE)
+         Do While(TRUE)      
+            oLog.Variation("Sending: Send")
+            
+            ' Send DestAddr, PacketSize, NumPackets, TestDuration, ResendAddr
+            
+            Call oOpenOne.vbVerifiedSend(DestAddr, nPacketSize, glPacketsToSend, 0, Null)
+            Call oOpenTwo.vbVerifiedSend(DestAddr, nPacketSize, glPacketsToSend, 0, Null)
+            
+            oLog.Variation("Obtaining the new packet size")
+            If (nPacketSize = nMaxPacketSize) Then
+               Exit Do
+            ElseIf (nPacketSize = glMinimumPacketSize) Then
+               nPacketSize = (nMaxPacketSize + glMinimumPacketSize) \ 2
+               If ((nPacketSize And &H0001&) = 0) Then
+                  nPacketSize = nPacketSize + 1
+               End If
+            Else
+               nPacketSize = nMaxPacketSize
+            End If
+         Loop
+         
+         '
+         ' set up for next test...
+         '
+         nPacketSize = glMinimumPacketSize
+         If (nPass = 0) Then         ' just finished random directed address
+            ' set up for sending to broadcast address
+            nPass = nPass + 1
+            DestAddr = BroadcastAddr
+            oLog.Variation("Testing sending to the broadcast address")
+         ElseIf (nPass = 1) Then       ' just finished broadcast address
+            ' setup for sending to functional or multicast address
+            nPass = nPass + 1
+            If (nMedium = NDISMEDIUM802_5) Then
+               DestAddr = NetAddr(&HC0&, &H00&, &H01&, &H02&, &H03&, &H04&)
+               oLog.Variation("Testing sending to a functional address")
+            Else                  ' MEDIUM: Ethernet or FDDI
+               DestAddr = NetAddr(&H01&, &H02&, &H03&, &H04&, &H05&, &H06&)
+               oLog.Variation("Testing sending to a multicast address")
+            End If
+            
+         ElseIf (nPass = 2) Then       ' just finished multicast or functional address
+            ' set up for sending to group address
+            nPass = nPass + 1
+            If (nMedium = NDISMEDIUM802_5) Then
+               DestAddr = NetAddr(&HC0&, &H00&, &H81&, &H02&, &H03&, &H04&)
+               oLog.Variation("Testing sending to a group address")
+            Else 
+               Exit Do
+            End If
+         Else                     ' just finished group address
+            Exit Do          ' we are all done!
+         End If
+      Loop
+      
+      '
+      ' supporting only NDIS5.0 or greater, testing NdisSendPackets code
+      '
+      arrDestAddr(0) = RandomAddr
+      arrDestAddr(1) = RandomAddr
+      arrDestAddr(2) = BroadcastAddr
+      arrDestAddr(3) = BroadcastAddr
+      NumAddresses = 4
+      
+      If (nMedium = NDISMEDIUM802_5) Then
+         arrDestAddr(4) = NetAddr(&HC0&, &H00&, &H01&, &H02&, &H03&, &H04&)
+         arrDestAddr(5) = NetAddr(&HC0&, &H00&, &H01&, &H02&, &H03&, &H04&)
+         arrDestAddr(6) = NetAddr(&HC0&, &H00&, &H81&, &H02&, &H03&, &H04&)
+         arrDestAddr(7) = NetAddr(&HC0&, &H00&, &H81&, &H02&, &H03&, &H04&)
+         NumAddresses = 8
+      End If
+      
+      nPacketSize = glMinimumPacketSize
+      nPacketsSent = CLng(0)
+      
+      Dim nTotalPackets
+      nTotalPackets = glBurstsToSend * NumAddresses
+      
+      oLog.Variation("Testing sending to a group of addresses")
+      
+      Do While (TRUE)
+         oLog.Variation("Sending: SendPackets")
+         
+         ' SendPackets ArrDestAddr, NumAddresses, PacketSize, NumPackets, TestDuration, ResendAddr
+         Call oOpenOne.vbVerifiedSendPackets(arrDestAddr, NumAddresses, nPacketSize, glBurstsToSend, 0, Null)   
+         Call oOpenTwo.vbVerifiedSendPackets(arrDestAddr, NumAddresses, nPacketSize, glBurstsToSend, 0, Null)   
+         
+         If (nPacketSize = nMaxPacketSize) Then
+            Exit Do
+         ElseIf (nPacketSize = glMinimumPacketSize) Then
+            nPacketSize = (nMaxPacketSize + glMinimumPacketSize) \ 2
+            If ((nPacketSize And &H0001&) = 0) Then
+               nPacketSize = nPacketSize + 1
+            End If
+         Else
+            nPacketSize = nMaxPacketSize
+         End If
+      Loop   
+      
+   End Function
+   
+   
+End Class
+
+</script>
+</job>
+</package>
+
+
+<!--- CRC = 0xa735af0c --->

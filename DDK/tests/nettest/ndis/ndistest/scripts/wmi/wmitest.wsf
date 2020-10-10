@@ -1,0 +1,1002 @@
+<?xml version="1.0" ?>
+<package>
+	<comment>
+	Primalscript wizard generated file.
+	</comment>
+	<job id="Job1">
+		<script language="VBScript" src="CWin32_Bus.vbs"/>
+		<script language="VBScript" src="CWin32_BIOS.vbs"/>
+		<script language="VBScript" src="CWin32_ComputerSystem.vbs"/>
+		<script language="VBScript" src="CWin32_NetworkProtocol.vbs"/>
+		<script language="VBScript" src="CWin32_Service.vbs"/>
+		<script language="VBScript" src="CWin32_SystemDriver.vbs"/>
+		<script language="VBScript" src="CWin32_NetworkAdapterConfiguration.vbs"/>
+		<script language="VBScript" src="CWin32_NetworkAdapter.vbs"/>
+		<script language="VBScript" src="CWin32_OperatingSystem.vbs"/>
+		<script language="VBScript" src="CWin32_NetworkLoginProfile.vbs"/>
+		<script language="VBScript" src="CWin32_Process.vbs"/>
+		<script language="VBScript" src="wmierror.vbs"/>
+		<script id="wmitest" language="VBScript">
+<![CDATA[
+Option Explicit
+Dim oOut : Set oOut = WScript.StdOut
+
+Win32_Process("SELECT * FROM Win32_Process")
+Win32_NetworkLoginProfile("SELECT * FROM Win32_NetworkLoginProfile")
+Win32_OperatingSystem("SELECT * FROM Win32_OperatingSystem")
+Win32_NetworkAdapter("SELECT * FROM Win32_NetworkAdapter")
+Win32_NetworkAdapterConfiguration("SELECT * FROM Win32_NetworkAdapterConfiguration")
+'Win32_SystemDriver("SELECT * FROM Win32_SystemDriver WHERE Name='PCX500'")
+Win32_SystemDriver("SELECT * FROM Win32_SystemDriver")
+Win32_Service("SELECT * FROM Win32_Service")
+Win32_NetworkProtocol("SELECT * FROM Win32_NetworkProtocol")
+Win32_ComputerSystem("SELECT * FROM Win32_ComputerSystem")
+Win32_BIOS("SELECT * FROM Win32_BIOS")
+Win32_Bus("SELECT * FROM Win32_Bus")
+
+oOut.WriteBlankLines(2)
+oOut.WriteLine("End Log")
+
+'================================================================================================='
+Function Win32_Bus(byval sQuery)
+Dim oItem      : Set oItem    = New CWin32_Bus
+Dim nError     : nError       = 0
+Dim nIndex     : nIndex       = 0
+Dim bStopped   : bStopped     = False
+
+   nError = oItem.vbQuery(sQuery)
+   If(nError <> WBEM_ERR_NO_ERROR) Then
+      oOut.WriteLine("FAILURE: " & vbGetWMIError(nError))
+      Exit Function
+   End If
+   
+    oOut.WriteLine("BIOS Count = " & oItem.vbCount)
+    oOut.WriteBlankLines(1)
+   
+    Dim i
+   For i = 0 To oItem.vbCount - 1
+      oItem.vbNext
+      
+      oOut.WriteLine("==================== Bus ======================")      
+      oOut.WriteLine("Availability:                " & oItem.Availability)
+      oOut.WriteLine("BusNum:                      " & oItem.BusNum)
+      oOut.WriteLine("BusType:                     " & oItem.BusType)
+      oOut.WriteLine("Caption:                     " & oItem.Caption) 
+      oOut.WriteLine("ConfigManagerErrorCode:      " & oItem.ConfigManagerErrorCode) 
+      oOut.WriteLine("ConfigManagerUserConfig:     " & oItem.ConfigManagerUserConfig) 
+      oOut.WriteLine("CreationClassName:           " & oItem.CreationClassName) 
+      oOut.WriteLine("Description:                 " & oItem.Description) 
+      oOut.WriteLine("DeviceID:                    " & oItem.DeviceID)       
+      oOut.WriteLine("ErrorCleared:                " & oItem.ErrorCleared) 
+      oOut.WriteLine("ErrorDescription:            " & oItem.ErrorDescription)
+      oOut.WriteLine("InstallDate:                 " & oItem.InstallDate) 
+      oOut.WriteLine("LastErrorCode:               " & oItem.LastErrorCode) 
+      oOut.WriteLine("Name:                        " & oItem.Name) 
+      oOut.WriteLine("PNPDeviceID:                 " & oItem.PNPDeviceID) 
+       
+      Dim aPowerManagementCapabilities : aPowerManagementCapabilities = oItem.PowerManagementCapabilities
+      If(IsArray(aPowerManagementCapabilities) = True) Then
+         oOut.WriteLine("----- Power Management Capabilities -----")
+         For nIndex = 0 To UBound(aPowerManagementCapabilities)
+            oOut.WriteLine(nIndex + 1 & ") " & aPowerManagementCapabilities(nIndex))
+         Next
+      End If
+      
+      oOut.WriteLine("PowerManagementSupported:    " & oItem.PowerManagementSupported) 
+      oOut.WriteLine("Status:                      " & oItem.Status) 
+      oOut.WriteLine("StatusInfo:                  " & oItem.StatusInfo) 
+      oOut.WriteLine("SystemCreationClassName:     " & oItem.SystemCreationClassName)             
+      oOut.WriteLine("SystemName:                  " & oItem.SystemName) 
+      oOut.WriteBlankLines(1)
+          
+   Next
+      
+End Function
+
+'================================================================================================='
+Function Win32_BIOS(byval sQuery)
+Dim oItem      : Set oItem    = New CWin32_BIOS
+Dim nError     : nError       = 0
+Dim nIndex     : nIndex       = 0
+Dim bStopped   : bStopped     = False
+
+   nError = oItem.vbQuery(sQuery)
+   If(nError <> WBEM_ERR_NO_ERROR) Then
+      oOut.WriteLine("FAILURE: " & vbGetWMIError(nError))
+      Exit Function
+   End If
+   
+    oOut.WriteLine("BIOS Count = " & oItem.vbCount)
+    oOut.WriteBlankLines(1)
+   
+    Dim i
+   For i = 0 To oItem.vbCount - 1
+      oItem.vbNext
+      
+      oOut.WriteLine("==================== BIOS ======================")
+      
+      Dim aBiosCharacteristics : aBiosCharacteristics = oItem.BiosCharacteristics
+      If(IsArray(aBiosCharacteristics) = True) Then
+         oOut.WriteLine("----- BIOS Characteristics -----")
+         For nIndex = 0 To UBound(aBiosCharacteristics)
+            oOut.WriteLine(nIndex + 1 & ") " & aBiosCharacteristics(nIndex))
+         Next
+      End If
+      
+      oOut.WriteLine("BuildNumber:              " & oItem.BuildNumber)
+      oOut.WriteLine("Caption:                  " & oItem.Caption)
+      oOut.WriteLine("CodeSet:                  " & oItem.CodeSet)
+      oOut.WriteLine("CurrentLanguage:          " & oItem.CurrentLanguage) 
+      oOut.WriteLine("Description:              " & oItem.Description) 
+      oOut.WriteLine("IdentificationCode:       " & oItem.IdentificationCode) 
+      oOut.WriteLine("InstallableLanguages:     " & oItem.InstallableLanguages) 
+      oOut.WriteLine("InstallDate:              " & oItem.InstallDate) 
+      oOut.WriteLine("LanguageEdition:          " & oItem.LanguageEdition) 
+      
+      Dim aListOfLanguages : aListOfLanguages = oItem.ListOfLanguages
+      If(IsArray(aListOfLanguages) = True) Then
+         oOut.WriteLine("----- List Of Languages -----")
+         For nIndex = 0 To UBound(aListOfLanguages)
+            oOut.WriteLine(nIndex + 1 & ") " & aListOfLanguages(nIndex))
+         Next
+      End If
+      
+      oOut.WriteLine("Manufacturer:             " & oItem.Manufacturer) 
+      oOut.WriteLine("Name:                     " & oItem.Name)
+      oOut.WriteLine("OtherTargetOS:            " & oItem.OtherTargetOS) 
+      oOut.WriteLine("PrimaryBIOS:              " & oItem.PrimaryBIOS) 
+      oOut.WriteLine("ReleaseDate:              " & oItem.ReleaseDate) 
+      oOut.WriteLine("SerialNumber:             " & oItem.SerialNumber) 
+      oOut.WriteLine("SMBIOSBIOSVersion:        " & oItem.SMBIOSBIOSVersion) 
+      oOut.WriteLine("SMBIOSMajorVersion:       " & oItem.SMBIOSMajorVersion) 
+      oOut.WriteLine("SMBIOSMinorVersion:       " & oItem.SMBIOSMinorVersion) 
+      oOut.WriteLine("SMBIOSPresent:            " & oItem.SMBIOSPresent) 
+      oOut.WriteLine("SoftwareElementID:        " & oItem.SoftwareElementID)             
+      oOut.WriteLine("SoftwareElementState:     " & oItem.SoftwareElementState) 
+      oOut.WriteLine("Status:                   " & oItem.Status)
+      oOut.WriteLine("TargetOperatingSystem:    " & oItem.TargetOperatingSystem)
+      oOut.WriteLine("Version:                  " & oItem.Version)
+      oOut.WriteBlankLines(1)
+          
+   Next
+      
+End Function
+
+'================================================================================================='
+Function Win32_ComputerSystem(byval sQuery)
+Dim oSystem    : Set oSystem  = New CWin32_ComputerSystem
+Dim nError     : nError       = 0
+Dim nIndex     : nIndex       = 0
+Dim bStopped   : bStopped     = False
+
+   nError = oSystem.vbQuery(sQuery)
+   If(nError <> WBEM_ERR_NO_ERROR) Then
+      oOut.WriteLine("FAILURE: " & vbGetWMIError(nError))
+      Exit Function
+   End If
+   
+    oOut.WriteLine("System Count = " & oSystem.vbCount)
+    oOut.WriteBlankLines(1)
+   
+    Dim i
+   For i = 0 To oSystem.vbCount - 1
+      oSystem.vbNext
+      
+      oOut.WriteLine("==================== Computer System ======================")
+      oOut.WriteLine("AdminPasswordStatus:            " & oSystem.AdminPasswordStatus)
+      oOut.WriteLine("AutomaticResetBootOption:       " & oSystem.AutomaticResetBootOption)
+      oOut.WriteLine("AutomaticResetCapability:       " & oSystem.AutomaticResetCapability)
+      oOut.WriteLine("BootOptionOnLimit:              " & oSystem.BootOptionOnLimit)
+      oOut.WriteLine("BootOptionOnWatchDog:           " & oSystem.BootOptionOnWatchDog) 
+      oOut.WriteLine("BootROMSupported:               " & oSystem.BootROMSupported) 
+      oOut.WriteLine("BootupState:                    " & oSystem.BootupState) 
+      oOut.WriteLine("Caption:                        " & oSystem.Caption) 
+      oOut.WriteLine("ChassisBootupState:             " & oSystem.ChassisBootupState) 
+      oOut.WriteLine("CreationClassName:              " & oSystem.CreationClassName) 
+      oOut.WriteLine("CurrentTimeZone:                " & oSystem.CurrentTimeZone) 
+      oOut.WriteLine("DaylightInEffect:               " & oSystem.DaylightInEffect) 
+      oOut.WriteLine("Description:                    " & oSystem.Description)
+      oOut.WriteLine("Domain:                         " & oSystem.Domain) 
+      oOut.WriteLine("DomainRole:                     " & oSystem.DomainRole) 
+      oOut.WriteLine("FrontPanelResetStatus:          " & oSystem.FrontPanelResetStatus) 
+      oOut.WriteLine("InfraredSupported:              " & oSystem.InfraredSupported) 
+      oOut.WriteLine("InitialLoadInfo:                " & oSystem.InitialLoadInfo) 
+      oOut.WriteLine("InstallDate:                    " & oSystem.InstallDate) 
+      oOut.WriteLine("KeyboardPasswordStatus:         " & oSystem.KeyboardPasswordStatus) 
+      oOut.WriteLine("LastLoadInfo:                   " & oSystem.LastLoadInfo) 
+      oOut.WriteLine("Manufacturer:                   " & oSystem.Manufacturer)             
+      oOut.WriteLine("Model:                          " & oSystem.Model) 
+      oOut.WriteLine("Name:                           " & oSystem.Name)
+      oOut.WriteLine("NameFormat:                     " & oSystem.NameFormat)
+      oOut.WriteLine("NetworkServerModeEnabled:       " & oSystem.NetworkServerModeEnabled)
+      oOut.WriteLine("NumberOfProcessors:             " & oSystem.NumberOfProcessors)
+      
+      Dim aOEMLogoBitmap : aOEMLogoBitmap = oSystem.OEMLogoBitmap
+      If(IsArray(aOEMLogoBitmap) = True) Then
+         oOut.WriteLine("----- OEM Logo Bitmap -----")
+         For nIndex = 0 To UBound(aOEMLogoBitmap)
+            oOut.WriteLine(nIndex + 1 & ") " & aOEMLogoBitmap(nIndex))
+         Next
+      End If
+      
+      Dim aOEMStringArray : aOEMStringArray = oSystem.OEMStringArray
+      If(IsArray(aOEMStringArray) = True) Then
+         oOut.WriteLine("----- OEM String Array -----")
+         For nIndex = 0 To UBound(aOEMStringArray)
+            oOut.WriteLine(nIndex + 1 & ") " & aOEMStringArray(nIndex))
+         Next
+      End If
+      
+      oOut.WriteLine("PauseAfterReset:                " & oSystem.PauseAfterReset) 
+      
+      Dim aPowerManagementCapabilities : aPowerManagementCapabilities = oSystem.PowerManagementCapabilities
+      If(IsArray(aPowerManagementCapabilities) = True) Then
+         oOut.WriteLine("----- Power Management Capabilities -----")
+         For nIndex = 0 To UBound(aPowerManagementCapabilities)
+            oOut.WriteLine(nIndex + 1 & ") " & aPowerManagementCapabilities(nIndex))
+         Next
+      End If
+      
+      oOut.WriteLine("PowerManagementSupported:       " & oSystem.PowerManagementSupported) 
+      oOut.WriteLine("PowerOnPasswordStatus:          " & oSystem.PowerOnPasswordStatus) 
+      oOut.WriteLine("PowerState:                     " & oSystem.PowerState) 
+      oOut.WriteLine("PowerSupplyState:               " & oSystem.PowerSupplyState) 
+      oOut.WriteLine("PrimaryOwnerContact:            " & oSystem.PrimaryOwnerContact)
+      oOut.WriteLine("PrimaryOwnerName:               " & oSystem.PrimaryOwnerName) 
+      oOut.WriteLine("ResetCapability:                " & oSystem.ResetCapability) 
+      oOut.WriteLine("ResetCount:                     " & oSystem.ResetCount) 
+      oOut.WriteLine("ResetLimit:                     " & oSystem.ResetLimit) 
+       
+      Dim aRoles : aRoles = oSystem.Roles
+      If(IsArray(aRoles) = True) Then
+         oOut.WriteLine("----- Roles -----")
+         For nIndex = 0 To UBound(aRoles)
+            oOut.WriteLine(nIndex + 1 & ") " & aRoles(nIndex))
+         Next
+      End If
+      
+      oOut.WriteLine("Status:                         " & oSystem.Status) 
+      
+      Dim aSupportContactDescription : aSupportContactDescription = oSystem.SupportContactDescription
+      If(IsArray(aSupportContactDescription) = True) Then
+         oOut.WriteLine("----- Support Contact Description -----")
+         For nIndex = 0 To UBound(aSupportContactDescription)
+            oOut.WriteLine(nIndex + 1 & ") " & aSupportContactDescription(nIndex))
+         Next
+      End If
+      
+      oOut.WriteLine("SystemStartupDelay:             " & oSystem.SystemStartupDelay) 
+       
+      Dim aSystemStartupOptions : aSystemStartupOptions = oSystem.SystemStartupOptions
+      If(IsArray(aSystemStartupOptions) = True) Then
+         oOut.WriteLine("----- System Startup Options -----")
+         For nIndex = 0 To UBound(aSystemStartupOptions)
+            oOut.WriteLine(nIndex + 1 & ") " & aSystemStartupOptions(nIndex))
+         Next
+      End If
+                  
+      oOut.WriteLine("SystemStartupSetting:           " & oSystem.SystemStartupSetting) 
+      oOut.WriteLine("SystemType:                     " & oSystem.SystemType) 
+      oOut.WriteLine("ThermalState:                   " & oSystem.ThermalState)             
+      oOut.WriteLine("TotalPhysicalMemory:            " & oSystem.TotalPhysicalMemory) 
+      oOut.WriteLine("UserName:                       " & oSystem.UserName) 
+      oOut.WriteLine("WakeUpType:                     " & oSystem.WakeUpType) 
+      oOut.WriteBlankLines(1)
+          
+   Next
+      
+End Function
+
+'================================================================================================='
+Function Win32_NetworkProtocol(byval sQuery)
+Dim oProtocol  : Set oProtocol  = New CWin32_NetworkProtocol
+Dim nError     : nError       = 0
+Dim nIndex     : nIndex       = 0
+Dim bStopped   : bStopped     = False
+
+   nError = oProtocol.vbQuery(sQuery)
+   If(nError <> WBEM_ERR_NO_ERROR) Then
+      oOut.WriteLine("FAILURE: " & vbGetWMIError(nError))
+      Exit Function
+   End If
+   
+    oOut.WriteLine("Protocol Count = " & oProtocol.vbCount)
+    oOut.WriteBlankLines(1)
+   
+    Dim i
+   For i = 0 To oProtocol.vbCount - 1
+      oProtocol.vbNext
+      
+      oOut.WriteLine("==================== Protocol ======================")
+      oOut.WriteLine("Caption:                     " & oProtocol.Caption)
+      oOut.WriteLine("ConnectionlessService:       " & oProtocol.ConnectionlessService)
+      oOut.WriteLine("Description:                 " & oProtocol.Description)
+      oOut.WriteLine("GuaranteesDelivery:          " & oProtocol.GuaranteesDelivery)
+      oOut.WriteLine("GuaranteesSequencing:        " & oProtocol.GuaranteesSequencing) 
+      oOut.WriteLine("InstallDate:                 " & oProtocol.InstallDate) 
+      oOut.WriteLine("MaximumAddressSize:          " & oProtocol.MaximumAddressSize) 
+      oOut.WriteLine("MaximumMessageSize:          " & oProtocol.MaximumMessageSize) 
+      oOut.WriteLine("MessageOriented:             " & oProtocol.MessageOriented) 
+      oOut.WriteLine("MinimumAddressSize:          " & oProtocol.MinimumAddressSize) 
+      oOut.WriteLine("Name:                        " & oProtocol.Name) 
+      oOut.WriteLine("PseudoStreamOriented:        " & oProtocol.PseudoStreamOriented) 
+      oOut.WriteLine("Status:                      " & oProtocol.Status)
+      oOut.WriteLine("SupportsBroadcasting:        " & oProtocol.SupportsBroadcasting) 
+      oOut.WriteLine("SupportsConnectData:         " & oProtocol.SupportsConnectData) 
+      oOut.WriteLine("SupportsDisconnectData:      " & oProtocol.SupportsDisconnectData) 
+      oOut.WriteLine("SupportsEncryption:          " & oProtocol.SupportsEncryption) 
+      oOut.WriteLine("SupportsExpeditedData:       " & oProtocol.SupportsExpeditedData) 
+      oOut.WriteLine("SupportsFragmentation:       " & oProtocol.SupportsFragmentation) 
+      oOut.WriteLine("SupportsGracefulClosing:     " & oProtocol.SupportsGracefulClosing) 
+      oOut.WriteLine("SupportsGuaranteedBandwidth: " & oProtocol.SupportsGuaranteedBandwidth) 
+      oOut.WriteLine("SupportsMulticasting:        " & oProtocol.SupportsMulticasting)             
+      oOut.WriteLine("SupportsQualityofService:    " & oProtocol.SupportsQualityofService) 
+      oOut.WriteBlankLines(1)
+          
+   Next
+      
+End Function
+
+'================================================================================================='
+Function Win32_Service(byval sQuery)
+Dim oService   : Set oService  = New CWin32_Service
+Dim nError     : nError       = 0
+Dim nIndex     : nIndex       = 0
+Dim bStopped   : bStopped     = False
+
+   nError = oService.vbQuery(sQuery)
+   If(nError <> WBEM_ERR_NO_ERROR) Then
+      oOut.WriteLine("FAILURE: " & vbGetWMIError(nError))
+      Exit Function
+   End If
+   
+    oOut.WriteLine("Service Count = " & oService.vbCount)
+    oOut.WriteBlankLines(1)
+   
+    Dim i
+   For i = 0 To oService.vbCount - 1
+      oService.vbNext
+      
+      oOut.WriteLine("==================== Service ======================")
+      oOut.WriteLine("AcceptPause:              " & oService.AcceptPause)
+      oOut.WriteLine("AcceptStop:               " & oService.AcceptStop)
+      oOut.WriteLine("Caption:                  " & oService.Caption)
+      oOut.WriteLine("CheckPoint:               " & oService.CheckPoint)
+      oOut.WriteLine("CreationClassName:        " & oService.CreationClassName) 
+      oOut.WriteLine("Description:              " & oService.Description) 
+      oOut.WriteLine("DesktopInteract:          " & oService.DesktopInteract) 
+      oOut.WriteLine("DisplayName:              " & oService.DisplayName) 
+      oOut.WriteLine("ErrorControl:             " & oService.ErrorControl) 
+      oOut.WriteLine("ExitCode:                 " & oService.ExitCode) 
+      oOut.WriteLine("InstallDate:              " & oService.InstallDate) 
+      oOut.WriteLine("Name:                     " & oService.Name) 
+      oOut.WriteLine("PathName:                 " & oService.PathName)
+      oOut.WriteLine("ProcessId:                " & oService.ProcessId) 
+      oOut.WriteLine("ServiceSpecificExitCode:  " & oService.ServiceSpecificExitCode) 
+      oOut.WriteLine("ServiceType:              " & oService.ServiceType) 
+      oOut.WriteLine("Started:                  " & oService.Started) 
+      oOut.WriteLine("StartMode:                " & oService.StartMode) 
+      oOut.WriteLine("StartName:                " & oService.StartName) 
+      oOut.WriteLine("State:                    " & oService.State) 
+      oOut.WriteLine("Status:                   " & oService.Status) 
+      oOut.WriteLine("SystemCreationClassName:  " & oService.SystemCreationClassName)             
+      oOut.WriteLine("SystemName:               " & oService.SystemName) 
+      oOut.WriteLine("TagId:                    " & oService.TagId)
+      oOut.WriteLine("WaitHint:                 " & oService.WaitHint)  
+      oOut.WriteBlankLines(1)
+      
+      ' If(oService.AcceptStop = True AND oService.State = "Running") Then
+'          nError = oService.StopService()
+'          If(nError <> WBEM_ERR_NO_ERROR) Then
+'             oOut.WriteLine("StopService() failed!")
+'          Else
+'             bStopped = True
+'          End If         
+'       End If
+'       
+'       If(bStopped = True) Then
+'          nError = oService.StartService()
+'          If(nError <> WBEM_ERR_NO_ERROR) Then
+'             oOut.WriteLine("StartService() failed!")
+'          End If
+'          bStopped = False
+'       End If     
+      
+   Next
+      
+End Function
+
+'================================================================================================='
+Function Win32_SystemDriver(byval sQuery)
+Dim oDriver    : Set oDriver  = New CWin32_SystemDriver
+Dim nError     : nError       = 0
+Dim nIndex     : nIndex       = 0
+Dim bStopped   : bStopped     = False
+
+   nError = oDriver.vbQuery(sQuery)
+   If(nError <> WBEM_ERR_NO_ERROR) Then
+      oOut.WriteLine("FAILURE: " & vbGetWMIError(nError))
+      Exit Function
+   End If
+   
+    oOut.WriteLine("Drvier Count = " & oDriver.vbCount)
+    oOut.WriteBlankLines(1)
+   
+    Dim i
+   For i = 0 To oDriver.vbCount - 1
+      oDriver.vbNext
+      
+      oOut.WriteLine("==================== Driver ======================")
+      oOut.WriteLine("AcceptPause:              " & oDriver.AcceptPause)
+      oOut.WriteLine("AcceptStop:               " & oDriver.AcceptStop)
+      oOut.WriteLine("Caption:                  " & oDriver.Caption)
+      oOut.WriteLine("CreationClassName:        " & oDriver.CreationClassName) 
+      oOut.WriteLine("Description:              " & oDriver.Description) 
+      oOut.WriteLine("DesktopInteract:          " & oDriver.DesktopInteract) 
+      oOut.WriteLine("DisplayName:              " & oDriver.DisplayName) 
+      oOut.WriteLine("ErrorControl:             " & oDriver.ErrorControl) 
+      oOut.WriteLine("ExitCode:                 " & oDriver.ExitCode) 
+      oOut.WriteLine("InstallDate:              " & oDriver.InstallDate) 
+      oOut.WriteLine("Name:                     " & oDriver.Name) 
+      oOut.WriteLine("PathName:                 " & oDriver.PathName) 
+      oOut.WriteLine("ServiceSpecificExitCode:  " & oDriver.ServiceSpecificExitCode) 
+      oOut.WriteLine("ServiceType:              " & oDriver.ServiceType) 
+      oOut.WriteLine("Started:                  " & oDriver.Started) 
+      oOut.WriteLine("StartMode:                " & oDriver.StartMode) 
+      oOut.WriteLine("StartName:                " & oDriver.StartName) 
+      oOut.WriteLine("State:                    " & oDriver.State) 
+      oOut.WriteLine("Status:                   " & oDriver.Status) 
+      oOut.WriteLine("SystemCreationClassName:  " & oDriver.SystemCreationClassName)             
+      oOut.WriteLine("SystemName:               " & oDriver.SystemName) 
+      oOut.WriteLine("TagId:                    " & oDriver.TagId)  
+      oOut.WriteBlankLines(1)
+      
+      ' If(oDriver.AcceptStop = True AND oDriver.State = "Running") Then
+'          nError = oDriver.StopService()
+'          If(nError <> WBEM_ERR_NO_ERROR) Then
+'             oOut.WriteLine("StopService() failed!")
+'          Else
+'             bStopped = True
+'          End If         
+'       End If
+      
+      ' If(bStopped = True) Then
+'          nError = oDriver.StartService()
+'          If(nError <> WBEM_ERR_NO_ERROR) Then
+'             oOut.WriteLine("StartService() failed!")
+'          End If
+'          bStopped = False
+'       End If     
+      
+   Next
+      
+End Function
+
+'================================================================================================='
+Function Win32_NetworkAdapterConfiguration(byval sQuery)
+Dim oAdapter         : Set oAdapter = New CWin32_NetworkAdapterConfiguration
+Dim nError           : nError       = 0
+Dim nIndex           : nIndex       = 0
+
+Dim aDefaultIPGateway
+Dim aDNSDomainSuffixSearchOrder
+Dim aDNSServerSearchOrder
+Dim aGatewayCostMetric
+Dim aIPAddress
+Dim aIPSecPermitIPProtocols
+Dim aIPSecPermitTCPPorts
+Dim IPSecPermitUDPPorts
+Dim aIPSubnet
+
+   nError = oAdapter.vbQuery(sQuery)
+   If(nError <> WBEM_ERR_NO_ERROR) Then
+      oOut.WriteLine("FAILURE: " & vbGetWMIError(nError))
+      Exit Function
+   End If
+   
+    oOut.WriteLine("Adapter Count = " & oAdapter.vbCount)
+    oOut.WriteBlankLines(1)
+   
+    Dim i
+   For i = 0 To oAdapter.vbCount - 1
+      oAdapter.vbNext
+      
+      oOut.WriteLine("==================== Configuration ======================")
+      oOut.WriteLine("ArpAlwaysSourceRoute:           " & oAdapter.ArpAlwaysSourceRoute)
+      oOut.WriteLine("ArpUseEtherSNAP:                " & oAdapter.ArpUseEtherSNAP)
+      oOut.WriteLine("Caption:                        " & oAdapter.Caption)
+      oOut.WriteLine("DatabasePath:                   " & oAdapter.DatabasePath) 
+      oOut.WriteLine("DeadGWDetectEnabled:            " & oAdapter.DeadGWDetectEnabled) 
+            
+      aDefaultIPGateway = oAdapter.DefaultIPGateway
+      If(IsArray(aDefaultIPGateway) = True) Then
+         oOut.WriteLine("----- Default IP Gateway -----")
+         For nIndex = 0 To UBound(aDefaultIPGateway)
+            oOut.WriteLine(nIndex + 1 & ") " & aDefaultIPGateway(nIndex))
+         Next
+      End If
+       
+      oOut.WriteLine("DefaultTOS:                     " & oAdapter.DefaultTOS) 
+      oOut.WriteLine("DefaultTTL:                     " & oAdapter.DefaultTTL) 
+      oOut.WriteLine("Description:                    " & oAdapter.Description) 
+      oOut.WriteLine("DHCPEnabled:                    " & oAdapter.DHCPEnabled) 
+      oOut.WriteLine("DHCPLeaseExpires:               " & oAdapter.DHCPLeaseExpires) 
+      oOut.WriteLine("DHCPLeaseObtained:              " & oAdapter.DHCPLeaseObtained) 
+      oOut.WriteLine("DHCPServer:                     " & oAdapter.DHCPServer) 
+      oOut.WriteLine("DNSDomain:                      " & oAdapter.DNSDomain) 
+      
+      aDNSDomainSuffixSearchOrder = oAdapter.DNSDomainSuffixSearchOrder
+      If(IsArray(aDNSDomainSuffixSearchOrder) = True) Then
+         oOut.WriteLine("----- DNS Domain Suffix Search Order -----")
+         For nIndex = 0 To UBound(aDNSDomainSuffixSearchOrder)
+            oOut.WriteLine(nIndex + 1 & ") " & aDNSDomainSuffixSearchOrder(nIndex))
+         Next
+      End If
+      
+      oOut.WriteLine("DNSEnabledForWINSResolution:    " & oAdapter.DNSEnabledForWINSResolution) 
+      oOut.WriteLine("DNSHostName:                    " & oAdapter.DNSHostName) 
+            
+      aDNSServerSearchOrder = oAdapter.DNSServerSearchOrder
+      If(IsArray(aDNSServerSearchOrder)) Then
+         oOut.WriteLine("----- DNS Server Search Order -----")
+         For nIndex = 0 To UBound(aDNSServerSearchOrder)
+            oOut.WriteLine(nIndex + 1 & ") " & aDNSServerSearchOrder(nIndex))
+         Next
+      End If
+       
+      oOut.WriteLine("ForwardBufferMemory:            " & oAdapter.ForwardBufferMemory)
+      
+      aGatewayCostMetric = oAdapter.GatewayCostMetric
+      If(IsArray(aGatewayCostMetric)) Then
+         oOut.WriteLine("----- Gateway Cost Metric -----")
+         For nIndex = 0 To UBound(aGatewayCostMetric)
+            oOut.WriteLine(nIndex + 1 & ") " & aGatewayCostMetric(nIndex))
+         Next
+      End If
+      
+      oOut.WriteLine("IGMPLevel:                      " & oAdapter.IGMPLevel) 
+      oOut.WriteLine("Index:                          " & oAdapter.Index) 
+      
+      aIPAddress = oAdapter.IPAddress
+      If(IsArray(aIPAddress)) Then
+         oOut.WriteLine("----- IP Address -----")
+         For nIndex = 0 To UBound(aIPAddress)
+            oOut.WriteLine(nIndex + 1 & ") " & aIPAddress(nIndex))
+         Next
+      End If
+      
+      oOut.WriteLine("IPEnabled:                      " & oAdapter.IPEnabled) 
+      oOut.WriteLine("IPFilterSecurityEnabled:        " & oAdapter.IPFilterSecurityEnabled) 
+      oOut.WriteLine("IPPortSecurityEnabled:          " & oAdapter.IPPortSecurityEnabled) 
+      
+      aIPSecPermitIPProtocols = oAdapter.IPSecPermitIPProtocols
+      If(IsArray(aIPSecPermitIPProtocols) = True) Then
+         oOut.WriteLine("----- IPSec Permit IP Protocols -----")
+         For nIndex = 0 To UBound(aIPSecPermitIPProtocols)
+            oOut.WriteLine(nIndex + 1 & ") " & aIPSecPermitIPProtocols(nIndex))
+         Next
+      End If 
+      
+      aIPSecPermitTCPPorts = oAdapter.IPSecPermitTCPPorts
+     If(IsArray(aIPSecPermitTCPPorts) = True) Then
+         oOut.WriteLine("----- IPSec Permit TCP Ports -----")
+         For nIndex = 0 To UBound(aIPSecPermitTCPPorts)
+            oOut.WriteLine(nIndex + 1 & ") " & aIPSecPermitTCPPorts(nIndex))
+         Next
+      End If
+       
+      Dim aIPSecPermitUDPPorts : aIPSecPermitUDPPorts = oAdapter.IPSecPermitUDPPorts
+      If(IsArray(aIPSecPermitUDPPorts) = True) Then
+         oOut.WriteLine("----- IPSec Permit UDP Ports -----")
+         For nIndex = 0 To UBound(aIPSecPermitUDPPorts)
+            oOut.WriteLine(nIndex + 1 & ") " & aIPSecPermitUDPPorts(nIndex))
+         Next
+      End If
+      
+      aIPSubnet = oAdapter.IPSubnet
+      If(IsArray(aIPSubnet) = True) Then
+         oOut.WriteLine("----- IP Subnet -----")
+         For nIndex = 0 To UBound(aIPSubnet)
+            oOut.WriteLine(nIndex + 1 & ") " & aIPSubnet(nIndex))
+         Next
+      End If
+      
+      oOut.WriteLine("IPUseZeroBroadcast:             " & oAdapter.IPUseZeroBroadcast)
+      oOut.WriteLine("IPXAddress:                     " & oAdapter.IPXAddress)
+      oOut.WriteLine("IPXEnabled:                     " & oAdapter.IPXEnabled)
+     
+      Dim aIPXFrameType : aIPXFrameType = oAdapter.IPXFrameType
+      If(IsArray(aIPXFrameType) = True) Then
+         oOut.WriteLine("----- IPX Frame Type -----")
+         For nIndex = 0 To UBound(aIPXFrameType)
+            oOut.WriteLine(nIndex + 1 & ") " & aIPXFrameType(nIndex))
+         Next
+      End If
+      
+      oOut.WriteLine("IPXMediaType:                   " & oAdapter.IPXMediaType)
+     
+      Dim aIPXNetworkNumber : aIPXNetworkNumber = oAdapter.IPXNetworkNumber
+      If(IsArray(aIPXFrameType) = True) Then
+         oOut.WriteLine("----- IPX Network Number -----")
+         For nIndex = 0 To UBound(aIPXNetworkNumber)
+            oOut.WriteLine(nIndex + 1 & ") " & aIPXNetworkNumber(nIndex))
+         Next
+      End If
+      
+      oOut.WriteLine("IPXVirtualNetNumber:            " & oAdapter.IPXVirtualNetNumber)
+      oOut.WriteLine("KeepAliveInterval:              " & oAdapter.KeepAliveInterval)
+      oOut.WriteLine("KeepAliveTime:                  " & oAdapter.KeepAliveTime)
+      oOut.WriteLine("MACAddress:                     " & oAdapter.MACAddress)
+      oOut.WriteLine("MTU:                            " & oAdapter.MTU)
+      oOut.WriteLine("NumForwardPackets:              " & oAdapter.NumForwardPackets)
+      oOut.WriteLine("PMTUBHDetectEnabled:            " & oAdapter.PMTUBHDetectEnabled)
+      oOut.WriteLine("PMTUDiscoveryEnabled:           " & oAdapter.PMTUDiscoveryEnabled)
+      oOut.WriteLine("ServiceName:                    " & oAdapter.ServiceName)
+      oOut.WriteLine("SettingID:                      " & oAdapter.SettingID)
+      oOut.WriteLine("TcpMaxConnectRetransmissions:   " & oAdapter.TcpMaxConnectRetransmissions)
+      oOut.WriteLine("TcpMaxDataRetransmissions:      " & oAdapter.TcpMaxDataRetransmissions)
+      oOut.WriteLine("TcpNumConnections:              " & oAdapter.TcpNumConnections)
+      oOut.WriteLine("TcpUseRFC1122UrgentPointer:     " & oAdapter.TcpUseRFC1122UrgentPointer)
+      oOut.WriteLine("TcpWindowSize:                  " & oAdapter.TcpWindowSize)
+      oOut.WriteLine("WINSEnableLMHostsLookup:        " & oAdapter.WINSEnableLMHostsLookup)
+      oOut.WriteLine("WINSHostLookupFile:             " & oAdapter.WINSHostLookupFile)
+      oOut.WriteLine("WINSPrimaryServer:              " & oAdapter.WINSPrimaryServer)
+      oOut.WriteLine("WINSScopeID:                    " & oAdapter.WINSScopeID)
+      oOut.WriteLine("WINSSecondaryServer:            " & oAdapter.WINSSecondaryServer)
+   
+      
+      oOut.WriteBlankLines(1)
+      
+   Next
+      
+End Function
+
+'================================================================================================='
+Function Win32_NetworkAdapter(byval sQuery)
+Dim oAdapter         : Set oAdapter = New CWin32_NetworkAdapter
+Dim nError           : nError       = 0
+Dim nIndex           : nIndex       = 0
+
+Dim aNetworkAddresses
+Dim aPowerManagementCapabilities
+
+   nError = oAdapter.vbQuery(sQuery)
+   If(nError <> WBEM_ERR_NO_ERROR) Then
+      oOut.WriteLine("FAILURE: " & vbGetWMIError(nError))
+      Exit Function
+   End If
+   
+    oOut.WriteLine("Adapter Count = " & oAdapter.vbCount)
+    oOut.WriteBlankLines(1)
+   
+    Dim i
+   For i = 0 To oAdapter.vbCount - 1
+      oAdapter.vbNext
+      
+      oOut.WriteLine("==================== Adapter ======================")
+      oOut.WriteLine("Availability:                " & oAdapter.Availability)
+      oOut.WriteLine("AdapterType:                 " & oAdapter.AdapterType)
+      oOut.WriteLine("AutoSense:                   " & oAdapter.AutoSense)
+      oOut.WriteLine("Caption:                     " & oAdapter.Caption) 
+      oOut.WriteLine("ConfigManagerErrorCode:      " & oAdapter.ConfigManagerErrorCode) 
+      oOut.WriteLine("ConfigManagerUserConfig:     " & oAdapter.ConfigManagerUserConfig) 
+      oOut.WriteLine("CreationClassName:           " & oAdapter.CreationClassName) 
+      oOut.WriteLine("Description:                 " & oAdapter.Description) 
+      oOut.WriteLine("DeviceID:                    " & oAdapter.DeviceID) 
+      oOut.WriteLine("ErrorCleared:                " & oAdapter.ErrorCleared) 
+      oOut.WriteLine("ErrorDescription:            " & oAdapter.ErrorDescription) 
+      oOut.WriteLine("Index:                       " & oAdapter.Index) 
+      oOut.WriteLine("InstallDate:                 " & oAdapter.InstallDate) 
+      oOut.WriteLine("Installed:                   " & oAdapter.Installed) 
+      oOut.WriteLine("LastErrorCode:               " & oAdapter.LastErrorCode) 
+      oOut.WriteLine("MACAddress:                  " & oAdapter.MACAddress) 
+      oOut.WriteLine("Manufacturer:                " & oAdapter.Manufacturer) 
+      oOut.WriteLine("MaxNumberControlled:         " & oAdapter.MaxNumberControlled) 
+      oOut.WriteLine("MaxSpeed:                    " & oAdapter.MaxSpeed) 
+      oOut.WriteLine("Name:                        " & oAdapter.Name) 
+     
+      aNetworkAddresses = oAdapter.NetworkAddresses
+      If(IsArray(aNetworkAddresses) = True) Then
+         oOut.WriteLine("----- Network Addresses -----")
+         For nIndex = 0 To UBound(aNetworkAddresses)
+            oOut.WriteLine(nIndex + 1 & ") " & aNetworkAddresses(nIndex))
+         Next
+      End If
+      
+      oOut.WriteLine("PermanentAddress:            " & oAdapter.PermanentAddress) 
+      oOut.WriteLine("PNPDeviceID:                 " & oAdapter.PNPDeviceID) 
+      
+      aPowerManagementCapabilities = oAdapter.PowerManagementCapabilities
+      If(IsArray(aNetworkAddresses) = True) Then
+         oOut.WriteLine("----- Power Management Capabilities -----")
+         For nIndex = 0 To UBound(aPowerManagementCapabilities)
+            oOut.WriteLine(nIndex + 1 & ") " & aPowerManagementCapabilities(nIndex))
+         Next
+      End If
+            
+      oOut.WriteLine("PowerManagementSupported:    " & oAdapter.PowerManagementSupported) 
+      oOut.WriteLine("ProductName:                 " & oAdapter.ProductName) 
+      oOut.WriteLine("ServiceName:                 " & oAdapter.ServiceName) 
+      oOut.WriteLine("Speed:                       " & oAdapter.Speed) 
+      oOut.WriteLine("Status:                      " & oAdapter.Status) 
+      oOut.WriteLine("StatusInfo:                  " & oAdapter.StatusInfo) 
+      oOut.WriteLine("SystemCreationClassName:     " & oAdapter.SystemCreationClassName) 
+      oOut.WriteLine("SystemName:                  " & oAdapter.SystemName) 
+      oOut.WriteLine("TimeOfLastReset:             " & oAdapter.TimeOfLastReset) 
+      oOut.WriteBlankLines(1)
+      
+   Next
+      
+End Function
+
+'================================================================================================='
+Function Win32_OperatingSystem(byval sQuery)
+Dim oOperatingSytem  : Set oOperatingSytem   = New CWin32_OperatingSystem
+Dim nError           : nError                = 0
+Dim sUser            : sUser                 = ""
+Dim sDomain          : sDomain               = ""
+Dim sSid             : sSid                  = ""
+Dim nProcessID       : nProcessID            = 0
+Dim nRetval          : nRetval               = vbNo
+
+   nError = oOperatingSytem.vbQuery("SELECT * FROM Win32_OperatingSystem")
+   If(nError <> WBEM_ERR_NO_ERROR) Then
+      oOut.WriteLine("FAILURE: " & vbGetWMIError(nError))
+      Exit Function
+   End If
+   
+    oOut.WriteLine("OS Count = " & oOperatingSytem.vbCount)
+    oOut.WriteBlankLines(1)
+   
+    Dim i
+   For i = 0 To oOperatingSytem.vbCount - 1
+      oOperatingSytem.vbNext
+      
+      oOut.WriteLine("==================== Operating Sytem  ====================")
+      oOut.WriteLine("BootDevice:                  " & oOperatingSytem.BootDevice)
+      oOut.WriteLine("BuildNumber:                 " & oOperatingSytem.BuildNumber)
+      oOut.WriteLine("BuildType:                   " & oOperatingSytem.BuildType)
+      oOut.WriteLine("Caption:                     " & oOperatingSytem.Caption) 
+      oOut.WriteLine("CodeSet:                     " & oOperatingSytem.CodeSet) 
+      oOut.WriteLine("CountryCode:                 " & oOperatingSytem.CountryCode) 
+      oOut.WriteLine("CreationClassName:           " & oOperatingSytem.CreationClassName) 
+      oOut.WriteLine("CSCreationClassName:         " & oOperatingSytem.CSCreationClassName) 
+      oOut.WriteLine("CSDVersion:                  " & oOperatingSytem.CSDVersion) 
+      oOut.WriteLine("CSName:                      " & oOperatingSytem.CSName) 
+      oOut.WriteLine("CurrentTimeZone:             " & oOperatingSytem.CurrentTimeZone) 
+      oOut.WriteLine("Debug:                       " & oOperatingSytem.Debug) 
+      oOut.WriteLine("Description:                 " & oOperatingSytem.Description) 
+      oOut.WriteLine("Distributed:                 " & oOperatingSytem.Distributed) 
+      oOut.WriteLine("ForegroundApplicationBoost:  " & oOperatingSytem.ForegroundApplicationBoost) 
+      oOut.WriteLine("FreePhysicalMemory:          " & oOperatingSytem.FreePhysicalMemory) 
+      oOut.WriteLine("FreeSpaceInPagingFiles:      " & oOperatingSytem.FreeSpaceInPagingFiles) 
+      oOut.WriteLine("FreeVirtualMemory:           " & oOperatingSytem.FreeVirtualMemory) 
+      oOut.WriteLine("InstallDate:                 " & oOperatingSytem.InstallDate) 
+      oOut.WriteLine("LastBootUpTime:              " & oOperatingSytem.LastBootUpTime) 
+      oOut.WriteLine("LocalDateTime:               " & oOperatingSytem.LocalDateTime) 
+      oOut.WriteLine("Locale:                      " & oOperatingSytem.Locale) 
+      oOut.WriteLine("Manufacturer:                " & oOperatingSytem.Manufacturer) 
+      oOut.WriteLine("MaxNumberOfProcesses:        " & oOperatingSytem.MaxNumberOfProcesses) 
+      oOut.WriteLine("MaxProcessMemorySize:        " & oOperatingSytem.MaxProcessMemorySize) 
+      oOut.WriteLine("Name:                        " & oOperatingSytem.Name) 
+      oOut.WriteLine("NumberOfLicensedUsers:       " & oOperatingSytem.NumberOfLicensedUsers) 
+      oOut.WriteLine("NumberOfProcesses:           " & oOperatingSytem.NumberOfProcesses) 
+      oOut.WriteLine("NumberOfUsers:               " & oOperatingSytem.NumberOfUsers) 
+      oOut.WriteLine("Organization:                " & oOperatingSytem.Organization) 
+      oOut.WriteLine("OSLanguage:                  " & oOperatingSytem.OSLanguage) 
+      oOut.WriteLine("OSProductSuite:              " & oOperatingSytem.OSProductSuite) 
+      oOut.WriteLine("OSType:                      " & oOperatingSytem.OSType) 
+      oOut.WriteLine("OtherTypeDescription:        " & oOperatingSytem.OtherTypeDescription) 
+      oOut.WriteLine("PlusProductID:               " & oOperatingSytem.PlusProductID)
+      oOut.WriteLine("PlusVersionNumber:           " & oOperatingSytem.PlusVersionNumber)
+      oOut.WriteLine("Primary:                     " & oOperatingSytem.Primary)
+      oOut.WriteLine("QuantumLength:               " & oOperatingSytem.QuantumLength)
+      oOut.WriteLine("QuantumType:                 " & oOperatingSytem.QuantumType)
+      oOut.WriteLine("RegisteredUser:              " & oOperatingSytem.RegisteredUser)
+      oOut.WriteLine("SerialNumber:                " & oOperatingSytem.SerialNumber)
+      oOut.WriteLine("ServicePackMajorVersion:     " & oOperatingSytem.ServicePackMajorVersion)
+      oOut.WriteLine("ServicePackMinorVersion:     " & oOperatingSytem.ServicePackMinorVersion)
+      oOut.WriteLine("SizeStoredInPagingFiles:     " & oOperatingSytem.SizeStoredInPagingFiles)
+      oOut.WriteLine("Status:                      " & oOperatingSytem.Status)
+      oOut.WriteLine("SystemDevice:                " & oOperatingSytem.SystemDevice)
+      oOut.WriteLine("SystemDirectory:             " & oOperatingSytem.SystemDirectory)
+      oOut.WriteLine("TotalSwapSpaceSize:          " & oOperatingSytem.TotalSwapSpaceSize)
+      oOut.WriteLine("TotalVirtualMemorySize:      " & oOperatingSytem.TotalVirtualMemorySize)
+      oOut.WriteLine("TotalVisibleMemorySize:      " & oOperatingSytem.TotalVisibleMemorySize)
+      oOut.WriteLine("Version:                     " & oOperatingSytem.Version)
+      oOut.WriteLine("WindowsDirectory:            " & oOperatingSytem.WindowsDirectory)
+                  
+      ' nRetval = MsgBox("Would you like to log off?", vbYesNo, "Log Off?")
+'       If(nRetval = vbYes) Then
+'          nError = oOperatingSytem.Win32Shutdown(0, 0)
+'          If(nError <> WBEM_ERR_NO_ERROR) Then
+'             oOut.WriteLine("Win32Shutdown() failed!")
+'          End If
+'       End If
+'       
+'       nRetval = MsgBox("Would you like to Reboot?", vbYesNo, "Reboot?")
+'       If(nRetval = vbYes) Then
+'          nError = oOperatingSytem.Reboot()
+'          If(nError <> WBEM_ERR_NO_ERROR) Then
+'             oOut.WriteLine("Reboot() failed!")
+'          End If
+'       End If
+'       
+'       nRetval = MsgBox("Would you like to Shutdown?", vbYesNo, "Shutdown?")
+'       If(nRetval = vbYes) Then
+'          nError = oOperatingSytem.Shutdown()
+'          If(nError <> WBEM_ERR_NO_ERROR) Then
+'             oOut.WriteLine("Shutdown() failed!")
+'          End If
+'       End If
+      
+   Next
+   
+   
+   
+End Function
+
+'================================================================================================='
+Function Win32_NetworkLoginProfile(byval sQuery)
+Dim oProfile   : Set oProfile = New CWin32_NetworkLoginProfile
+Dim nError     : nError       = 0
+Dim sUser      : sUser        = ""
+Dim sDomain    : sDomain      = ""
+Dim sSid       : sSid         = ""
+Dim nProcessID : nProcessID   = 0
+
+   nError = oProfile.vbQuery(sQuery)
+   If(nError <> WBEM_ERR_NO_ERROR) Then
+      oOut.WriteLine("FAILURE: " & vbGetWMIError(nError))
+      Exit Function
+   End If
+   
+    oOut.WriteLine("Number Of Logins = " & oProfile.vbCount)
+    oOut.WriteBlankLines(1)
+   
+    Dim i
+   For i = 0 To oProfile.vbCount - 1
+      oProfile.vbNext
+      
+      oOut.WriteLine("==================== Login " & i + 1 & " ====================")
+      oOut.WriteLine("AccountExpires:        " & oProfile.AccountExpires)
+      oOut.WriteLine("AuthorizationFlags:    " & oProfile.AuthorizationFlags)
+      oOut.WriteLine("BadPasswordCount:      " & oProfile.BadPasswordCount)
+      oOut.WriteLine("Caption:               " & oProfile.Caption)
+      oOut.WriteLine("CodePage:              " & oProfile.CodePage)
+      oOut.WriteLine("Comment:               " & oProfile.Comment)
+      oOut.WriteLine("CountryCode:           " & oProfile.CountryCode)
+      oOut.WriteLine("Description:           " & oProfile.Description)  
+      oOut.WriteLine("Flags:                 " & oProfile.Flags)
+      oOut.WriteLine("FullName:              " & oProfile.FullName)
+      oOut.WriteLine("HomeDirectory:         " & oProfile.HomeDirectory)
+      oOut.WriteLine("HomeDirectoryDrive:    " & oProfile.HomeDirectoryDrive)
+      oOut.WriteLine("LastLogoff:            " & oProfile.LastLogoff)
+      oOut.WriteLine("LastLogon:             " & oProfile.LastLogon)
+      oOut.WriteLine("LogonHours:            " & oProfile.LogonHours)
+      oOut.WriteLine("LogonServer:           " & oProfile.LogonServer)
+      oOut.WriteLine("MaximumStorage:        " & oProfile.MaximumStorage)
+      oOut.WriteLine("Name:                  " & oProfile.Name)
+      oOut.WriteLine("NumberOfLogons:        " & oProfile.NumberOfLogons)
+      'oOut.WriteLine("Parameters:            " & oProfile.Parameters)
+      oOut.WriteLine("PasswordAge:           " & oProfile.PasswordAge)
+      oOut.WriteLine("PasswordExpires:       " & oProfile.PasswordExpires)
+      oOut.WriteLine("PrimaryGroupId:        " & oProfile.PrimaryGroupId)
+      oOut.WriteLine("Privileges:            " & oProfile.Privileges)
+      oOut.WriteLine("Profile:               " & oProfile.Profile)
+      oOut.WriteLine("ScriptPath:            " & oProfile.ScriptPath)
+      oOut.WriteLine("SettingID:             " & oProfile.SettingID)
+      oOut.WriteLine("UnitsPerWeek:          " & oProfile.UnitsPerWeek)
+      oOut.WriteLine("UserComment:           " & oProfile.UserComment)
+      oOut.WriteLine("UserId:                " & oProfile.UserId)
+      oOut.WriteLine("UserType:              " & oProfile.UserType)
+      oOut.WriteLine("Workstations:          " & oProfile.Workstations)
+            
+   Next
+   
+End Function
+
+'================================================================================================='
+Function Win32_Process(byval sQuery)
+Dim oProcess   : Set oProcess = New CWin32_Process
+Dim nError     : nError       = 0
+Dim sUser      : sUser        = ""
+Dim sDomain    : sDomain      = ""
+Dim sSid       : sSid         = ""
+Dim nProcessID : nProcessID   = 0
+
+   nError = oProcess.vbQuery(sQuery)
+   If(nError <> WBEM_ERR_NO_ERROR) Then
+      oOut.WriteLine("FAILURE: " & vbGetWMIError(nError))
+      Exit Function
+   End If
+   
+    oOut.WriteLine("Number Of Process = " & oProcess.vbCount)
+    oOut.WriteBlankLines(1)
+    'oOut.WriteLine("0) " & oProcess.vbName)
+   
+    Dim i
+   For i = 0 To oProcess.vbCount - 1
+      oProcess.vbNext
+      
+      oOut.WriteLine("==================== Process " & i + 1 & " ====================")
+      oOut.WriteLine("Caption:                     " & oProcess.Caption)
+      oOut.WriteLine("CreationClassName:           " & oProcess.CreationClassName)
+      oOut.WriteLine("CreationDate:                " & oProcess.CreationDate)
+      oOut.WriteLine("CSCreationClassName:         " & oProcess.CSCreationClassName)
+      oOut.WriteLine("CSName:                      " & oProcess.CSName)
+      oOut.WriteLine("Description:                 " & oProcess.Description)
+      oOut.WriteLine("ExecutablePath:              " & oProcess.ExecutablePath)
+      oOut.WriteLine("ExecutionState:              " & oProcess.ExecutionState)  
+      oOut.WriteLine("Handle:                      " & oProcess.Handle)
+      oOut.WriteLine("HandleCount:                 " & oProcess.HandleCount)
+      oOut.WriteLine("InstallDate:                 " & oProcess.InstallDate)
+      oOut.WriteLine("KernelModeTime:              " & oProcess.KernelModeTime)
+      oOut.WriteLine("MaximumWorkingSetSize:       " & oProcess.MaximumWorkingSetSize)
+      oOut.WriteLine("MinimumWorkingSetSize:       " & oProcess.MinimumWorkingSetSize)
+      oOut.WriteLine("Name:                        " & oProcess.Name)
+      oOut.WriteLine("OSName:                      " & oProcess.OSName)
+      oOut.WriteLine("OtherOperationCount:         " & oProcess.OtherOperationCount)
+      oOut.WriteLine("OtherTransferCount:          " & oProcess.OtherTransferCount)
+      oOut.WriteLine("PageFaults:                  " & oProcess.PageFaults)
+      oOut.WriteLine("PageFileUsage:               " & oProcess.PageFileUsage)
+      oOut.WriteLine("ParentProcessId:             " & oProcess.ParentProcessId)
+      oOut.WriteLine("PeakPageFileUsage:           " & oProcess.PeakPageFileUsage)
+      oOut.WriteLine("PeakVirtualSize:             " & oProcess.PeakVirtualSize)
+      oOut.WriteLine("PeakWorkingSetSize:          " & oProcess.PeakWorkingSetSize)
+      oOut.WriteLine("Priority:                    " & oProcess.Priority)
+      oOut.WriteLine("PrivatePageCount:            " & oProcess.PrivatePageCount)
+      oOut.WriteLine("ProcessId:                   " & oProcess.ProcessId)
+      oOut.WriteLine("QuotaNonPagedPoolUsage:      " & oProcess.QuotaNonPagedPoolUsage)
+      oOut.WriteLine("QuotaPagedPoolUsage:         " & oProcess.QuotaPagedPoolUsage)
+      oOut.WriteLine("QuotaPeakNonPagedPoolUsage:  " & oProcess.QuotaPeakNonPagedPoolUsage)
+      oOut.WriteLine("QuotaPeakPagedPoolUsage:     " & oProcess.QuotaPeakPagedPoolUsage)
+      oOut.WriteLine("ReadOperationCount:          " & oProcess.ReadOperationCount)
+      oOut.WriteLine("ReadTransferCount:           " & oProcess.ReadTransferCount)
+      oOut.WriteLine("SessionId:                   " & oProcess.SessionId)
+      oOut.WriteLine("Status:                      " & oProcess.Status)
+      oOut.WriteLine("TerminationDate:             " & oProcess.TerminationDate)
+      oOut.WriteLine("ThreadCount:                 " & oProcess.ThreadCount)
+      oOut.WriteLine("UserModeTime:                " & oProcess.UserModeTime)
+      oOut.WriteLine("VirtualSize:                 " & oProcess.VirtualSize)
+      oOut.WriteLine("WindowsVersion:              " & oProcess.WindowsVersion)
+      oOut.WriteLine("WorkingSetSize:              " & oProcess.WorkingSetSize)
+      oOut.WriteLine("WriteOperationCount:         " & oProcess.WriteOperationCount)
+      oOut.WriteLine("WriteTransferCount:          " & oProcess.WriteTransferCount)
+      oOut.WriteBlankLines(1)
+      
+      nError = oProcess.GetOwner(sUser, sDomain)
+      If(nError <> WBEM_ERR_NO_ERROR) Then
+         oOut.WriteLine("GetOwner() failed! (" & vbGetWMIError(nError) & ")")
+      Else
+         oOut.WriteLine("Owner:                       " & sDomain & "\" & sUser)
+      End If
+     
+      nError = oProcess.GetOwnerSid(sSid)
+      If(nError <> WBEM_ERR_NO_ERROR) Then
+         oOut.WriteLine("GetOwnerSid() failed! (" & vbGetWMIError(nError) & ")")
+      Else
+         oOut.WriteLine("Sid:                         " & sSid)
+      End If
+      
+      ' nError = oProcess.Terminate(2)
+'       If(nError <> WBEM_ERR_NO_ERROR) Then
+'          oOut.WriteLine("Terminate() failed! (" & vbGetWMIError(nError) & ")")
+'       End If
+'       
+'       nError = oProcess.Create("C:\Program Files\Messenger\msmsgs.exe", "C:\Program Files\Messenger\msmsgs.exe", nProcessID)
+'       If(nError <> WBEM_ERR_NO_ERROR) Then
+'          oOut.WriteLine("Create() failed! (" & vbGetWMIError(nError) & ")")
+'       Else
+'          oOut.WriteLine("ProcessID:                   " & nProcessID)
+'       End If
+      
+   Next
+
+End Function
+]]>
+		</script>
+	</job>
+</package>
+
+<!--- CRC = 0x2833036a --->

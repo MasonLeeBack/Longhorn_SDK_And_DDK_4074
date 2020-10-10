@@ -1,0 +1,665 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, 802_5, FDDI
+</MEDIA>
+<WHQL>
+802_3, 802_5, FDDI
+</WHQL>
+<CARDMACH>
+2C,1M,2M
+</CARDMACH>
+<RUNORDER>
+1530
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[
+This script verifies the ability to detect load and unload
+the miniport driver (with and without sends commencing)
+
+There are 3 parts to this test:
+1: Load/Unload 10 times (verify connectivity/link after each one)
+2: Load/Unload 20 times as fast as possible
+3: Load/Unload while sending/receiving and then run a communication test
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="2c_LoadUnload" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oPNPPower" progid="NDTSupp.Setup.1" events="true"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      
+      <!-- Begin Wireless Specific Includes -->
+      <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	   <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	   <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	   <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	   <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+      <!-- End Wireless Specific Includes -->
+      
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/> 
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script id="2c_LoadUnload" language="VBScript">
+
+Option Explicit 
+
+Const CONNECTED = 0
+Const DISCONNECTED = 1
+
+' Whether currently the driver is halted or running
+Const LOADED = 0
+Const HALTED = 1
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0), GetSupportAdapterIndex (oNDInfo.AdapterList, 0)) 
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard, oTestOpen
+   Private lSuppOpens
+   Private oSuppCard, arrSuppOpen()
+   Private m_lTestAdapterIndex, m_lSuppAdapterIndex
+   Private TestCardGUID
+   Private TestIPAddr, SuppIPAddr
+   Private m_DriverStatus
+   Private Sub Class_Initialize
+      lSuppOpens = 2
+      ReDim arrSuppOpen(lSuppOpens)
+      m_DriverStatus = LOADED
+   End Sub
+   
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+      Set oTestOpen = Nothing
+      
+      Set oSuppCard = Nothing
+      
+      Dim nCount
+      For nCount = 0 To lSuppOpens - 1
+         Set arrSuppOpen(nCount) = Nothing
+      Next
+
+      If (m_DriverStatus = HALTED) Then
+         oLog.Warned ("NdisTest unsure if the driver was correctly loaded during the test.")
+         oLog.Write ("If it was not loaded corrected, then the following tests may fail")
+      End If      
+      
+   End Sub
+   
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+      
+      Set pAdapterList = oNDInfo.AdapterList
+      
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oTestOpen = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpen is Nothing) Then
+         Exit Function
+      End If
+      TestIPAddr = pAdapterList(m_lTestAdapterIndex).IPAddress
+      
+      oLog.Variation ("Setting up Support Adapter")
+      Dim lLoopCount, bResult
+      
+      Set oSuppCard = New CLanCard
+      If (oSuppCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set arrSuppOpen(0) = oSuppCard.vbSetupBasicTest(pAdapterList (m_lSuppAdapterIndex))
+      If (arrSuppOpen(0) is Nothing) Then
+         Exit Function
+      End If
+      
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+               
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")           
+         If(vbAssociateWep(oTestOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If	
+         
+         oLog.Variation ("Associating support device with " & NDTESTAP2 & " ...")       
+         If(vbAssociateWep(arrSuppOpen(0), NDTESTAP2) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate support device with " & NDTESTAP2, 88888
+            Exit Function
+         End If	
+                           
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+      
+      SuppIPAddr = pAdapterList(m_lSuppAdapterIndex).IPAddress
+      
+      oLog.Variation("Setup IP Related Information for support Card")
+      bResult = SetupSupportCardForIP(arrSuppOpen(0),m_lSuppAdapterIndex, TestIPAddr)
+      If(Not bResult) Then
+         Exit Function
+      End If
+      
+      ' Set up the suppport adapter for the rest of the script
+      oLog.Variation("Setup extra support adapter opens for send test.")
+      
+      lLoopCount = 1
+      Do While (lLoopCount < lSuppOpens)
+         
+         Set arrSuppOpen(lLoopCount) = oSuppCard.vbOpenAdapter()
+         If(arrSuppOpen(lLoopCount) is Nothing) Then
+            Set oTestCard = Nothing
+            Set oSuppCard = Nothing
+            Exit Function
+         End If
+         
+         bResult = SetupSupportCardForIP(arrSuppOpen(lLoopCount),m_lSuppAdapterIndex, TestIPAddr)
+         If(Not bResult) Then
+            Exit Function
+         End If
+         
+         lLoopCount = lLoopCount + 1
+      Loop
+      
+      TestCardGUID = pAdapterList(m_lTestAdapterIndex).GUID
+      
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+   
+   Public Function RunTest (lTestAdapterIndex, lSuppAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      m_lSuppAdapterIndex = lSuppAdapterIndex
+      
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+      
+      ExecuteTestCore
+   End Function
+   
+   
+   Private Function ExecuteTestCore
+   Dim oOpen : Set oOpen = Nothing
+      Dim BroadcastAddr, TestAddr, SuppAddr
+      Dim arrSendAddr()
+      Dim lBurstSize, lLoopCount
+      Dim lParts, nCount, lInnerCount
+      Dim nResult, bResult
+      
+      Dim nPacketsToSend, nPacketSize
+      Dim nPacketsSent, nReceived, nResent, lTestResent
+      
+      Dim ConnectStatus
+      Dim nTestId
+      
+      Dim nMinimumPass
+      Dim lPercentToPass
+      Dim nOpenLoopCnt, nOpenLogMask, bOpenSuccess
+      
+      lPercentToPass = 95
+      
+      
+      SuppAddr = arrSuppOpen(0).vbGetCardAddress
+      TestAddr = oTestOpen.vbGetCardAddress
+      BroadcastAddr = oTestCard.vbGetBroadcastAddress
+      
+      nTestId = oNDTSupp.Random(1, 32765)
+      If(Not arrSuppOpen(0).vbSetPacketFilter(DIRECTED)) Then
+         Exit Function
+      End If
+      
+      nCount = 1
+      Do While (nCount < lSuppOpens)
+         
+         arrSuppOpen(nCount).vbSetChannelId(nTestId)
+         nCount = nCount + 1
+      Loop
+      
+      arrSuppOpen(0).vbSetChannelId(nTestId)
+      oTestOpen.vbSetReceiveOption(RECEIVE_DEFAULT)  
+      
+      lBurstSize = 8
+      ReDim arrSendAddr(lBurstSize  * 6)
+      lLoopCount = 0
+      Do while (lLoopCount < lBurstSize)
+         arrSendAddr(lLoopCount) = TestAddr
+         lLoopCount = lLoopCount + 1
+      Loop
+      
+      '----------------------
+      ' Part 1: Load/Unload 10 times (verify connectivity/link after each one)
+      ' Part 2: Load/Unload 20 times as fast as possible
+      ' Part 3: Load/Unload while sending/receiving
+      '----------------------
+      
+      lParts = 3
+      nCount = 1
+      
+      Do While (nCount <= lParts)
+         
+         '=======================================================================
+         ' Part 1: Load/Unload 10 times (verify connectivity/link after each one)
+         '=======================================================================
+         
+         If (nCount = 1) Then
+            oLog.Variation("Part 1: Load/Unload 10 times")
+            WSCript.Sleep(1000)
+            
+            lInnerCount = 1
+            While (lInnerCount <= 10)
+               oTestOpen.vbNdisClose()
+               Set oTestOpen = Nothing
+               
+               oLog.Variation("Stop driver (" & lInnerCount & "/10)")
+               nResult = oPNPPower.StopDriver(TestCardGUID)
+               If (nResult <> 0) Then
+                  Call oLog.Failed ("Unable to stop driver." , 21147)
+                  Exit Do
+               Else
+                  m_DriverStatus = HALTED
+               End If
+               
+               WScript.Sleep(1000)
+               
+               oLog.Variation("Start driver (" & lInnerCount & "/10)")
+               nResult = oPNPPower.StartDriver(TestCardGUID)
+               If (nResult <> 0) Then
+                  Call oLog.Failed ("Unable to restart driver after stopping." , 21148)
+                  Exit Do
+               Else
+                  m_DriverStatus = LOADED
+               End If
+               
+               '-------------------- Begin 802.11 Association Routine --------------------'
+               If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+                  
+                  Set oOpen = oTestCard.vbOpenAdapter()
+                  
+                  If(vbAssociateWep(oOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+                     oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+                  End If	
+                  
+                  Set oOpen = Nothing
+                                                      
+               End If
+               '-------------------- End 802.11 Association Routine --------------------'
+               
+               bResult = oTestCard.vbWaitForLinkWithDelay(90, glWaitForLinkExtraDelay)
+               
+               oLog.Variation("OpenAdapter (" & lInnerCount & "/10)")
+               Set oTestOpen = oTestCard.vbOpenAdapter()
+               If(oTestOpen is Nothing) Then
+                  Exit Do
+               End If
+               
+               Dim nResultSize
+               ' Query for connect status
+               ConnectStatus = 0
+               nResultSize = 4
+               bResult = oTestOpen.vbFastNdisRequest(OID_GEN_MEDIA_CONNECT_STATUS, ConnectStatus, nResultSize)
+               If (Not bResult) Then
+                  Call oLog.Failed ("Unable to query media connect status." , 21151)
+               Else
+                  If (ConnectStatus = Disconnected) Then
+                     Call oLog.Failed ("Media status detected as disconnected." , 21152)
+                     oLog.Write("By now, 2+ seconds after last reload, link should be established." )
+                  ElseIf (ConnectStatus <> Connected) Then
+                     Call oLog.Failed ("Invalid media status returned from driver." , 21153)
+                  End If
+               End If
+               
+               oLog.Variation("Setup IP Related Information for Test Card")
+               bResult = SetupTestCardForIP(oTestOpen, m_lTestAdapterIndex, SuppIPAddr)
+               If(Not bResult) Then
+                  Exit Do
+               End If
+               
+               
+               oLog.Variation("Verify communication works...")
+               If (arrSuppOpen(0).vbSimpleSendReceive(oTestOpen) <> 0) Then
+                  Call oLog.Failed ("Test-Support card communication failed", 88888)
+               End If
+               
+               lInnerCount = lInnerCount + 1
+            WEnd
+            
+            oLog.Write("Get Events from the Test adapter." )
+            bResult = oTestOpen.vbClearEvents()
+            If (Not bResult) Then
+               Call oLog.Failed ("Unable to get events from test adapter." , 21165)
+            End If
+            
+            oLog.Write("Get Events from the Support adapter." )
+            bResult = arrSuppOpen(0).vbClearEvents()
+            If (Not bResult) Then
+               Call oLog.Failed ("Unable to get events from test adapter." , 21166)
+            End If
+            
+            '=================================================
+            ' Part 2: Load/Unload 20 times as fast as possible
+            ' Link/Communication is verified at the end
+            '=================================================
+            
+         ElseIf (nCount = 2) Then
+            oLog.Variation("Part 2: Load/Unload 20 times as fast as possible")
+            WSCript.Sleep(1000)
+            
+            oTestOpen.vbNdisClose()
+            Set oTestOpen = Nothing
+            
+            lInnerCount = 1
+            While (lInnerCount <= 20)
+               oLog.Variation("Stop driver (" & lInnerCount & "/20)")
+              
+               nResult = oPNPPower.StopDriver(TestCardGUID)
+               If (nResult <> 0) Then
+                  Call oLog.Failed ("Unable to stop driver." , 21168)
+                  Exit Do
+               Else
+                  m_DriverStatus = HALTED
+               End If
+               
+               oLog.Variation("Start driver (" & lInnerCount & "/20)")
+               nResult = oPNPPower.StartDriver(TestCardGUID)
+               If (nResult <> 0) Then
+                  Call oLog.Failed ("Unable to restart driver after stopping." , 21169)
+                  Exit Do
+               Else
+                  m_DriverStatus = LOADED
+               End If
+               
+               lInnerCount = lInnerCount + 1
+            WEnd
+            
+            '-------------------- Begin 802.11 Association Routine --------------------'
+            If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+                  
+               Set oOpen = oTestCard.vbOpenAdapter()
+                  
+               If(vbAssociateWep(oOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+                  oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+               End If	
+                  
+               Set oOpen = Nothing
+                                                      
+            End If
+            '-------------------- End 802.11 Association Routine --------------------'
+               
+            bresult = oTestCard.vbWaitForLinkWithDelay (90, glWaitForLinkExtraDelay)
+            
+            oLog.Variation("OpenAdapter")
+            
+            Set oTestOpen  = oTestCard.vbOpenAdapter()
+            If(oTestOpen is Nothing) Then
+               Exit Do
+            End If
+            
+            ' Query for connect status
+            ConnectStatus = 0
+            nResultSize = 4
+            bResult = oTestOpen.vbFastNdisRequest(OID_GEN_MEDIA_CONNECT_STATUS, ConnectStatus, nResultSize)
+            If (Not bResult) Then
+               Call oLog.Failed ("Unable to query media connect status." , 21172)
+            Else
+               If (ConnectStatus = Disconnected) Then
+                  Call oLog.Failed ("Media status detected as disconnected." , 21173)
+                  oLog.Write("By now, 2+ seconds after last reload, link should be established." )
+               ElseIf (ConnectStatus <> Connected) Then
+                  Call oLog.Failed ("Invalid media status returned from driver." , 21174)
+               End If
+            End If
+            
+            
+            oLog.Variation("Setup IP Related Information for Test Card")
+            bResult = SetupTestCardForIP(oTestOpen,m_lTestAdapterIndex, SuppIPAddr)
+            If(Not bResult) Then
+               Exit Do
+            End If
+            
+            oLog.Variation("Verify communication works...")
+            If (arrSuppOpen(0).vbSimpleSendReceive(oTestOpen) <> 0) Then
+               Call oLog.Failed ("Test-Support card communication failed", 88888)
+            End If
+                        
+            oLog.Write("Get Events from the Test adapter." )
+            bResult = oTestOpen.vbClearEvents()
+            If (Not bResult) Then
+               Call oLog.Failed ("Unable to get events from test adapter." , 21187)
+            End If
+            
+            oLog.Write("Get Events from the Support adapter." )
+            bResult = arrSuppOpen(0).vbClearEvents()
+            If (Not bResult) Then
+               Call oLog.Failed ("Unable to get events from test adapter." , 21188)
+            End If
+            
+            '============================================
+            ' Part 3: Load/Unload while sending/receiving
+            '============================================
+            
+         ElseIf (nCount = 3) Then
+            oLog.Variation("Part 3: Load/Unload while sending/receiving")
+            lInnerCount = 0
+            While (lInnerCount < 10)
+               ' Verify communication
+               oLog.Variation("Start sending on support adapter...")
+               
+               nPacketsSent   = 0
+               nReceived      = 0
+               nResent        = 0
+               lTestResent    = 0
+               nPacketSize    = glMinimumPacketSize
+               
+               arrSuppOpen(0).vbSetChannelId(nTestId)
+               
+               '           bResult = SetPacketFilter(arrSuppOpen(0), BROADCAST)
+               '           If(Not bResult) Then
+               '               Call oLog.Failed ("Unable to set support card packet filter to BROADCAST" , 21189)
+               ' keep going anyways.  This will cause problems when checking the receive results
+               '           End If
+               
+               bResult = arrSuppOpen(0).vbStartReceive()
+               If (Not bResult) Then
+                  Exit Do
+               End If
+               
+               '           lLoopCount = 0
+               '           Do While (lLoopCount < lSuppOpens)
+               '               bResult = arrSuppOpen(lLoopCount).SendPackets(arrSendAddr, lBurstSize, nPacketSize, 0, 50, BroadcastAddr)
+               '               lLoopCount = lLoopCount + 1
+               '           loop
+               
+               lLoopCount = 0
+               do While (lLoopCount < lSuppOpens)
+                  ' The time out for the send packets has been increased to 500 seconds!
+                  ' It may have been causing sync issues
+                  bResult = arrSuppOpen(lLoopCount).vbSendPackets(arrSendAddr, lBurstSize, nPacketSize, 0, 500, SuppAddr)
+                  lLoopCount = lLoopCount + 1
+               loop
+               
+               WSCript.Sleep(2000) ' Wait 2 seconds for test adapter to start receiving/resending packets
+               
+               oTestOpen.vbNdisClose()
+               
+               oLog.Variation("Stop test adapter.")
+               nResult = oPNPPower.StopDriver(TestCardGUID)
+               If (nResult <> 0) Then
+                  Call oLog.Failed ("Unable to stop driver." , 21192)
+                  Exit Do
+               Else
+                  m_DriverStatus = HALTED
+               End If
+               
+               WScript.Sleep(1000)
+               
+               oLog.Variation("Start test adapter.")
+               nResult = oPNPPower.StartDriver(TestCardGUID)
+               If (nResult <> 0) Then
+                  Call oLog.Failed ("Unable to restart driver after stopping." , 21193)
+                  Exit Do
+               Else
+                  m_DriverStatus = LOADED
+               End If
+               
+               oLog.Variation("ReOpen Adapter")
+               nOpenLogMask = oLog.Mask
+               oLog.Mask = DO_NOTHING
+               bOpenSuccess = FALSE
+
+               For nOpenLoopCnt = 0 To 9
+                  bResult = oTestOpen.vbNdisOpen()
+                  If(Not bResult) Then
+                     ' Try again
+                     WScript.Sleep 1000
+                  Else
+                     bOpenSuccess = TRUE
+                     Exit For
+                  End If
+               Next
+
+               oLog.Mask = nOpenLogMask
+               If (Not bOpenSuccess) Then
+                  Call oLog.Failed ("NdisOpen Failed after repeated attempts", 23406)
+                  Exit Do
+               End If
+               
+               oLog.Variation("Setup IP Related Information for Test Card")
+               bResult = SetupTestCardForIP(oTestOpen, m_lTestAdapterIndex, SuppIPAddr)
+               If(Not bResult) Then
+                  Exit Do
+               End If
+               
+               oLog.Variation("Verify communication works...")
+               
+               oTestOpen.vbSetChannelId(nTestId)
+               oTestOpen.vbSetReceiveOption(RECEIVE_DEFAULT)
+               
+               
+               Call oTestOpen.vbSetPacketFilter(DIRECTED)
+               
+               bResult = oTestOpen.vbStartReceive()
+               If (Not bResult) Then
+                  Exit Do
+               End If
+               
+               '-------------------- Begin 802.11 Association Routine --------------------'
+               If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+                  
+                  Set oOpen = oTestCard.vbOpenAdapter()
+                  
+                  If(vbAssociateWep(oOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+                     oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+                  End If	
+                  
+                  Set oOpen = Nothing
+                                                      
+               End If
+               '-------------------- End 802.11 Association Routine --------------------'
+               
+               bResult = oTestCard.vbWaitForLinkWithDelay (90, glWaitForLinkExtraDelay)
+               
+               WScript.Sleep(2000) ' wait for a short time to allow receiving of packets
+               
+               lLoopCount = 0
+               Do While (lLoopCount < lSuppOpens)
+                  bResult = arrSuppOpen(lLoopCount).vbStopSend()
+                  bResult = arrSuppOpen(lLoopCount).vbWaitSend()
+                  bResult = arrSuppOpen(lLoopCount).vbGetSendResults(0, SEND_FAILURES_ALLOWED)
+                  lLoopCount = lLoopCount + 1
+               loop
+               
+               '
+               ' get receive results from "receiving" open instance
+               ' 
+               ' The exact number of packets will not be equal to those sent because of huge volume
+               ' So, we do not use VerifyReceiveResend. We can use VerifyReceiveResend (1, 0, 1, 0)
+               ' masking warnings, but it is not the best way
+               '
+               bResult = oTestOpen.vbStopReceive()
+               If (bResult) Then
+                  bResult = oTestOpen.vbGetReceiveResults(nReceived, lTestResent)
+                  If (bResult) Then
+                     If (lTestResent = 0) Then
+                        Call oLog.Failed ("Test adapter resent 0 packets; should have resent some." , 21197)
+                     End If
+                     
+                     If (nReceived = 0) Then
+                        Call oLog.Failed ("Test adapter received 0 packets; should have received some." , 21198)
+                     End If
+                  End If
+               Else
+                  Call oLog.Failed ("Unable to stop receiving on the test adapter." , 21199)
+                  Exit Do
+               End If
+               
+               '
+               ' get receive results from "sending" open instance
+               '
+               bResult = arrSuppOpen(0).vbStopReceive()
+               If (bResult) Then
+                  bResult = arrSuppOpen(0).vbGetReceiveResults(nReceived, nResent)
+                  If (bResult) Then
+                     If (nResent <> 0) Then
+                        Call oLog.Failed ("Should not have resent any packets. " & nResent , 21200)
+                     End If
+                     
+                     If (nReceived = 0) Then
+                        Call oLog.Failed ("The support adapter should have received some of the packets sent from the test adapter.", 21201)
+                     End If
+                  End If
+               Else
+                  Call oLog.Failed ("Unable to stop receiving on the support adapter." , 21202)
+                  Exit Do
+               End If
+               lInnerCount = lInnerCount + 1
+            Wend
+         End If
+         
+         nCount = nCount + 1
+         
+      Loop
+      
+   End Function
+   
+End Class
+
+</script>
+</job>
+</package>
+
+
+<!--- CRC = 0xc8a48e65 --->

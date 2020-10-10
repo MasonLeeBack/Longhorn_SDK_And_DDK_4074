@@ -1,0 +1,109 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<schema xmlns="http://www.w3.org/2001/XMLSchema" 
+		xmlns:maml="http://schemas.microsoft.com/maml/2003/5" 
+		xmlns:doc="http://schemas.microsoft.com/maml/internal"
+		targetNamespace="http://schemas.microsoft.com/maml/2003/5" 
+		elementFormDefault="qualified"
+        attributeFormDefault="unqualified"
+        >
+
+	<!-- Schema documentation -->
+	<annotation>
+		<documentation>
+			This schema definition defines block inline types for the CS Schema.
+			This schema is part of the base layer.			
+		</documentation>
+	</annotation>
+
+	<!-- include and import declarations -->
+	<include schemaLocation="inline.xsd"/>
+	
+	<!-- Element declarations -->
+	<element name="para">
+		<annotation>
+			<documentation>
+				The para element describes a paragraph. It is the most basic 
+				documentation unit.
+			</documentation>
+		</annotation>
+		<complexType mixed="true">
+			<complexContent mixed="true" >
+				<extension base="maml:inlineType">
+					<sequence>
+						<element name="leadInPhrase" type="maml:textType" minOccurs="0"/>
+					</sequence>
+				</extension>
+			</complexContent>
+		</complexType>
+	</element>
+	
+	<element name="title" type="maml:textType">
+		<annotation>
+			<documentation>
+				The title element describes the name of a part of the document.
+			</documentation>
+		</annotation>
+	</element>
+
+
+	<element name="subTitle" type="maml:textType">
+		<annotation>
+			<documentation>
+				The subTitle element describes the name of a part of the document.
+			</documentation>
+		</annotation>
+	</element>
+
+	<element name="alert">
+		<annotation>
+			<documentation>
+				The alert element describes an slim alert structure
+				that largely mimicks the block alert structure.
+			</documentation>
+		</annotation>
+		<complexType mixed="true">
+			<complexContent>
+				<extension base="maml:inlineType">
+					<attribute name="class" type="maml:alertTypesType" use="required">
+						<annotation>
+							<documentation>
+								The class attribute describes the type of alert.
+							</documentation>
+						</annotation>
+					</attribute>
+				</extension>
+			</complexContent>
+		</complexType>
+	</element>
+	
+	<element name="quote" type="maml:inlineType">
+		<annotation>
+			<documentation>
+				The quote element describes a quotation.
+			</documentation>
+		</annotation>
+	</element>
+	
+	<element name="parameterizedBlock" type="maml:parameterizedContentType">
+		<annotation>
+			<documentation>
+				This element is replaced at build time by the shared content
+				to which it refers using the parameters provided by the user.
+				The parameters can be simple text or can include XML markup.
+				In most cases the parameter values will not be localizable content.
+			</documentation>
+		</annotation>
+	</element>
+
+	<element name="crossReference" type="maml:textType"/>
+	
+	<!-- group declarations -->
+	<group name="blockCommonGroup">
+		<choice>
+			<element ref="maml:para"/>
+			<element ref="maml:alert"/>
+			<element ref="maml:quote"/>
+			<element ref="maml:parameterizedBlock"/>
+		</choice>
+	</group>
+</schema>

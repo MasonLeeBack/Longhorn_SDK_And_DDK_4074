@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<xs:schema targetNamespace="http://schemas.microsoft.com/help/packinglist/2003/10"
+ xmlns:packinglist="http://schemas.microsoft.com/help/packinglist/2003/10"
+ xmlns:xs="http://www.w3.org/2001/XMLSchema"
+ elementFormDefault="qualified"
+ attributeFormDefault="unqualified"
+ version="1.0.0.2">
+    <xs:element name="entry">
+        <xs:complexType>
+            <xs:attribute name="url" type="xs:string" use="required" />
+        </xs:complexType>
+    </xs:element>
+    <xs:element name="packingList">
+        <xs:complexType>
+            <xs:sequence>
+                <xs:element ref="packinglist:entry" maxOccurs="unbounded" />
+            </xs:sequence>
+            <xs:attribute name="copyright" type="xs:string" use="optional" />
+            <xs:attribute name="fileVersion" type="xs:string" use="optional" />
+            <xs:attribute name="langId" type="xs:string" use="optional" />
+        </xs:complexType>
+    </xs:element>
+</xs:schema>

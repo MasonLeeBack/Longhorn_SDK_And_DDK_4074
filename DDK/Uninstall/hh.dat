@@ -1,0 +1,28 @@
+Collection=winddk.col
+
+ddkint;Windows DDK
+GStart;Windows DDK
+kmarch;Windows DDK
+Framework;Windows DDK
+install;Windows DDK
+ddtools;Windows DDK
+acpi;Windows DDK
+battery;Windows DDK
+graphics;Windows DDK
+1284dot4;Windows DDK
+intinput;Windows DDK
+modem;Windows DDK
+multifnc;Windows DDK
+network;Windows DDK
+parallel;Windows DDK
+serial;Windows DDK
+smart;Windows DDK
+still;Windows DDK
+storage;Windows DDK
+stream;Windows DDK
+other;Windows DDK
+buses;Windows DDK
+gloss;Windows DDK
+appendix;Windows DDK
+
+ifsk;Windows DDK\IFS Documents

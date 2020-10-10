@@ -1,0 +1,117 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<schema 
+        xmlns="http://www.w3.org/2001/XMLSchema"
+        xmlns:maml="http://schemas.microsoft.com/maml/2003/5"
+		xmlns:doc="http://schemas.microsoft.com/maml/internal"
+        targetNamespace="http://schemas.microsoft.com/maml/2003/5" 
+        blockDefault="#all" 
+        elementFormDefault="qualified" 
+        attributeFormDefault="unqualified"
+        xml:lang="en"
+    >
+
+    <!-- Schema documentation -->
+    <annotation>
+        <documentation>
+            This schema describes MAML, the Microsoft Assistance Markup Language.
+            MAML is intended for software documentation. In particular, it is 
+            intended to accomodate the needs of Microsoft documentation.
+        </documentation>
+        <documentation>
+            The schema is broken into three main areas: end user, developer and
+            IT Pro. These areas adequaltely categorize Microsoft
+            documentation.
+        </documentation>
+        <documentation>
+         The namespace uri for this version of MAML is: http://schemas.microsoft.com/maml/2003/5.
+         Each backwards-incompatible revision to MAML will require that the date fields be appropriately
+         incremented in uri of the updated version of the MAML schema.
+        </documentation>
+    </annotation>
+
+    <annotation>
+        <documentation>
+            This portion of the schema was created by alexstoc in April 2003.
+        </documentation>
+    </annotation>
+
+	<include schemaLocation="conditionSet.xsd"/>
+    <include schemaLocation="developerStructure.xsd"/>
+    <include schemaLocation="developerReference.xsd"/>
+
+    <!-- ************ Reference Content Type ************ -->
+    
+    <complexType name="codeEntityDocumentType" mixed="false">
+        <sequence>
+            <element ref="maml:assembly"/>
+            <element ref="maml:codeEntities"/>
+        </sequence>
+    </complexType>
+    
+    <element name="codeEntityDocument" type="maml:codeEntityDocumentType">
+        <annotation>
+            <documentation>
+            This is the root element of a reference document.
+            </documentation>
+            <appinfo><doc:localizable>n/a</doc:localizable></appinfo>
+        </annotation>
+    </element>
+    
+    <!-- ************ How To Content Type ************ -->
+    
+    <complexType name="developerHowToDocumentType" mixed="false">
+        <sequence>
+            <!-- Always a title - but titles are stored outside the file -->
+
+            <!-- Always an introduction -->
+            <element ref="maml:summary"/>
+
+            <!-- Optional procedures followed by optional code example
+                 but must have at least one procedure or code example -->
+            <choice>
+                <sequence>
+                    <!-- One or more procedures -->
+                    <element ref="maml:procedure" minOccurs="1" maxOccurs="unbounded"/>
+
+                    <!-- An optional code example -->
+                    <element ref="maml:codeExample" minOccurs="0"/>
+                </sequence>
+                <element ref="maml:codeExample"/>
+            </choice>
+
+            <!-- Always a section for related items -->
+            <element ref="maml:relatedTopics"/>
+        </sequence>
+    </complexType>
+
+    <element name="developerHowToDocument" type="maml:developerHowToDocumentType">
+        <annotation>
+            <documentation>
+            This is the root element of a 'how to' document.
+            </documentation>
+            <appinfo><doc:localizable>n/a</doc:localizable></appinfo>
+        </annotation>
+    </element>
+    
+    <!--*******************************************************-->
+    
+    <complexType name="developerDocumentType" mixed="false">
+        <sequence>
+            <choice>
+                <element ref="maml:codeEntityDocument"/>
+                <element ref="maml:developerHowToDocument"/>
+            </choice>
+            <element ref="maml:conditionSets" minOccurs="0"/>
+        </sequence>
+    </complexType>
+    
+    <element name="developerDocument" type="maml:developerDocumentType">
+        <annotation>
+            <documentation>
+            This is the root element of a developer document.
+            </documentation>
+            <appinfo><doc:localizable>n/a</doc:localizable></appinfo>
+        </annotation>
+    </element>
+
+</schema>

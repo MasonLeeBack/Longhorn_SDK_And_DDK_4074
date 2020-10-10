@@ -1,0 +1,183 @@
+'************************************* TCP_ZeroWindow_ConnectEx.wsf ***********************
+'*                                                                                   *
+'* Author            :    Sandeep Prabhu                                             *
+'* Revision history  :                                                               *
+'*    09/20/2000     sandeep        Created                                          *
+'*                                                                                   *
+'* This script will test the TCP zero window probing screnarios                      *
+'*                                                                                   *
+'************************************* TCP_ZeroWindow_ConnectEx.wsf ***********************
+
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\TCPLib.vbs"/>
+      <script language="VBScript" src="TCPZeroWindowLib.vbs"/>                  
+      <script id="TCP_ZeroWindow_ConnectEx" language="VBScript">
+
+'/**
+' @area name="Offload Compliance Test Assertions"
+' @group name="TCP Zero Window Probing Assertions"
+' @group name="Zero Window Probing with ConnectEx Assertions" 
+' @define name="Offload" Offload Compliance Test Assertions
+' @define name="TCPZW" TCP Zero Window Probing Assertions
+' @define name="CExZW" Zero Window Probing with ConnectEx Assertions
+' @hierarchy Offload TCPZW CExZW
+' @key Reference="WLP# - x.x.x.x; RFC-793 Section 3.7, RFC-1122 Section 4.2.2.17"
+' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+' @key TestName="TCPv4 Zero Window Probing with ConnectEx Functionality Tests"
+' @key TestLog="TCP_ZeroWindow_ConnectEx.log"
+'*/
+
+option explicit
+    
+Dim Core, Sparta, Autosrv, MediaType, AutoArpObject, IFace, pControllerObj
+Const usMSS = 1460
+ 
+'
+' Start the script
+'           
+StartScript "TCP_ZeroWindow_ConnectEx", g_szLogDirectory, "Tests for TCP zero window probing" 
+
+
+
+' ==================================================================================================
+' Main routine
+' ==================================================================================================
+Sub Main
+   Core.SetAssertionTracking "60200"
+   Dim ulStatus, ulWindowSize
+   
+   IFace.StartListening
+   Core.StartTest "Zero window probing on ConnectEx"
+
+   '/**
+   ' @test name="Verify that the stack does zero window probing correctly when ConnectEx was used." 
+   ' Autosrv is requested to connect back to the script machine using ConnectEx. 
+   ' Script machine accepts the connection and advertises a zero receive window in the SYN-ACK. 
+   ' Then autosrv on the test machine is asked to send data to the sript machine.
+   ' Verify that the stack sends 3 zero window probes (ACKs) with the right timing.
+   ' After the third probe the receive window is opened, the data consumed and the connection is reset.<br/>
+   '*/
+   
+   ZeroWindowProbingOnConnectEx 0
+   ZeroWindowProbingOnConnectEx usMSS
+   Core.EndTest
+   Core.Sleep(2500)
+   IFace.StopListening
+   
+End Sub
+
+
+
+'
+' If a zero window is advertized during handshake (i.e. in the SYN-ACK) of ConnectEx,
+' a zero window probe is done after the handshake only if there is data to send
+'
+Sub ZeroWindowProbingOnConnectEx(ulDataSize)
+   Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim ulLastAck, ulBytesRcvd, pTCPPacket, ulDataLength
+   
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 5000
+   usDestPort = 5001
+   ulDataLength = ulDataSize
+   
+   Core.StartVariation
+
+   ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+ 
+   '
+   ' Ask AutoSrv to create a socket, bind it 
+   ' 
+   Set pTCPPacket = GrabSyn(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, TRUE, ulDataLength)  
+   if (pTCPPacket is Nothing) then
+      Core.BlockVariation "ZeroWindowProbingOnConnectEx: Failed to receive a SYN"
+      exit sub
+   end if
+   
+   '
+   ' Send the SYN-ACK with a zero window
+   '
+   Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, (TCP_SYN or TCP_ACK), 0)
+   pTCPPacket.TCPHeader.TCPOption(0).AddMSS(usMSS)
+   pTCPPacket.TCPHeader.WindowSize = 0
+   IFace.Send(pTCPPacket)
+   
+   if (ulDataLength = 0) then
+      '
+      ' Receive the ACK
+      '
+      set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 200)
+      if (pTCPPacket is Nothing) then
+         Core.FailSev1Variation "ZeroWindowProbingOnConnectEx: Didn't receive the ACK for SYN-ACK"
+         ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+         exit sub
+      end if
+      
+      '
+      ' Now issue a send
+      '
+      ulDataLength = usMSS
+      ulStatus = pControllerObj.Send(ulSessionId, 1, 0, ulDataLength, ulTID)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "ZeroWindowProbingOnConnectEx: Send - " & ulStatus
+         ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+         exit sub
+      end if
+   end if   
+   
+   '
+   ' Get to the point where the first window probe packet is received
+   '
+   ulStatus = GetToWindowProbeState(usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)
+   if (ulStatus <> 0) then
+      Core.FailSev1Variation "ZeroWindowProbingOnConnectEx: GetToWindowProbeState - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+
+   '
+   ' Check if connection is offloaded
+   '
+   If Not IsConnectionOffloaded(usSrcPort, usDestPort, ulSessionId) and g_fTestOffload And g_fTOENic Then
+      Core.FailSev1Variation "ZeroWindowProbingOnConnectEx : Failed to offload the connection"
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   End If
+
+   '
+   ' Do window probing for 3 times
+   '
+   ulStatus = DoZeroWindowProbe(3, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)
+   if (ulStatus <> 0) then
+      Core.FailSev1Variation "ZeroWindowProbingOnConnectEx: DoZeroWindowProbe - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+      
+   '
+   ' Complete the data exchange
+   '
+   ulStatus = DoDataExchange(ulDataLength, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)   
+   if (ulStatus <> 0) then
+      Core.BlockVariation "ZeroWindowProbingOnConnectEx: DoDataExchange - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+
+   ' Reset the connection
+   '
+   ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+
+End Sub
+
+
+      </script>
+   </job>
+</package>

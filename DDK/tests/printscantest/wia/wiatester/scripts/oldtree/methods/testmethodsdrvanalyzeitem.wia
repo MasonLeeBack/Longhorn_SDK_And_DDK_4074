@@ -1,0 +1,23 @@
+Test Assertion_A13483
+
+Assertion '13.4.8.3 drvAnalyzeItem' 
+[
+This method should return S_OK, even if the analyze doesn't detect any data type.
+]
+
+Var root:Item
+{
+    StartWia()
+
+    GetRoot(root)
+
+    GetNextItem(root)
+
+    While (root ) Do
+    {
+        AnalyzeItem(root)
+        GetNextItem(root)
+    }
+
+    StopWia()
+}

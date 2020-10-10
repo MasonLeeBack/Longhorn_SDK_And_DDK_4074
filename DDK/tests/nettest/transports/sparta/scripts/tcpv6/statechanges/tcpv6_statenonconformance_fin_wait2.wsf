@@ -1,0 +1,196 @@
+'
+' File          : TCPv6_StateNonConformance_FIN_WAIT2.wsf
+' Author        : Sandeep Prabhu [5/14/01]
+'
+' A script to test the state non-conformance scenarios in FIN_WAIT2 state
+'
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\..\common\IPv6Common.Lib"/>
+      <script language="VBScript" src="..\..\common\TCPv6Helper.Lib"/>
+      <script language="VBScript" src="TCPv6StateChangesHelper.Lib"/>
+      <script id="TCPv6_StateNonConformance_FIN_WAIT2" language="VBScript">
+
+
+option explicit
+    
+Dim Core, Sparta, Autosrv, MediaType, AutoNDObject, IFace, pControllerObj, ExceptionStatus
+
+ 
+StartScript "TCPv6_StateNonConformance_FIN_WAIT2", g_szLogDirectory, "Tests for state non conformance in FIN_WAIT2"
+
+
+'
+' Main routine
+'
+Sub Main
+
+   Core.SetAssertionTracking "20500"
+   '/**
+   ' @area name="Offload Compliance Test Assertions"
+   ' @group name="TCP Connection State Transition Assertions"
+   ' @group name="State Nonconformance in FIN_WAIT2 State Assertions for TCP/IP v6" 
+   ' @define name="Offload" Offload Compliance Test Assertions
+   ' @define name="TCPStates" TCP Connection State Transition Assertions
+   ' @define name="StateNonConfv6" State Nonconformance in FIN_WAIT2 State Assertions for TCP/IP v6
+   ' @hierarchy Offload TCPStates StateNonConfv6
+   ' @key Reference="WLP# - x.x.x.x; RFC-793 Sections 3.2, 3.4, 3.5, RFC-1122 Section 4.2.2.8, 4.2.2.12, 4.2.2.13"
+   ' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+   ' @key TestName="TCPv6 Connection State Nonconformance in FIN_WAIT2 Tests"
+   ' @key TestLog="TCPv6_StateNonConformance_FIN_WAIT2.log"
+   '*/
+   Core.StartTest "FIN_WAIT2 state"
+   '/**
+   ' @test name="The stack must repond correctly to the below scenarios when the TCP connection is in FIN_WAIT2 state"
+   ' Application on the test machine accepts a connection from the remote end.
+   ' Test verifies that Stack transitions the connection to ESTABLISHED state. 
+   ' Application closes the connection.
+   ' Test verifies that Stack sends FIN and transitions the connection to FIN_WAIT1 state. 
+   ' Upon stack receiving an ACK, test verifies that Stack sends nothing and transitions the connection to FIN_WAIT2 state. <br/>
+   ' While the connection is at FIN_WAIT2 state, <br/>
+   ' - upon Stack receiving a RST, test verifies that Stack transitions the connection to CLOSED state. <br/>
+   ' - upon Stack receiving a SYN, test verifies that Stack sends a RST and transitions the connection to CLOSED state. <br/>
+   ' - upon Stack receiving data, test verifies that Stack receives it. <br/>
+   ' - after waiting for a period of 2*MSL, test verifies that Stack transitions the connection to CLOSED state. <br/>
+   '*/
+   FIN_WAIT2NonConformance
+   Core.EndTest
+   Core.Sleep 2500
+
+End Sub
+
+
+'
+' Routine to do the non conformance tests in FIN_WAIT2 state
+' Checks done -
+'     1. RST should transition the connection to CLOSED state
+'     2. SYN should result in a RST and transition the connection to CLOSED state
+'     3. Send data and ensure its received
+'     4. FIN_WAIT2 state timeout is 2*MSL
+'
+Sub FIN_WAIT2NonConformance
+   Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim ulBytesRcvd, pPacket, AutoNDObject, pIFace, PacketType, ulCounter, bResponse
+   Dim ulBytesSent
+
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 17000
+   usDestPort = 17001
+   
+   Set AutoNDObject = Sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, g_szLocalSpoofIp6Address, FALSE)    
+   Set pIFace = CreateInterface(TRUE, g_szRemoteMacAddress, g_szRemoteIp6Address, g_szLocalSpoofIp6Address)
+   pIFace.StartListening
+   PacketType = Array(TCP_SYN, TCP_RST, TCP_ACK or TCP_PUSH, NULL)
+   
+   For ulCounter = lBound(PacketType) to uBound(PacketType)
+      '
+      ' Establish a TCP connection
+      '
+      Core.StartVariation
+      ulStatus = ActiveConnect(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "FIN_WAIT2NonConformance: ActiveConnect - " & ulStatus
+         exit sub
+      end if
+      
+      '
+      ' do loop used to get around using goto
+      '
+      do
+         '
+         ' Transition the connection to FIN_WAIT1 state
+         '
+         ulStatus = ESTD__FIN_WAIT1(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+         if (ulStatus <> 0) then
+            Core.FailSev1Variation "FIN_WAIT2NonConformance: ESTD__FIN_WAIT2 - " & ulStatus
+            exit sub
+         end if
+
+         '
+         ' Transition the connection to FIN_WAIT2 state
+         '
+         ulStatus = FIN_WAIT1__FIN_WAIT2(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+         if (ulStatus <> 0) then
+            Core.FailSev1Variation "FIN_WAIT2NonConformance: FIN_WAIT1__FIN_WAIT2 - " & ulStatus
+            exit sub
+         end if
+         
+         '
+         ' Send appropriate packet and check for a response
+         '   
+         If Not(IsNull(PacketType(ulCounter))) then
+            Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, PacketType(ulCounter), 0)
+            if (PacketType(ulCounter) = (TCP_ACK or TCP_PUSH)) then
+               pPacket.UserData 100, "This is a test"
+            end if
+            pIFace.Send(pPacket)
+   
+            bResponse = TCP_ACK         
+            If (PacketType(ulCounter) = TCP_SYN) then
+               bResponse = TCP_RST
+            end if
+            
+            '
+            ' Wait for the response
+            ' 
+            Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, bResponse, 200, pIFace)    
+            if ((pPacket is Nothing) AND (PacketType(ulCounter)<>TCP_RST)) then
+               Core.FailSev1Variation "FIN_WAIT2NonConformance: Failed to receive a response"
+               exit do
+            elseif (Not(pPacket is Nothing) AND (PacketType(ulCounter)=TCP_RST)) then
+               Core.FailSev1Variation "FIN_WAIT2NonConformance: Received a response"
+               exit do
+            end if
+         else
+            Core.Sleep DEFAULT_TcpTimedWaitDelay*1100
+         end if
+
+         Core.StartVariation         
+         if (PacketType(ulCounter)=(TCP_ACK OR TCP_PUSH)) then
+            '
+            ' Ensure the data is received
+            '
+            ulStatus = pControllerObj.GetSessionStats(ulSessionId, ulBytesSent, ulBytesRcvd)
+            if (ulStatus <> 0) then
+                Core.BlockVariation "FIN_WAIT2NonConformance: GetSessionStats - " & ulStatus
+                Exit do
+            elseif (ulBytesRcvd <> 100) then
+                Core.FailSev1Variation "FIN_WAIT2NonConformance: Received " & ulBytesRcvd & " bytes"
+                exit do
+            end if
+         else   
+            '
+            ' Ensure the connection has transitioned to CLOSED state 
+            '
+            Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+            pIFace.Send(pPacket)
+            
+            Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_RST, 200, pIFace)                
+            if (pPacket is Nothing) then            
+               Core.FailSev1Variation "FIN_WAIT2NonConformance: Connection not in CLOSED state"
+               Msgbox("Failed")
+               exit do
+            end if
+         end if
+      loop while (FALSE)
+
+      '
+      ' Reset the connection
+      '
+      ulStatus = ResetConnectionEx(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId)
+      if (ulStatus <> 0) then
+         Core.log "ERROR: FIN_WAIT2NonConformance: ResetConnectionEx - " & ulStatus
+      end if
+   Next
+End Sub
+
+      </script>
+   </job>
+</package>
+

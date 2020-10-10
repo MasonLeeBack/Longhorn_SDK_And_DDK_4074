@@ -1,0 +1,340 @@
+'************************************* TCP_RTTMeasurement.wsf ********************
+'*                                                                               *
+'* Author            :    Balash Akbari                                          *
+'* Revision history  :                                                           *
+'*    3/10/2001     balasha         Created                                      *
+'*                                                                               *
+'* This script tests Round Trip Time Measurement of TCP                           *
+'*                                                                               *
+'************************************* TCP_RTTMeasurement.wsf********* ***********
+
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="TCPLib.vbs"/>
+      <script id="TCP_RTTMeasurement" language="VBScript">
+
+
+option explicit
+
+Dim Core, Sparta, Autosrv, MediaType, AutoArpObject, IFace, pControllerObj
+Const usTCPDestPort = 5000
+Const usMSS = 1460
+
+'
+' Start the script
+'
+StartScript "TCP_RTTMeasurement", g_szLogDirectory, "Tests RTT Measurement algorithm of TCP"
+
+
+
+' ==================================================================================================
+' Main routine
+' ==================================================================================================
+Sub Main
+
+   Core.SetAssertionTracking "50200"
+   '/**
+   ' @area name="Offload Compliance Test Assertions"
+   ' @group name="TCP Retransmission Assertions"
+   ' @group name="TCPv4 Retransmission Measurement Assertions" 
+   ' @define name="Offload" Offload Compliance Test Assertions
+   ' @define name="TCPR" TCP Retransmission Assertions
+   ' @define name="TCPRTTMv4" TCPv4 Retransmission Measurement Assertions
+   ' @hierarchy Offload TCPR TCPRTTMv4
+   ' @key Reference="WLP# - x.x.x.x; RFC-1122 Section 4.2.3.1"
+   ' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+   ' @key TestName="TCPv4 Retransmition Measurement Tests"
+   ' @key TestLog="TCP_RTTMeasurement.log"
+   '*/
+
+   '/**
+   
+   IFace.StartListening
+   
+   
+   '/**
+   ' @test name="Stack must initial RTT Values correctly" Establish a TCP connection. Ask Autosrv to send one packet
+   ' set data size to MSS to avoid Nagling.  Receive the first packet.  Wait for the retransmission just 
+   ' less than the Initial RTO. Reset the connection
+   'Verify that retransmission occured before the timer expires for the following receive
+   '*/
+   InitialRTT
+   
+   '/**
+   ' @test name="Stack must calculate the  RTT values correctly when packets are delayed"  Establish a TCP connection.For the first 32 packet
+   ' sent, delay each packet for random amount of time between 3000 and 500 ms.  For each delay calculate the 
+   ' projected effect on RTO.   Do to ACK the last packet.  Wait for the retransmission just less than the Initial
+   ' RTO.  Wait for the retransmission just less than the RTO.  Make sure not packet was received.  No issue another 
+   ' Receive after RTO make sure the packet has arrived.  If the test fails up repeat the test up to three times to 
+   ' compensate for the network anomalies. 
+   '*/
+   
+   RTTWithDelay
+
+   Core.Sleep(2000)
+   IFace.StopListening
+
+
+End Sub
+
+
+
+' Function to test initial RTT
+Sub InitialRTT
+
+   Core.StartTest "Initial RTT Measurement"
+
+   Dim ulStatus, ulWindowSize
+   Dim pTCPPacket, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim ulBytesRcvd, pACKPacket, ulInitialRTT,ulMarginOfError
+
+   ulInitialRTT =  DefaultTcpInitialRTT - 60
+   ulMarginOfError = Clng(150)
+
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 5000
+   usDestPort = 6000
+   ulWindowSize = CLng(10*usMSS)
+
+   Core.StartVariation
+
+   '
+   ' Establish a TCP connection
+   '
+   ulStatus = Connect(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, ulWindowSize, usMSS)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "RTT Measurement: Connect - " & ulStatus
+      exit sub
+   end if
+
+   '
+   ' Ask Autosrv to send one packet set data size to MSS to avoid Nagling
+   '
+   ulStatus = pControllerObj.Send(ulSessionId, 1, 0, usMSS, ulTID)
+   if (ulStatus <> 0) then
+      Core.Log "RTTMeasurement: Send - " & ulStatus
+      exit sub
+   end if
+
+   '
+   'Receive the first packet
+   '
+   Set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK or TCP_PUSH, ulInitialRTT - ulMarginOfError)
+   if (pTCPPacket is Nothing) then
+       Core.FailSev1Variation "First ACK was never received"
+       ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+       exit sub
+   end if
+
+   '
+   'Wait for the retransmission just less than the Initial RTO
+   '
+   Set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK or TCP_PUSH, ulInitialRTT - ulMarginOfError)
+   if (pTCPPacket is Nothing) then
+
+   else
+       Core.FailSev1Variation "Retransmission occurred too early"
+       ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+       exit sub
+   end if
+
+   '
+   'Retransmission should occur before the timer expires for the following receive
+   '
+   Set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK or TCP_PUSH, 2*ulMarginOfError)
+   if (pTCPPacket is Nothing) then
+       Core.FailSev1Variation "Retransmission did not occur"
+       ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+       exit sub
+   end if
+
+   Set pACKPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+   IFace.Send(pACKPacket)
+
+
+   '
+   ' Reset the connection
+   '
+   ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+
+   Core.EndTest
+
+End Sub
+
+
+
+'Function to test TRO calculation when packets are delayed 
+
+Sub RTTWithDelay
+
+   Core.StartTest "RTTWithDelay"
+
+   Dim ulStatus, ulWindowSize
+   Dim pTCPPacket, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim ulBytesRcvd, pACKPacket, ulInitialRTT,ulMarginOfError, usCount, sMessage
+
+   Dim Error, M, A, D, g, h, RTO, I
+   Dim usVariationRetry
+   Dim usTotalNoRetries
+
+   usVariationRetry = 0
+   usTotalNoRetries = 0
+
+   '
+   ' Establish a TCP connection
+   '
+   Randomize
+
+   For I = 3 To  25
+
+        if (usVariationRetry = 0) then
+            Core.StartVariation
+        end if
+
+        A = 0
+        g = 1/8
+        h = 1/4
+        D = 750
+        Error = 0
+        M   = 0
+        RTO = 0
+
+        ulInitialRTT =  DefaultTcpInitialRTT
+        ulMarginOfError = Clng(100)
+
+        ulSeqNumber = Clng(1000)
+        ulAckNumber = Clng(1)
+        usSrcPort = 5000
+        usDestPort = 6000
+        ulWindowSize = CLng(10*usMSS)
+
+
+        ulStatus = Connect(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, ulWindowSize, usMSS)
+
+        if (ulStatus <> 0) then
+                Core.BlockVariation "RTT Measurement: Connect - " & ulStatus
+                exit sub
+        end if
+
+        usCount = I
+
+        do
+            M = Int((3000 - 500 + 1) * Rnd + 500)
+
+            ulStatus = pControllerObj.Send(ulSessionId, 1, 0, usMSS, ulTID)
+
+            if (ulStatus <> 0) then
+                Core.Log "RTTMeasurement: Send - " & ulStatus
+                exit sub
+            end if
+
+            Set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK or TCP_PUSH, ulInitialRTT)
+
+            if (pTCPPacket is Nothing) then
+                Core.FailSev1Variation "Not Receiving the packets"
+                ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+                exit sub
+            end if
+
+            Core.Sleep(M)
+
+            Error = M - A
+            A = A + g*Error
+            D = D + h * (abs(Error) - D)
+            RTO = A + 4*D
+
+            Set pACKPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+            IFace.Send(pACKPacket)
+
+            usCount = usCount -1
+        loop while (usCount >0 )
+
+        ulStatus = pControllerObj.Send(ulSessionId, 1, 0, usMSS, ulTID)
+
+        ulInitialRTT = RTO
+        ulMarginOfError = 1600
+
+        '
+        'Receive the first packet
+        '
+        Set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK or TCP_PUSH, ulInitialRTT)
+
+        if (pTCPPacket is Nothing) then
+            Core.FailSev1Variation "First ACK was never received"
+            ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+            exit sub
+        end if
+
+        '
+        'Wait for the retransmission just less than the Initial RTO
+        '
+    	set pTCPPacket = Nothing
+
+        Set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK or TCP_PUSH, ulInitialRTT - ulMarginOfError)
+
+        if (pTCPPacket is Nothing) then
+			'
+        	'Retransmission should occur before the timer expires for the following receive
+	        '
+        	Set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK or TCP_PUSH, 2*ulMarginOfError)
+
+ 		    if (pTCPPacket is Nothing) then
+                if (usVariationRetry >= 3) then
+                        Core.FailSev2Variation "RTTWithDelay: Retransmission did not occur I = " &  I & " ulInitialRTT = " & ulInitialRTT
+                    ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+                        usVariationRetry = 0
+                else
+                        Core.Log "Variation failed: Retrying Variation before reporting failure. Variation # " & I
+                        usVariationRetry = usVariationRetry +1
+                        usTotalNoRetries = usTotalNoRetries +1
+                        I = I - 1
+                end if
+            else
+                     'if  we are here that means the variation passed. Reset the variation retry counter to 0
+                     usVariationRetry  =  0
+            end if
+
+        else
+
+            if (usVariationRetry >= 3) then
+                Core.FailSev2Variation "RTTWithDelay:Retransmission occurred too early I =" &  I & " ulInitialRTT = " & ulInitialRTT
+                ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+                usVariationRetry = 0
+            else
+                Core.Log "Variation failed: Retrying Variation before reporting failure. Variation # " & I
+                usVariationRetry = usVariationRetry +1
+                usTotalNoRetries = usTotalNoRetries +1
+                I = I - 1
+            end if
+
+        end if
+
+
+        '
+        ' Reset the connection
+        '
+
+        ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+
+   Next
+
+
+   if (usTotalNoRetries > 10) then
+        Core.FailSev2Variation "Too many variations failed and retried.  Please review the results " & "usTotalNoRetries = " & usTotalNoRetries
+   end if
+
+   Core.EndTest
+
+End Sub
+
+
+      </script>
+   </job>
+</package>
+

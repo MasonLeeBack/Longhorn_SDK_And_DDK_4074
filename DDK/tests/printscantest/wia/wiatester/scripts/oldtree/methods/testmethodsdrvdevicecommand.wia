@@ -1,0 +1,245 @@
+Test Assertion_A13481
+
+Assertion '13.4.8.1 drvDeviceCommand' 
+[
+No commands are mandatory for scanners. 
+Only one command is mandatory for cameras: WIA_CMD_SYNCHRONIZE. All other commands are optional.
+If a non-implemented command is passed to this method, the return value shall be E_NOT_IMPL.
+]
+
+Var pCaps:Caps, guid:GUID
+Var dt
+Var j, capsSize, root:Item, bExists
+{
+    StartWia()
+
+    GetRoot(root)
+
+    GetDeviceType(dt)
+
+    If ( !GetDeviceCaps(WIA_DEVICE_COMMANDS, pCaps) )
+    Then 
+    {
+        Writeln '\tThis capability does not exist'
+        Exit Failed
+    }
+
+    capsSize = GetDevCapsSize(pCaps)
+
+    bExists = 0
+
+    For j = 0 To capsSize - 1
+    {
+        GetDevCapAt(pCaps, j, guid)
+    
+        If ( CompareGUID (WIA_CMD_TAKE_PICTURE, guid) )
+        Then
+        {
+            bExists = 1
+            Break
+        }
+    }
+
+    If ( bExists ) 
+    Then
+    {
+        If ( !DeviceCommand(WIA_CMD_TAKE_PICTURE) ) 
+        Then 
+        {
+            Writeln '\tIssuing valid device command failed'
+            Exit Failed
+        }
+    }
+
+    Else
+    {
+        If ( DeviceCommand(WIA_CMD_TAKE_PICTURE) ) 
+        Then 
+        {
+            Writeln '\tIssuing invalid device command succeeded'
+            Exit Failed
+        }
+    }
+
+    bExists = 0
+
+    For j = 0 To capsSize - 1
+    {
+        GetDevCapAt(pCaps, j, guid)
+        
+        If ( CompareGUID (WIA_CMD_DELETE_ALL_ITEMS, guid) )
+        Then
+        {
+            bExists = 1
+            Break
+        }
+    }  
+
+    If ( bExists ) 
+    Then
+    {
+        If ( !DeviceCommand(WIA_CMD_DELETE_ALL_ITEMS) ) 
+        Then 
+        {
+            Writeln '\tIssuing valid device command failed'
+            Exit Failed
+        }
+    }
+
+    Else
+    {
+        If ( DeviceCommand(WIA_CMD_DELETE_ALL_ITEMS) ) 
+        Then 
+        {
+            Writeln '\tIssuing invalid device command succeeded'
+            Exit Failed
+        }
+    }
+
+    bExists = 0
+
+    For j = 0 To capsSize - 1
+    {
+        GetDevCapAt(pCaps, j, guid)
+
+        If (CompareGUID (WIA_CMD_CHANGE_DOCUMENT, guid))
+        Then
+        {
+            bExists = 1
+            Break
+        }
+    }
+
+    If ( bExists ) Then
+    {
+        If ( !DeviceCommand(WIA_CMD_CHANGE_DOCUMENT) ) 
+        Then 
+        {
+            Writeln '\tIssuing valid device command failed'
+            Exit Failed
+        }
+    }
+
+    Else
+    {
+        If ( DeviceCommand(WIA_CMD_CHANGE_DOCUMENT) ) 
+        Then 
+        {
+            Writeln '\tIssuing invalid device command succeeded'
+            Exit Failed
+        }
+    }
+
+    bExists = 0
+
+    For j = 0 To capsSize - 1
+    {
+        GetDevCapAt(pCaps, j, guid)
+        
+        If ( CompareGUID (WIA_CMD_UNLOAD_DOCUMENT, guid) )
+        Then
+        {
+            bExists = 1
+            Break
+        }
+    }
+
+    If ( bExists ) Then
+    {
+        If ( !DeviceCommand(WIA_CMD_UNLOAD_DOCUMENT) ) 
+        Then 
+        {
+            Writeln '\tIssuing valid device command failed'
+            Exit Failed
+        }
+    }
+
+    Else
+    {
+        If ( DeviceCommand(WIA_CMD_UNLOAD_DOCUMENT) ) 
+        Then 
+        {
+            Writeln '\tIssuing invalid device command succeeded'
+            Exit Failed
+        }
+    }
+
+    bExists = 0
+
+    For j = 0 To capsSize - 1
+    {
+        GetDevCapAt(pCaps, j, guid)
+        
+        If ( CompareGUID (WIA_CMD_DIAGNOSTIC, guid) )
+        Then
+        {
+            bExists = 1
+            Break
+        }
+    }  
+
+    If ( bExists ) Then
+    {
+        If ( !DeviceCommand(WIA_CMD_DIAGNOSTIC) ) 
+        Then 
+        {
+            Writeln '\tIssuing valid device command failed'
+            Exit Failed
+        }
+    }
+
+    Else
+    {
+        If ( DeviceCommand(WIA_CMD_DIAGNOSTIC) ) 
+        Then 
+        {
+            Writeln '\tIssuing invalid device command succeeded'
+            Exit Failed
+        }
+    }
+
+
+    bExists = 0
+
+    For j = 0 To capsSize - 1
+    {
+        GetDevCapAt(pCaps, j, guid)
+
+        If ( CompareGUID (WIA_CMD_SYNCHRONIZE, guid) )
+        Then
+        {
+            bExists = 1
+            Break
+        }
+    }  
+
+    If ( (!bExists) And (dt == StiDeviceTypeDigitalCamera) )
+    Then 
+    {   
+        Writeln '\tThis command is mandatory for camera devices'
+        Exit Failed
+    }
+
+    If ( bExists ) 
+    Then
+    {
+        If ( !DeviceCommand(WIA_CMD_SYNCHRONIZE) ) 
+        Then 
+        {
+            Writeln '\tIssuing valid device command failed'
+            Exit Failed
+        }
+    }
+
+    Else
+    {
+        If ( DeviceCommand(WIA_CMD_SYNCHRONIZE) ) 
+        Then 
+        {
+            Writeln '\tIssuing invalid device command succeeded'
+            Exit Failed
+        }
+    }
+
+    StopWia()
+}

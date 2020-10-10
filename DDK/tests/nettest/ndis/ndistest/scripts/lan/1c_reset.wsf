@@ -1,0 +1,342 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, 802_5, FDDI
+</MEDIA>
+<WHQL>
+802_3, 802_5, FDDI
+</WHQL>
+<CARDMACH>
+1C,1M
+</CARDMACH>
+<RUNORDER>
+1260
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[This script attempts to reset the card multiple times, while at the same time
+sending lots of packets over that card. It tests to make sure that that card
+can reset itself and that it deals properly with packets that have been given
+to it to send when interrupted by a reset.
+
+Two send tests are started (and continued) while the device is reset multiple times
+with a 500 millisecond delay between resets.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="1c_Reset" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      
+      <!-- Begin Wireless Specific Includes -->
+      <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	   <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	   <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	   <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	   <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+      <!-- End Wireless Specific Includes -->
+      
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/> 
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script language="VBScript" src="..\inc\ConstLAN.vbs"/>
+      <script id="1c_Reset" language="VBScript">
+'==========================================================================
+' Script Name:    1c_Reset
+'==========================================================================
+Option Explicit 
+
+Const CONNECTED = 0
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0)) 
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard
+   Private oOpenOne, oOpenTwo
+   Private m_lTestAdapterIndex
+   
+   Private Sub Class_Initialize
+      
+   End Sub
+   
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+      Set oOpenOne  = Nothing
+      Set oOpenTwo  = Nothing
+   End Sub
+   
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+
+      If (UseIPHeaders) Then
+         Exit Function
+      End If      
+      
+      Set pAdapterList = oNDInfo.AdapterList
+      
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oOpenOne = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oOpenOne is Nothing) Then
+         Exit Function
+      End If
+      
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+                  
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")           
+         If(vbAssociateWep(oOpenOne, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If	
+                                          
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+      
+      Set oOpenTwo = oTestCard.vbOpenAdapter
+      If (oOpenTwo is Nothing) Then
+         Exit Function
+      End If
+      
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+   
+   Public Function RunTest (lTestAdapterIndex)
+      Dim DriverNDISVersion
+      
+      m_lTestAdapterIndex = lTestAdapterIndex
+
+      ' Currently we cannot reset NDIS 6.0 miniports
+      DriverNDISVersion = oNDTSession (lTestAdapterIndex & "OID_GEN_DRIVER_VERSION")
+      If (Not IsEmpty (DriverNDISVersion)) Then
+         If (DriverNDISVersion = &H600&) Then
+            ' This is NDIS 6.0 miniport, NDISTest protocol cannot reset it
+            oLog.Write("Cannot run this test on NDIS 6.0 miniports")
+            Exit Function
+         End If
+      Else
+         oLog.Warned("Unable to determine driver NDIS version. Test will cause false failure for NDIS 6.0 miniports")
+      End If
+        
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+      
+      ExecuteTestCore
+      
+   End Function
+   
+   
+   Private Function ExecuteTestCore
+      Dim nMaxPacketSize
+      Dim BroadcastAddr
+      Dim nMedium
+      Dim ConnectStatus
+      Dim bResult, nCount
+      Dim arrDestAddr(8)                  ' array of send addresses
+      
+      Dim nPacketSize, nPacketsSent
+      Dim lNumResets
+      Dim ResetSleep
+      
+      Dim lNumBursts
+      Dim lNumAddresses
+      Dim nTotalPackets
+      
+      
+      nMedium = oTestCard.NdisMedium
+      nMaxPacketSize = oOpenOne.vbGetMaxPacketSize()
+      BroadcastAddr = oTestCard.vbGetBroadcastAddress()
+      
+      '
+      ' set so no other tester on net sees these packets
+      '
+      
+      ' RemoteId sets the message ID that will be sent on
+      Dim nTestId
+
+      nTestId = oNdtSupp.Random(1, 32765)
+      oOpenOne.vbSetRemoteId(nTestId)
+      oOpenTwo.vbSetRemoteId(nTestId)
+      
+      '--------------------------------------------------------------
+      ' variation - start a send-packets, then reset a bunch of times
+      '             while the sends are in progress
+      '--------------------------------------------------------------
+      
+      arrDestAddr(0) = RandomAddr
+      arrDestAddr(1) = RandomAddr
+      arrDestAddr(2) = BroadcastAddr
+      arrDestAddr(3) = BroadcastAddr
+      arrDestAddr(4) = RandomAddr
+      arrDestAddr(5) = RandomAddr
+      arrDestAddr(6) = BroadcastAddr
+      arrDestAddr(7) = BroadcastAddr
+      
+      nPacketSize = 64
+      If (nPacketSize > nMaxPacketSize) Then
+         nPacketSize = nMaxPacketSize
+      End If
+      
+      nPacketsSent = 0
+      '
+      ' send until stopped
+      ' 
+      lNumBursts = 0
+      lNumAddresses = 8
+      nTotalPackets = lNumBursts * lNumAddresses
+      
+      '
+      ' because resets normally take a long time on token ring,
+      ' reduce their number and frequency
+      '
+      If ((nMedium = NDISMEDIUM802_5) Or (nMedium = NDISMEDIUMFDDI)) Then
+         lNumResets = 30
+         ResetSleep = 1000
+      Else
+         lNumResets = 70
+         ResetSleep = 500
+      End If
+      
+      oLog.Variation("Sending the packets")
+      If (TRUE) Then 'G_UseSendPackets
+         ' SendPackets ArrDestAddr, NumAddresses, PacketSize, NumPackets, TestDuration, ResendAddr
+         bResult = oOpenOne.vbSendPackets(arrDestAddr, lNumAddresses, nPacketSize, lNumBursts, 600, Null)
+         bResult = oOpenTwo.vbSendPackets(arrDestAddr, lNumAddresses, nPacketSize, lNumBursts, 600, Null)   
+      Else
+         ' Send DestAddr, PacketSize, NumPackets, TestDuration, ResendAddr        
+         bResult = oOpenOne.vbSend(arrDestAddr(0), nPacketSize, nTotalPackets, 600, Null)
+         bResult = oOpenTwo.vbSend(arrDestAddr(2), nPacketSize, nTotalPackets, 600, Null)
+      End If
+      
+      ConnectStatus = CLng(0)
+      nCount = CLng(0)
+      
+      Do While (nCount < lNumResets)
+         oLog.Variation("Reset")
+         ' The sleep before the reset is on purpose
+         Wscript.Sleep ResetSleep
+         
+         oOpenOne.vbNdisReset()
+         
+         '
+         ' after the reset, the connect status should be re-established
+         '
+         oLog.Variation("Querying connect status")
+         ' Since only NDIS versions 5 and above are supported
+         bResult = oTestCard.vbFastNdisIOControl(OID_GEN_MEDIA_CONNECT_STATUS, ConnectStatus, QUERY_GLOBAL_STATS)
+         If (Not bResult) Then
+            Call oLog.Failed ("Unable to query media connect status" , 20958)
+         ElseIf (ConnectStatus <> CONNECTED) Then
+            oLog.Write("Before the reset is completed internally, the" )
+            oLog.Write("driver must know whether link is established or not." )
+            oLog.Write("In this test the cable is connected so the query for" )
+            oLog.Write("media connect status must return connected." )
+            Call oLog.Failed ("Link is not established when reset is complete" , 20959)
+         End If
+         
+         nCount = nCount + 1
+      Loop
+      
+      '
+      ' get send results, but ignore them. we expect some send
+      ' failures here, due to sends aborted by the resets
+      '
+      oLog.Variation("GetSendResults")
+      oOpenOne.vbStopSend()
+      bResult = oOpenOne.vbWaitSend()
+      If(bResult) Then
+         bResult = oOpenOne.vbGetSendResults(nPacketsSent, SEND_FAILURES_ALLOWED)
+      End If
+      
+      oOpenTwo.vbStopSend()
+      bResult = oOpenTwo.vbWaitSend()
+      If(bResult) Then
+         bResult = oOpenTwo.vbGetSendResults(nPacketsSent, SEND_FAILURES_ALLOWED)
+      End If
+      
+      Dim nResets, nDisconnects, nConnects
+      nResets = 0
+      nDisconnects = 0
+      nConnects = 0
+      
+      oLog.Variation("GetEvents for instance 1")
+      Call  oOpenOne.vbGetEvents(nResets, nDisconnects, nConnects)
+      If (nResets <> lNumResets) Then
+         Call oLog.Failed ("Incorrect number of reset events " & nResets & ". Should have been " & lNumResets , 20960)
+      End If      
+      
+      If ((nDisconnects <> 0) And (nDisconnects <> lNumResets)) Then
+         Call oLog.Failed ("Incorrect number of disconnect events " & nDisconnects & ". Should have been 0 or " & lNumResets , 20961)
+      End If
+      
+      If ((nConnects <> 0) And (nConnects <> lNumResets)) Then
+         Call oLog.Failed ("Incorrect number of connect events " & nConnects & ". Should have been 0 or " & lNumResets , 20962)
+      End If
+      
+      If (nConnects <> nDisconnects) Then
+         Call oLog.Failed ("Disconnect events " & nDisconnects & " should equal connect events " & nConnects , 20963)
+      End If
+      
+      oLog.Variation("GetEvents for instance 2")
+      Call oOpenTwo.vbGetEvents(nResets, nDisconnects, nConnects)
+      If (nResets <> lNumResets) Then
+         Call oLog.Failed ("Incorrect number of reset events " & nResets & ". Should have been " & lNumResets , 20964)
+      End If      
+      
+      If ((nDisconnects <> 0) And (nDisconnects <> lNumResets)) Then
+         Call oLog.Failed ("Incorrect number of disconnect events " & nDisconnects & ". Should have been 0 or " & lNumResets , 20965)
+      End If
+      
+      If ((nConnects <> 0) And (nConnects <> lNumResets)) Then
+         Call oLog.Failed ("Incorrect number of connect events " & nConnects & ". Should have been 0 or " & lNumResets , 20966)
+      End If
+      
+      If (nConnects <> nDisconnects) Then
+         Call oLog.Failed ("Disconnect events " & nDisconnects & " should equal connect events " & nConnects , 20967)
+      End If
+      
+   End Function
+End Class
+
+</script>
+</job>
+</package>
+
+
+<!--- CRC = 0x24537432 --->

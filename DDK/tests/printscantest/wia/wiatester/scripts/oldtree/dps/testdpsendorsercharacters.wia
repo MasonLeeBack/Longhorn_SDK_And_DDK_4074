@@ -1,0 +1,60 @@
+Test Assertion_A134316
+
+Var p:Property, root:Item
+Var dt
+{
+    PrintDescriptionFromXML('13.4.3.16')
+
+    StartWia()
+    GetRoot(root)
+    GetDeviceType(dt)
+
+    If ( dt != StiDeviceTypeScanner )
+    Then Exit Passed
+
+    If ( !GetProperty(root, p, WIA_DPS_ENDORSER_CHARACTERS) )
+    Then Exit Passed
+
+    If (!CheckPropertyAccessFromXML(p) )
+    Then
+    {
+        Writeln '\tIncorrect access'
+        Exit Failed
+    }
+
+    If (!CheckPropertyTypeFromXML(p) )
+    Then
+    {
+        Writeln '\tIncorrect vartype'
+        Exit Failed
+    }
+
+    If( IsPropertyReadWrite(p) )
+    Then
+    {
+        If ( SetPropertyInvalidValue(root, p) )
+        Then 
+        {
+            Writeln '\tSetting invalid property value succeeded'
+            Exit Failed
+        }
+
+        If (!CheckSuppValues(root, p))
+        Then 
+        {
+            Writeln '\tChecking supported property values failed'
+            Exit Failed
+        }
+    }
+    Else
+    {
+       If (SetPropertyValidValue(root,p) Or SetPropertyInvalidValue(root,p) )
+       Then 
+       {
+            Writeln '\tSetting a read-only property value succeeded'
+            Exit Failed
+       }
+    }
+
+    StopWia()
+}

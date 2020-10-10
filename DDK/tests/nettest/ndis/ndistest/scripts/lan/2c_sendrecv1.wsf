@@ -1,0 +1,674 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, FDDI, 802_5
+</MEDIA>
+<WHQL>
+802_3, FDDI, 802_5
+</WHQL>
+<CARDMACH>
+2C,1M,2M
+</CARDMACH>
+<RUNORDER>
+1630
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[
+Two Machine Card Send/Receive Tests with only 1 receiver
+
+This script tests that the card is able to correctly receive packets with
+different addressing types that are actually sent across the wire. It uses one
+open instance to send and one to receive. The sender is the remote card,
+while the receiver is the test card. This test is to check if the filtering
+of packets is done by the driver and not by NDIS
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="2c_SendRecv1" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      
+        <!-- Begin Wireless Specific Includes -->
+        <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	     <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	     <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	     <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	     <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+        <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+        <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+        <!-- End Wireless Specific Includes -->
+        
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/> 
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script language="VBScript" src="..\inc\ConstLAN.vbs"/>
+      <script id="2c_SendRecv1" language="VBScript">
+'==========================================================================
+' Script Name:    2c_SendRecv1
+'==========================================================================
+
+Option Explicit 
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0), GetSupportAdapterIndex (oNDInfo.AdapterList, 0)) 
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard, oTestOpen
+   Private oSuppCard, oSuppOpen
+   Private m_lTestAdapterIndex, m_lSuppAdapterIndex
+   Private oProtocolBinders         ' Protocol bindings related vars
+   Private mbMulticastFilterSet
+   
+   Private Sub Class_Initialize
+      
+   End Sub
+   
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+      Set oTestOpen = Nothing
+      
+      Set oSuppCard = Nothing
+      Set oSuppOpen = Nothing
+
+   End Sub
+   
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+
+      If (UseIPHeaders) Then
+         Exit Function
+      End If      
+      
+      Set pAdapterList = oNDInfo.AdapterList
+      
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oTestOpen = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpen is Nothing) Then
+         Exit Function
+      End If
+      
+      oLog.Variation ("Setting up Support Adapter")
+      Set oSuppCard = New CLanCard
+      If (oSuppCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oSuppOpen = oSuppCard.vbSetupBasicTest(pAdapterList (m_lSuppAdapterIndex))
+      If (oSuppOpen is Nothing) Then
+         Exit Function
+      End If
+      
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+               
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")           
+         If(vbAssociateWep(oTestOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If	
+         
+         oLog.Variation ("Associating support device with " & NDTESTAP2 & " ...")       
+         If(vbAssociateWep(oSuppOpen, NDTESTAP2) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate support device with " & NDTESTAP2, 88888
+            Exit Function
+         End If	
+                           
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+      
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+   
+   Public Function RunTest (lTestAdapterIndex, lSuppAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      m_lSuppAdapterIndex = lSuppAdapterIndex
+
+      ' Unbind all protocols from the test adapter
+      ' This step is needed to ensure only one binding (ndistest.sys) is
+      ' done on the miniport. That way, NDIS will NOT filter any traffic
+      ' coming from the miniport and we will be able to test perfect filtering
+      ' on miniports.
+      ' Positioning is important. This must come before anything that we can 
+      ' exit from this class for.
+      oProtocolBinders = oNDTSession ("ProtocolBinders")
+      If (IsEmpty (oProtocolBinders)) Then
+        call oLog.Warned ("Could not unbind all protocols! Perfect filtering will not be tested")
+      Else
+        ' Take a snapshot of current protocol bindings on the test adapter
+        On Error Resume Next
+        
+        ' Take a snapshot of current protocol bindings on the test adapter
+        If (Not oProtocolBinders(0).TakeSnapShot ()) Then
+            call oLog.Warned ("Snapshot was incomplete! Restoration may not be get done properly")
+        End If
+        
+        If (err.Number = 462) Then
+        	err.Clear
+    	    ' An exception was thrown because ProtocolBinder was not initialized! Initialize it now
+            Set oProtocolBinders(0).m_oLogRef = oLog
+            Set oProtocolBinders(0).m_oBindCtrl = oSuppCore.CreateBindCtrl (oProtocolBinders(0).m_nConnectionID)
+            If (oProtocolBinders(0).m_oBindCtrl Is Nothing) Then
+                oLog.SafeWarned ("Could not create Bind Control Object")
+        	    On Error Goto 0
+            Else
+                Call oProtocolBinders(0).GetSupportedProtocols
+                ' Try snapshot now
+                If (Not oProtocolBinders(0).TakeSnapShot ()) Then
+                  call oLog.Warned ("Could not take snapshot! Restoration may not occur! Will continue with the test")
+                  On Error Goto 0
+                End If                
+            End If            
+        End If
+    
+        On Error Goto 0
+
+        ' Unibind all protocols
+        If (Not oProtocolBinders (0).ChangeAllBindings (FALSE)) Then
+            call oLog.Write ("Could not unbind all protocols! Perfect filtering will not get tested")
+        End If
+      End If
+          
+      If (Not SetupTest) Then
+         ' restore the snapshot we had taken
+         If (Not oProtocolBinders(0).RestoreSnapShot ()) Then
+            oLog.Warned ("Could not restore the snap shot! All bindings may not be have been restored")
+         End If      
+
+         Exit Function
+      End If
+      
+      ExecuteTestCore
+
+      ' restore the snapshot we had taken
+      If (Not oProtocolBinders(0).RestoreSnapShot ()) Then
+         oLog.Warned ("Could not restore the snap shot! All bindings may not be have been restored")
+      End If      
+
+   End Function
+   
+   Private Function ExecuteTestCore
+      Dim nTestId, nLogMask
+      
+      Dim bResult
+      
+      Dim TestAddr                     ' Obtains the address of the test card
+      TestAddr = NullAddr()
+      
+      Dim arrSendAddr(8)               ' array of send addresses
+      Dim sendType
+      Dim arrRecvFilter(8)             ' what filters should actually receive data
+      
+      Dim arrDestAddr()                ' Array of address passed to the sendpackets functions
+      Redim arrDestAddr(glPacketsPerBurst-1)
+      
+      Dim Filters(8), TempFilter, CurFilter
+      
+      Dim nNumFilters, nMaxFilterCombinations, nFilterCount
+      
+      Dim lNumAddresses
+      
+      Dim AvailFilters                 ' Obtained using NDIS request
+      AvailFilters = 0                 ' Initial value, will be queried for
+      
+      Dim nReceiveDelay                ' set depending on the media
+      nReceiveDelay = 150              ' Initial, will be actually queried for
+      
+      Dim nMaxPacketSize           
+      Dim nTestMaxPacketSize, nSupportMaxPacketSize
+      
+      Dim nCount, nIndex
+      
+      Dim nMinimumPass
+      
+      Dim nTotalPackets
+      Dim nPacketSize
+      Dim nPhysicalMedium      
+
+      ' broadcast address, will be detected
+      Dim BroadcastAddr
+      BroadcastAddr = NullAddr()
+      
+      
+      nTestMaxPacketSize = oTestOpen.vbGetMaxPacketSize()
+      
+      nReceiveDelay = oTestOpen.vbGetReceiveDelay()
+      BroadcastAddr = oTestCard.vbGetBroadcastAddress()
+      TestAddr = oTestOpen.vbGetCardAddress()
+      
+      nPhysicalMedium = oTestCard.vbGetPhysicalMedium()
+      
+      Do
+         oLog.Variation("GetPacketFilters")
+         AvailFilters = oTestOpen.vbGetFilters()
+         
+         oLog.Variation("Setup instance instance")
+         
+         nTestId = oNDTSupp.Random(1, 32765)
+         
+         '
+         ' set "send" id on support open instance which does all sending
+         ' remoteId sets the message ID that will be sent on
+         '
+         oSuppOpen.vbSetRemoteId(nTestId)
+         oTestOpen.vbSetLocalId(nTestId)
+         
+         ' For functional tests, we allow the oring of this bit
+         oTestOpen.vbSetReceiveOption(RECEIVE_DEFAULT Or RECEIVE_ALLOW_BUSY_NET)
+         
+         '
+         '  all media types support broadcast and directed
+         '
+         Filters(0) = DIRECTED
+         Filters(1) = BROADCAST
+         
+         oLog.Write(vblf & "Possible filter settings:" & vblf & "- Directed")
+         oLog.Write(vblf & "- Broadcast" )
+         
+         nNumFilters = 2
+         nMaxFilterCombinations = 4
+         
+         '
+         '  any media type may support promiscuous
+         '  
+         If ((AvailFilters And PROMISCUOUS) AND (nPhysicalMedium <> NDISPHYSICALMEDIUMWIRELESSLAN)) Then
+            Filters(2) = PROMISCUOUS
+            nNumFilters = 3
+            nMaxFilterCombinations = 8
+            oLog.Write("- Promiscuous" )
+         End If
+         
+         '
+         '  set up directed, broadcast, and random addresses
+         '
+         
+         arrSendAddr(0) = TestAddr
+         arrRecvFilter(0) = DIRECTED Or PROMISCUOUS
+         arrSendAddr(1) = BroadcastAddr
+         arrRecvFilter(1) = BROADCAST Or PROMISCUOUS
+         arrSendAddr(2) = RandomAddr
+         arrRecvFilter(2) = PROMISCUOUS
+         
+         lNumAddresses = 3
+         
+         '
+         '  ethernet and fddi will support multicast
+         '
+         If (AvailFilters And MULTICAST) Then
+            Filters(nNumFilters) = MULTICAST
+            nNumFilters = nNumFilters + 1
+            nMaxFilterCombinations = nMaxFilterCombinations * 2
+            oLog.Write("- Multicast" )
+            If (AvailFilters And ALL_MULTICAST) Then
+               Filters(nNumFilters) = ALL_MULTICAST
+               nNumFilters = nNumFilters + 1
+               nMaxFilterCombinations = nMaxFilterCombinations * 2
+               oLog.Write("- All Multicast" )
+            End If
+            '
+            ' set both a good and a bad multicast address
+            ' (Do not change the index of these addresses, mbMulticastFilterSet
+            ' below depends on them being at 3 & 4)
+            '
+            arrSendAddr(3) = GoodMulticastAddr
+            arrRecvFilter(3) = MULTICAST Or ALL_MULTICAST Or PROMISCUOUS
+            
+            arrSendAddr(4) = BadMulticastAddr
+            arrRecvFilter(4) = ALL_MULTICAST Or PROMISCUOUS
+            
+            lNumAddresses = 5
+            
+            nLogMask = oLog.Mask
+            oLog.Mask = DO_NOTHING
+            bResult = oTestOpen.vbAddMulticastAddr(GoodMulticastAddr)
+            If (Not bResult) Then
+               oLog.Write("Unable to add multicast address to list" )
+            End If
+            
+            oLog.Mask = nLogMask
+            
+         ElseIf (AvailFilters And FUNCTIONAL) Then
+            Filters(nNumFilters) = FUNCTIONAL
+            nNumFilters = nNumFilters + 1
+            Filters(nNumFilters) = GROUP_PKT
+            nNumFilters = nNumFilters + 1
+            
+            nMaxFilterCombinations = nMaxFilterCombinations * 4
+            oLog.Write("- Functional" & vblf & "- Group" )
+            
+            If (AvailFilters AND ALL_FUNCTIONAL) Then
+               Filters(nNumFilters) = ALL_FUNCTIONAL
+               nNumFilters = nNumFilters + 1
+               nMaxFilterCombinations = nMaxFilterCombinations * 2
+               oLog.Write("- All Functional" )
+            End If
+            
+            '
+            ' set good and a bad functional and group address
+            '
+            arrSendAddr(3) = Funct2NetAddr(GoodFunctAddr)
+            arrRecvFilter(3) = FUNCTIONAL Or ALL_FUNCTIONAL Or PROMISCUOUS
+            arrSendAddr(4) = Funct2NetAddr(BadFunctAddr)
+            arrRecvFilter(4) = ALL_FUNCTIONAL Or PROMISCUOUS
+            
+            arrSendAddr(5) = Grp2NetAddr(GoodGroupAddr)
+            arrRecvFilter(5) = GROUP_PKT Or PROMISCUOUS
+            arrSendAddr(6) = Grp2NetAddr(BadGroupAddr)
+            arrRecvFilter(6) = PROMISCUOUS
+            lNumAddresses = 7
+            
+            nLogMask = oLog.Mask
+            oLog.Mask = DO_NOTHING
+            
+            bResult = oTestOpen.vbSetFunctionalAddr(GoodFunctAddr)
+            If (Not bResult) Then
+               oLog.Write("Unable to set functional address" )
+            End If
+            
+            bResult = oTestOpen.vbSetGroupAddr(GoodGroupAddr)
+            If (Not bResult) Then
+               oLog.Write("Unable to set group address" )
+            End If
+            
+            oLog.Mask = nLogMask
+         End If  
+         
+         '
+         ' these may be defined for tokenring or fddi
+         ' note that we dont actually send any packets of these types (at least, not yet)
+         '  
+         
+         TempFilter = CLng(0)
+         If (AvailFilters And MAC_FRAME) Then
+            TempFilter = TempFilter Or MAC_FRAME
+            oLog.Write("- MacFrame" )
+         End If
+         
+         If (AvailFilters And SOURCE_ROUTING) Then
+            TempFilter = TempFilter Or SOURCE_ROUTING
+            oLog.Write("- Source Routing" )
+         End If
+         
+         If (TempFilter <> 0) Then
+            Filters(nNumFilters) = TempFilter
+            nNumFilters = nNumFilters + 1
+            nMaxFilterCombinations = nMaxFilterCombinations * 2
+         End If
+         
+         nSupportMaxPacketSize = oSuppOpen.vbGetMaxPacketSize()
+         
+         nMaxPacketSize = nTestMaxPacketSize
+         If (nSupportMaxPacketSize < nMaxPacketSize) Then
+            nMaxPacketSize = nSupportMaxPacketSize
+         End If   
+         
+         nTotalPackets = glPacketsToSend
+         
+         
+         '------------------------------------------------
+         'variation:   send packets of various types, make sure
+         '             only correct filter see them
+         '------------------------------------------------
+         
+         '
+         ' outermost loop: loop thru the packet types to send
+         '
+         nIndex = 0
+         
+         Do While(nIndex < lNumAddresses)
+            '
+            '  middle loop: loop thru open instances until tried all filter combinations
+            '
+            nPacketSize = glMinimumPacketSize
+            
+            nFilterCount = 0      
+            Do While nFilterCount < nMaxFilterCombinations
+               '
+               ' set up filter of the test open
+               '
+               oLog.Variation("SetPacketFilter")         
+               
+               CurFilter = CLng(0)
+               
+               If (nFilterCount And &H01&) Then
+                  CurFilter = CurFilter Or Filters(0)
+               End If
+               
+               If (nFilterCount And &H02&) Then
+                  CurFilter = CurFilter Or Filters(1)
+               End If
+               
+               If (nFilterCount And &H04&) Then
+                  CurFilter = CurFilter Or Filters(2)
+               End If
+               
+               If (nFilterCount And &H08&) Then
+                  CurFilter = CurFilter Or Filters(3)
+               End If
+               
+               If (nFilterCount And &H10&) Then
+                  CurFilter = CurFilter Or Filters(4)
+               End If
+               
+               If (nFilterCount And &H20&) Then
+                  CurFilter = CurFilter Or Filters(5)
+               End If
+               
+               If (nFilterCount And &H40&) Then
+                  CurFilter = CurFilter Or Filters(6)
+               End If
+               
+               Call oTestOpen.vbSetPacketFilter (CurFilter)
+
+               ' Check if we are using multicast tranfer
+               mbMulticastFilterSet = False
+               If (((CurFilter And MULTICAST) <> 0) Or _
+                    ((CurFilter And ALL_MULTICAST) <> 0)) Then
+
+                  ' Only set if sending on a multicast address (cannot test for group bit set since
+                  ' it would also be set for BROADCAST addresses)
+                  If ((nIndex = 3) Or (nIndex = 4)) Then
+                     mbMulticastFilterSet = True
+                  End If
+               End If
+               
+               Dim Addr
+               Addr = arrSendAddr(nIndex)
+               oLog.Write("The Destination address is " & Hex(Addr(0)) & "-" & Hex(Addr(1)) & "-" & Hex(Addr(2)) & "-" & Hex(Addr(3)) & "-" & Hex(Addr(4)) & "-" & Hex(Addr(5)))
+               
+               if (CurFilter AND arrRecvFilter(nIndex)) Then
+                  oLog.Write("The packets should be received.")
+               Else
+                  oLog.Write("The packets should not be received.")
+               End If
+               
+               '
+               '  start receives, send packets, check send results, then
+               '  check receive results
+               '         
+               For sendType = 0 To 1
+                  oTestOpen.vbStartReceive
+                  
+                  If (sendType = 0) Then
+                     oLog.Variation("Using Send")
+                     Call oSuppOpen.vbVerifiedSend(arrSendAddr(nIndex), nPacketSize, glPacketsToSend, 0, Null)
+                     nTotalPackets = glPacketsToSend   
+                  Else
+                     oLog.Variation("Using SendPackets")
+                     For nCount = 0 To glPacketsPerBurst - 1
+                        arrDestAddr(nCount) = arrSendAddr(nIndex)
+                     Next     
+                     nTotalPackets = glBurstsToSend * glPacketsPerBurst
+                     Call oSuppOpen.vbVerifiedSendPackets(arrDestAddr, glPacketsPerBurst, nPacketSize, glBurstsToSend, 0, Null)
+                  End If
+                  
+                  WScript.Sleep nReceiveDelay      ' wait for all packets to be received
+                  
+                  oLog.Variation("ReceiveResults")
+                  bResult = oTestOpen.vbStopReceive
+                  If (bResult) Then
+                     If ((CurFilter And arrRecvFilter(nIndex)) <> 0) Then
+                        nMinimumPass = (glPercentToPass * nTotalPackets) / 100
+                        
+                        bResult = MyVerifyReceiveResend(oTestOpen, nTotalPackets, nMinimumPass, 0, 0)
+                     Else
+                        bResult = MyVerifyReceiveResend(oTestOpen, 0, 0, 0, 0)
+                     End If
+                  End If                  
+               Next         
+               '
+               ' set up packets size for the next pass
+               '
+               If (nPacketSize = nMaxPacketSize) Then
+                  nPacketSize = glMinimumPacketSize  
+               ElseIf (nPacketSize = glMinimumPacketSize) Then
+                  nPacketSize = (nMaxPacketSize + glMinimumPacketSize) \ 2
+                  If ((nPacketSize And &H0001&) = 0) Then
+                     nPacketSize = nPacketSize + 1
+                  End If
+               Else
+                  nPacketSize = nMaxPacketSize
+               End If
+               
+               nFilterCount = nFilterCount + 1
+               
+            Loop
+            
+            nIndex = nIndex + 1
+            
+         Loop
+         
+         
+         oLog.Variation("CleanUp")
+         
+         bResult = oSuppOpen.vbClearEvents()
+         If(Not bResult) Then
+            Call oLog.Write("Get events failed on remote open instance on iteration" & nCount )
+         End If
+         
+         nLogMask = oLog.Mask
+         oLog.Mask = DO_NOTHING
+         
+         If (AvailFilters And MULTICAST) Then
+            bResult = oTestOpen.vbRemoveMulticastAddr(GoodMulticastAddr)
+            If (Not bResult) Then
+               oLog.Write("Could not remove multicast address from list" )
+            End If
+         End If
+         If (AvailFilters And FUNCTIONAL) Then
+            bResult = oTestOpen.vbSetFunctionalAddr(NullFunctAddr)
+            If (Not bResult) Then
+               oLog.Write("Could not reset functional address" )
+            End If
+         End If
+         If (AvailFilters And GROUP_PKT) Then
+            bResult = oTestOpen.vbSetGroupAddr(NullGroupAddr)
+            If (Not bResult) Then
+               oLog.Write("Could not reset group address" )
+            End If
+         End If       
+         
+         oLog.Mask = nLogMask
+         
+         bResult = oTestOpen.vbClearEvents()
+         
+      Loop While(False)
+      
+   End Function
+
+   Private Function MyVerifyReceiveResend(ByRef oOpen, ByVal lRecvExpected, ByVal lMinRecvRequired, ByVal lResendExpected, ByVal lMinResendRequired)
+      Dim bResult
+      Dim nReceived, nResent
+      
+      oLog.Write (oOpen.AdapterType & " should receive " & lRecvExpected & " and resend " & lResendExpected )
+      bResult = oOpen.vbGetReceiveResults(nReceived, nResent)
+      If (bResult) Then       'If test.Failed, bResult is FALSE
+         
+         If (nReceived <> lRecvExpected) Then
+            If (lRecvExpected = 0) Then
+               If (mbMulticastFilterSet) Then
+                  oLog.Warned ("Should not have received any packets! This may be due to imperfect filtering")
+               Else
+                  Call oLog.Failed ("Should not have received any packets", 88888) 
+               End If
+            Else
+               If (nReceived < lMinRecvRequired) Then
+                  Call oLog.Failed ("Received less than the required minimum of " & lMinRecvRequired , 88888)
+               Else
+                  If (lRecvExpected = lMinRecvRequired) Then
+                     Call oLog.Failed("Did not receive expected number of packets" , 88888)
+                  Else
+                     oLog.Warned("Received acceptable but less than expected number of packets" & vblf)
+                  End If
+               End If
+            End If
+            bResult = False
+         End If
+         ' check if it resent expected number of packets
+         If (nResent <> lResendExpected) Then
+            ' Check if we are allowing it to resend any packets at all (ie lResendExpected != 0)
+            If (lResendExpected = 0) Then
+               Call oLog.Failed ("Should not have resent any packets", 88888)
+            Else
+               ' Okay, so it can resend packets, now check if it did resend an allowable number of packets
+               If (nResent < lMinResendRequired) Then
+                  Call oLog.Failed ("Resent less than the required minimum of " & lMinResendRequired , 88888)
+               Else
+                  If (lResendExpected = lMinResendRequired) Then
+                     Call oLog.Failed("Did not resend expected number of packets" , 88888)
+                  Else
+                     oLog.Warned("Resent acceptable but less than expected number of packets" & vblf)
+                  End If
+               End If
+            End If
+            bResult = False
+         End If
+      End If
+      MyVerifyReceiveResend = bResult
+   End Function
+   
+End Class
+
+</script>
+</job>
+</package>
+
+
+
+
+
+<!--- CRC = 0xf72629b2 --->

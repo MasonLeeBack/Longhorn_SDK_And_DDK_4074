@@ -1,0 +1,59 @@
+Test Assertion_A134315
+
+Var p:Property, root:Item
+Var dt
+{
+    PrintDescriptionFromXML('13.4.3.15')
+    StartWia()
+    GetRoot(root)
+    GetDeviceType(dt)
+
+    If ( dt != StiDeviceTypeScanner )
+    Then Exit Passed
+
+    If ( !GetProperty(root, p, WIA_DPS_PLATEN_COLOR) )
+    Then Exit Passed
+ 
+    If (!CheckPropertyAccessFromXML(p) )
+    Then
+    {
+        Writeln '\tIncorrect access'
+        Exit Failed
+    }
+
+    If (!CheckPropertyTypeFromXML(p) )
+    Then
+    {
+        Writeln '\tIncorrect vartype'
+        Exit Failed
+    }
+
+    If( IsPropertyReadWrite(p) )
+    Then
+    {
+        If ( SetPropertyInvalidValue(root, p) )
+        Then 
+        {
+            Writeln '\tSetting invalid property value succeeded'
+            Exit Failed
+        }
+
+        If ( !CheckValueRGBQUAD (p) )
+        Then
+        {
+            Writeln '\tInvalid property value'
+            Exit Failed
+        }
+    }
+    Else
+    {
+       If ( SetPropertyRGBQUAD(root, WIA_DPS_PLATEN_COLOR, (0,  255, 255, 0)) )
+       Then
+       {
+            Writeln '\tSetting a read-only property value succeeded'
+            Exit Failed
+       }
+    }
+
+    StopWia()
+}

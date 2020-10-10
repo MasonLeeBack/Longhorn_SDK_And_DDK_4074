@@ -1,0 +1,12 @@
+DIRS= \
+     bitmap \
+     custhlp \
+     jtsample \
+     oemprean \
+     oemps \
+     oemui \
+     oemuni \
+     PSUIRep \
+     SyncSet \
+     ThemeUI \
+     watermark

@@ -1,0 +1,1318 @@
+'
+' File          : ICMPv6_PMTU_ExistTCPSessions
+' Author        : Sandeep Prabhu [3/29/01]
+'
+' A script to test the PMTU handling for existing TCP sessions
+'
+
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\..\common\IPv6Common.Lib"/>
+      <script language="VBScript" src="..\..\common\IPv6Helper.Lib"/>
+      <script language="VBScript" src="..\..\common\UDPv6Helper.Lib"/>
+      <script language="VBScript" src="..\..\common\TCPv6Helper.Lib"/>
+      <script language="VBScript" src="..\..\common\ICMPv6Helper.Lib"/>
+      <script language="VBScript" src="ICMPv6PMTUHelper.Lib"/>
+      <script id="ICMPv6_PMTU_ExistTCPSessions" language="VBScript">
+
+
+option explicit
+    
+Dim Core, Sparta, Autosrv, MediaType, ulIfIndex, IFace, pControllerObj, ExceptionStatus
+
+StartScript "ICMPv6_PMTU_ExistTCPSessions", g_szLogDirectory, "Tests for PMTU processing for existing TCP sessions" 
+
+' ==================================================================================================
+' Main routine
+' ==================================================================================================
+Sub Main   
+   Core.SetAssertionTracking "30500"
+   '/**
+   ' @area name="Offload Compliance Test Assertions"
+   ' @group name="TCP Miscellaneous Test Assertions"
+   ' @group name="PMTU Existing TCP Sessions Assertions"
+   ' @define name="Offload" Offload Compliance Test Assertions
+   ' @define name="TCPMisc" TCP Miscellaneous Test Assertions
+   ' @define name="ETSAst" PMTU Existing TCP Sessions Assertions
+   ' @hierarchy Offload TCPMisc ETSAst
+   ' @key Reference="WLP# - x.x.x.x; RFC-1981"
+   ' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+   ' @key TestName="ICMPv6 PMTU handling for TCP Existing Sessions Tests"
+   ' @key TestLog="ICMPv6_PMTU_ExistTCPSessions.log"
+   '*/
+   Dim ulMTU, ulStatus, PMTUValues   
+
+   '
+   ' Get the interface index
+   '   
+   ulStatus = pControllerObj.GetInterfaceIndex(g_szRemoteIp6Address, ulIfIndex)
+   if (ulStatus <> 0) then
+      Core.log "Main: GetInterfaceIndex - " & ulStatus
+      exit sub
+   end if
+   
+   '
+   ' Tests to ensure that PMTU notifications are handled correctly for existing TCP sessions
+   '
+   '/**
+   ' @test name="The stack must perform PMTU handling for existing TCP connections"
+   ' Stack must rexmit the packet with corrected size if it receives ICMP PMTU
+   ' message. Also stack must send subsequent packets with correct size too.
+   ' 
+   '*/
+   Core.StartTest "PMTU handling for existing TCP connections"
+   PMTUValues = Array(DEFAULT_LINK_MTU-100, DEFAULT_LINK_MTU-50, DEFAULT_LINK_MTU+1, DEFAULT_LINK_MTU-100, DEFAULT_LINK_MTU-131, MIN_LINK_MTU, 0, MIN_LINK_MTU-100)
+   PMTUHandlingForExistingTCPConnection PMTUValues                    
+   Core.EndTest  
+   Core.Sleep 2000 
+         
+   '
+   ' Tests to ensure the correct packet is retransmitted on receiving PMTU notification
+   ' This will try to test the scenarios when it may not be possible to rexmit a packet
+   '
+   '/**
+   ' @test name="The stacu must rexmit correct TCP packet on receiving PMTU-TCP hdr size 0"
+   ' Stack makes an active connection. When stack sends data it receives the PMTU
+   ' notification for first TCP packet.
+   '*/
+   ulMTU = DEFAULT_LINK_MTU - 100         
+   Core.StartTest "Correct TCP rexmitted on receiving PMTU - Attached Pkt = First, TCP Hdr Size = 0"
+   CorrectTCPPacketRexmitted ulMTU, 1, 0, FALSE
+   Core.EndTest  
+   Core.Sleep 2000 
+
+   '/**
+   ' @test name="The stack must rexmit correct TCP packet on receiving PMTU-TCP hdr size 16"
+   ' Stack makes an active connection. When stack sends data it receives the PMTU
+   ' notification for first TCP packet.
+   '*/
+   Core.StartTest "Correct TCP rexmitted on receiving PMTU - Attached Pkt = First, TCP Hdr Size = 16"
+   CorrectTCPPacketRexmitted ulMTU, 1, 16, FALSE   
+   Core.EndTest  
+   Core.Sleep 2000 
+
+   '/**
+   ' @test name="The stack must rexmit correct TCP packet on receiving PMTU-TCP hdr size 20"
+   ' Stack makes an active connection. When stack sends data it receives the PMTU
+   ' notification for first TCP packet. Stack must transmit packets with corrected size
+   '*/
+   Core.StartTest "Correct TCP rexmitted on receiving PMTU - Attached Pkt = First, TCP Hdr Size = 20"
+   CorrectTCPPacketRexmitted ulMTU, 1, 20, TRUE   
+   Core.EndTest  
+   Core.Sleep 2000 
+
+   '/**
+   ' @test name="The stack must rexmit correct TCP 2nd packet on receiving PMTU-TCP hdr size 20"
+   ' Stack makes an active connection. When stack sends data it receives the PMTU
+   ' notification for second TCP packet.
+   '*/
+   Core.StartTest "Correct TCP rexmitted on receiving PMTU - Attached Pkt = Second, TCP Hdr Size = 20"
+   CorrectTCPPacketRexmitted ulMTU, 2, 20, FALSE   
+   Core.EndTest  
+   Core.Sleep 2000 
+   
+   '
+   ' Test to ensure CWin doesn't change due to a rexmit caused by receipt of PMTU
+   '
+   '/**
+   ' @test name="The stack must not change Congestion window on TCP rexmission by PMTU"
+   ' Stack must not lower Congistion Window when TCP rexmission happends due to PMTU
+   '*/
+   Core.StartTest "Congestion window doesn't change on TCP rexmission caused by PMTU"
+   TCPRetransmissionRetainsCWin   
+   Core.EndTest  
+   Core.Sleep 2000 
+
+   '
+   ' Test to PMTU handled correctly when multiple connections use the RCE
+   '
+   '/**
+   ' @test name="The stack must handle PMTU notifications for multiple connections correctly"
+   ' Three active connections are made by stack using same Source Addr and Source port
+   ' but different Destination ports. While stack is sending data on two sessions PMTU
+   ' notification is received. Stack must rexmit packets for only these two sessions,
+   ' the third one must remain unaffected
+   '*/
+   Core.StartTest "PMTU handled correctly in case of multiple connections"
+   MultipleConnections   
+   Core.EndTest  
+   Core.Sleep 2000 
+
+   '
+   ' Test to ensure MaxSendWin is set to a multiple of MSS on receipt of PMTU
+   '
+   '/**
+   ' @test name="The stack must also set the MaxSendWin to multiple of MSS when PMTU is changed"
+   ' When stack receives PMTU notification which alters the MSS it must also alter the
+   ' send window size to a largest multiple of MSS less than the advertized receive window
+   '*/
+   ulMTU = DEFAULT_LINK_MTU - 73
+   Core.StartTest "PMTU sets the MaxSendWin to a multiple of MSS - " & ulMTU
+   SendWindowSizeMultipleOfMSS ulMTU  
+   Core.EndTest  
+   Core.Sleep 2000 
+
+   '
+   ' Test to ensure that PMTU is raised in a lazy fashion
+   '
+   '/**
+   ' @test name="The stack must raise PMTU back to default value after PATH_MTU_RETRY_TIME"
+   ' When stack receives PMTU notification it must alter its MSS accordingly. After
+   ' PATH_MTU_RETRY_TIME stack must raise the PMTU back to the default value
+   '*/
+   Core.StartTest "PMTU raised for existing TCP connections"
+   PMTURaisedLazily                    
+   Core.EndTest  
+   Core.Sleep 2000 
+   
+End Sub
+
+
+'
+' Routine to ensure that PMTU messages are correctly handled for existing connections
+'       
+Sub PMTUHandlingForExistingTCPConnection(PMTUValues)
+   Dim ulStatus, szSrcIp, pIFace, pPacket, szGwIp, szGwMac, AutoNDObject, ulTotalBytesRcvd
+   Dim ulMSS, usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, fChanged
+   Dim ulBytesSent, ulTmpSeqNumber, ulCounter, ulBytesRcvd, ulMTU, fFragmentHeader, pPMTUPacket
+
+
+   usSrcPort = 15000
+   usDestPort = 15001
+   szGwIp = "FE80:0:0:0:1:1:1:1"
+   szGwMac = "33-33-AA-AA-AA-AA"
+   szSrcIp = "FEc0:0:0:0:1:1:1:1"
+
+   '   
+   ' Cleanup
+   '
+   ulStatus = Cleanup(ulIfIndex, Array(Array(g_szIp6UnspecifiedAddress, 0, szGwIp)))
+   if (ulStatus <> 0) then   
+      Core.log "PMTUHandlingForExistingTCPConnection: Cleanup - " & ulStatus
+      exit sub
+   end if
+
+   '
+   ' Create an interface object to grab the packets sent from dest to source
+   '
+   Set pIFace = CreateInterfaceEx(FALSE, g_szRemoteMacAddress, g_szRemoteIp6Address, szSrcIp, szGwMac)
+   pIFace.StartListening   
+
+   '
+   ' Add a default route
+   '
+   Set pPacket = CreateRAPacket(300, szGwIp, szGwMac)
+   IFace.Send(pPacket)
+   Set AutoNDObject = Sparta.AutoNeighbor(g_szLocalMacAddress, szGwMac, szGwIp, TRUE)
+
+   '
+   ' Establish a TCP connection
+   '
+   ulStatus = ActiveConnect(usSrcPort, usDestPort, szSrcIp, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+   if (ulStatus <> 0) then
+      Core.log "PMTUHandlingForExistingTCPConnection: ActiveConnect - " & ulStatus
+      exit Sub
+   end if
+   
+   '
+   ' Try out the different MTU values
+   '       
+   fFragmentHeader = FALSE
+   ulMTU = DEFAULT_LINK_MTU
+   ulMSS = DEFAULT_MSS
+   For ulCounter = lBound(PMTUValues) to uBound(PMTUValues)
+      Core.StartVariation
+      
+      '
+      ' Ask Autosrv to send data
+      '
+      ulBytesSent = 7000
+      ulStatus = pControllerObj.Send(ulSessionId, 1, 0, ulBytesSent, ulTID)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "PMTUHandlingForExistingTCPConnection: Send - " & ulStatus
+         exit For
+      end if
+      
+      ' 
+      ' Receive the first packet & verify the size
+      '      
+      Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 200, pIFace)
+      If (pPacket is Nothing) then
+         Core.FailSev1Variation "PMTUHandlingForExistingTCPConnection: Failed to receive TCP packet"
+         exit For
+      end if 
+      if (ulBytesRcvd <> ulMSS) then      
+         Core.FailSev1Variation "PMTUHandlingForExistingTCPConnection: Incorrect packet size " & ulBytesRcvd & " <> " & ulMSS
+         exit For
+      end if
+      ulTmpSeqNumber = ulAckNumber - ulBytesRcvd
+      
+      '
+      ' Send a PMTU notification with the specified MTU value
+      '      
+      Set pPMTUPacket = CreatePMTUPacket(PMTUValues(ulCounter), pPacket, 60)
+      pIFace.Send(pPMTUPacket)
+
+      '
+      ' Compute the new MSS
+      '            
+      fChanged = FALSE
+      if (PMTUValues(ulCounter) < ulMTU) then
+         if ((PMTUValues(ulCounter) < MIN_LINK_MTU) AND Not(fFragmentHeader)) then
+            '
+            ' If it wasn't already below MIN_LINK_MTU, we would lower it to MIN_LINK_MTU
+            ' & set the fragment header in outgoing packets
+            '
+            fChanged = TRUE
+            ulMTU = MIN_LINK_MTU
+            fFragmentHeader = TRUE
+            ulMSS = DEFAULT_MSS - (DEFAULT_LINK_MTU - MIN_LINK_MTU) - FRAGMENT_HEADER_SIZE
+         elseif (PMTUValues(ulCounter) >= MIN_LINK_MTU) then
+            fChanged = TRUE
+            ulMSS = ulMSS - (ulMTU - PMTUValues(ulCounter))            
+            ulMTU = PMTUValues(ulCounter)
+         end if
+      end if
+      
+      '
+      ' Ensure the packet is immediately rexmitted/not with the correct size
+      ' Packet should be rexmitted only if the MSS changed
+      '
+      ulTotalBytesRcvd = ulBytesRcvd
+      do
+         Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 200, pIFace)
+         If Not(pPacket is Nothing) then
+            '
+            ' See if this is the rexmitted packet
+            '
+            if (pPacket.TcpHeader.SeqNumber = ulTmpSeqNumber) then    
+               ulTotalBytesRcvd = ulBytesRcvd           
+               exit do
+            end if
+            
+            '
+            ' If we don't expect a rexmit then we need to count the number of bytes
+            '
+            if Not(fChanged) then
+               ulTotalBytesRcvd = ulTotalBytesRcvd + ulBytesRcvd
+            end if
+         end if 
+      loop while Not(pPacket is Nothing)
+      If ((pPacket is Nothing) AND fChanged)then
+         Core.FailSev1Variation "PMTUHandlingForExistingTCPConnection: Failed to receive rexmit"
+         exit For
+      ElseIf (Not(pPacket is Nothing) AND Not(fChanged))then
+         Core.FailSev1Variation "PMTUHandlingForExistingTCPConnection: Packet rexmitted"
+         exit For      
+      end if  
+      if (Not(pPacket is Nothing) AND (ulBytesRcvd <> ulMSS)) then      
+         Core.FailSev1Variation "PMTUHandlingForExistingTCPConnection: Incorrect rexmit size " & ulBytesRcvd & " <> " & ulMSS
+         exit For
+      end if
+      
+      '
+      ' Ensure the fragment header is present/not
+      '
+      if Not(pPacket is Nothing) then
+         If (pPacket.IpHeader.FragmentHeader.IsPresent <> fFragmentHeader) then
+            Core.FailSev1Variation "PMTUHandlingForExistingTCPConnection: Fragment header in Rexmit - " & pPacket.IpHeader.FragmentHeader.IsPresent
+            exit For      
+         elseif (fFragmentHeader) then
+            if (pPacket.IpHeader.FragmentHeader.MoreFragments <> 0) then         
+               Core.FailSev1Variation "PMTUHandlingForExistingTCPConnection: Incorrect MF - " & pPacket.IpHeader.FragmentHeader.MoreFragments
+               exit For      
+            elseif (pPacket.IpHeader.FragmentHeader.FragmentOffset <> 0) then         
+               Core.FailSev1Variation "PMTUHandlingForExistingTCPConnection: Incorrect offset - " & pPacket.IpHeader.FragmentHeader.FragmentOffset
+               exit For      
+            end if 
+         end if
+      end if 
+      
+      '
+      ' Send an ACK
+      '      
+      Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+      pPacket.IpHeader.SourceAddress = szSrcIp
+      IFace.Send(pPacket) 
+      
+      '
+      ' Ensure the subsequent packets have the right size
+      '      
+      ulBytesSent = ulBytesSent - ulTotalBytesRcvd
+      ulStatus=DataSizeLimitedByMSS(ulSeqNumber, ulAckNumber, ulSessionId, ulBytesSent, ulMSS, pIFace, FALSE, fFragmentHeader)
+      if (ulStatus <> 0) then
+         Core.FailSev1Variation "PMTUHandlingForExistingTCPConnection: DataSizeLimitedByMSS - " & ulStatus
+         exit for
+      end if     
+   Next
+      
+   '
+   ' Reset the connection
+   '   
+   ulStatus = ResetConnectionEx(usSrcPort, usDestPort, szSrcIp, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.log "ERROR: PMTUHandlingForExistingTCPConnection: ResetConnectionEx - " & ulStatus
+   end if    
+      
+   '   
+   ' Cleanup
+   '
+   ulStatus = Cleanup(ulIfIndex, Array(Array(g_szIp6UnspecifiedAddress, 0, szGwIp)))
+   if (ulStatus <> 0) then   
+      Core.log "PMTUHandlingForExistingTCPConnection: Cleanup - " & ulStatus
+      exit sub
+   end if
+
+End Sub
+
+        
+'
+' Routine to ensure that PMTU notification which alters the MSS also alters the
+' send window size to a largest multiple of MSS less than the advertized receive window
+'       
+Sub SendWindowSizeMultipleOfMSS(ulNewMTU)
+   Dim ulStatus, szSrcIp, ulMTU, pIFace, pPacket, szGwIp, szGwMac, AutoNDObject, pPMTUPacket
+   Dim ulMSS, ulStartCWin, usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, ulTID
+   Dim ulBytesSent, ulWindowSize
+
+
+   usSrcPort = 15000
+   usDestPort = 15001
+   szGwIp = "FE80:0:0:0:1:1:1:1"
+   szGwMac = "33-33-AA-AA-AA-AA"
+   szSrcIp = "FEc0:0:0:0:1:1:1:1"
+   ulMTU = DEFAULT_LINK_MTU
+   Core.StartVariation
+
+   '   
+   ' Cleanup
+   '
+   ulStatus = Cleanup(ulIfIndex, Array(Array(g_szIp6UnspecifiedAddress, 0, szGwIp)))
+   if (ulStatus <> 0) then   
+      Core.BlockVariation "SendWindowSizeMultipleOfMSS: Cleanup - " & ulStatus
+      exit sub
+   end if
+
+   '
+   ' Create an interface object to grab the packets sent from dest to source
+   '
+   Set pIFace = CreateInterfaceEx(FALSE, g_szRemoteMacAddress, g_szRemoteIp6Address, szSrcIp, szGwMac)
+   pIFace.StartListening   
+
+   '
+   ' Add a default route
+   '
+   Set pPacket = CreateRAPacket(300, szGwIp, szGwMac)
+   IFace.Send(pPacket)
+   Set AutoNDObject = Sparta.AutoNeighbor(g_szLocalMacAddress, szGwMac, szGwIp, TRUE)
+
+   '
+   ' Establish a TCP connection
+   '
+   ulStatus = ActiveConnect(usSrcPort, usDestPort, szSrcIp, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "SendWindowSizeMultipleOfMSS: ActiveConnect - " & ulStatus
+      exit Sub
+   end if
+
+   '
+   ' do loop used to get around using goto
+   '
+   do
+      '
+      ' Ask Autosrv to send data & ensure the MSS size is correct
+      '      
+      ulMSS = DEFAULT_MSS
+      ulBytesSent = ulMSS
+      ulStatus=DataSizeLimitedByMSS(ulSeqNumber, ulAckNumber, ulSessionId, ulBytesSent, ulMSS, pIFace, TRUE, FALSE)
+      if (ulStatus <> 0) then
+         Core.FailSev1Variation "SendWindowSizeMultipleOfMSS: DataSizeLimitedByMSS - " & ulStatus
+         exit do
+      end if
+      
+      '
+      ' Send a PMTU packet lowering the MTU
+      '
+      ulMTU = ulNewMTU
+      Set pPacket = CreateIPPacket
+      pPacket.IpHeader.DestAddress = szSrcIp
+      Set pPMTUPacket = CreatePMTUPacket(ulMTU, pPacket, 40)
+      pIFace.Send(pPMTUPacket)
+      if (ulMTU > DEFAULT_LINK_MTU) then
+         ulMSS = DEFAULT_MSS
+      elseif (ulMTU > MIN_LINK_MTU) then
+         ulMSS = DEFAULT_MSS - (DEFAULT_LINK_MTU - ulMTU)
+      else
+         ulMSS = DEFAULT_MSS - (DEFAULT_LINK_MTU - MIN_LINK_MTU) - FRAGMENT_HEADER_SIZE
+      end if
+            
+      '
+      ' Ask Autosrv to send data and ensure the new max send window size is the 
+      ' largest multiple of MSS < advertized recv window size
+      '
+      ulStartCWin = 3*ulMSS
+      ulBytesSent = 80*ulMSS+200
+      ulWindowSize = 11*ulMSS+77     
+      ulStatus = pControllerObj.Send(ulSessionId, 1, 0, ulBytesSent, ulTID)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "SendWindowSizeMultipleOfMSS: Send - " & ulStatus
+         exit do
+      end if
+      ulStatus = VerifySlowStart(ulSeqNumber, ulAckNumber, ulMSS, ulWindowSize, ulBytesSent, ulStartCWin, pIFace)
+      if (ulStatus <> 0) then
+         Core.FailSev1Variation "SendWindowSizeMultipleOfMSS: VerifySlowStart - " & ulStatus
+         exit do
+      end if
+         
+   loop while(FALSE)   
+
+   '
+   ' Reset the connection
+   '   
+   ulStatus = ResetConnectionEx(usSrcPort, usDestPort, szSrcIp, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.log "ERROR: SendWindowSizeMultipleOfMSS: ResetConnectionEx - " & ulStatus
+   end if    
+   
+   '   
+   ' Cleanup
+   '
+   ulStatus = Cleanup(ulIfIndex, Array(Array(g_szIp6UnspecifiedAddress, 0, szGwIp)))
+   if (ulStatus <> 0) then   
+      Core.log "ERROR: SendWindowSizeMultipleOfMSS: Cleanup - " & ulStatus
+      exit sub
+   end if
+
+
+End Sub
+
+
+'
+' Routine to ensure that the correct TCP packet is retransmitted
+'       
+Sub CorrectTCPPacketRexmitted(ulNewMTU, ulPacketNumber, ulTCPHeaderLength, fRetransmit)
+   Dim ulStatus, szSrcIp, szGwIp, szGwMac, pPacket, AutoNDObject 
+   Dim usSrcPort, usDestPort, ulSessionId, ulTID, pIFace, pPMTUPacket, ulMTU, ulMSS
+   Dim ulCWin, ulSeqNumber, ulAckNumber, ulBytesRcvd, ulLastSeqNumber, ulLastAckNumber
+   Dim ulBytesSent, ulTotalBytesRcvd, ulCounter, ulIndex, ulNumPackets
+   Dim ulFirstSeqNumber, ulFirstAckNumber
+      
+   usSrcPort = 15000
+   usDestPort = 15001
+   szGwIp = "FE80:0:0:0:1:1:1:1"
+   szGwMac = "33-33-AA-AA-AA-AA"
+   szSrcIp = "FEc0:0:0:0:1:1:1:1"
+   ulMTU = DEFAULT_LINK_MTU
+   ulTotalBytesRcvd = 0
+   Core.StartVariation
+
+   '   
+   ' Cleanup
+   '
+   ulStatus = Cleanup(ulIfIndex, Array(Array(g_szIp6UnspecifiedAddress, 0, szGwIp)))
+   if (ulStatus <> 0) then   
+      Core.BlockVariation "CorrectTCPPacketRexmitted: Cleanup - " & ulStatus
+      exit sub
+   end if
+
+   '
+   ' Create an interface object to grab the packets sent from dest to source
+   '
+   Set pIFace = CreateInterfaceEx(FALSE, g_szRemoteMacAddress, g_szRemoteIp6Address, szSrcIp, szGwMac)
+   pIFace.StartListening   
+
+   '
+   ' Add a default route
+   '
+   Set pPacket = CreateRAPacket(300, szGwIp, szGwMac)
+   IFace.Send(pPacket)
+   Set AutoNDObject = Sparta.AutoNeighbor(g_szLocalMacAddress, szGwMac, szGwIp, TRUE)
+
+   '
+   ' Establish a TCP connection
+   '
+   ulStatus = ActiveConnect(usSrcPort, usDestPort, szSrcIp, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "CorrectTCPPacketRexmitted: ActiveConnect - " & ulStatus
+      exit Sub
+   end if
+   
+   
+   '
+   ' do loop used to get around using goto
+   '
+   do
+      '
+      ' Ask Autosrv to send data
+      '
+      ulBytesSent = 6000
+      ulStatus = pControllerObj.Send(ulSessionId, 1, 0, ulBytesSent, ulTID)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "CorrectTCPPacketRexmitted: Send - " & ulStatus
+         exit do
+      end if
+      
+      '
+      ' Receive the packets and ACK them
+      '
+      if (ulMTU > DEFAULT_LINK_MTU) then
+         ulMSS = DEFAULT_MSS
+      elseif (ulMTU > MIN_LINK_MTU) then
+         ulMSS = DEFAULT_MSS - (DEFAULT_LINK_MTU - ulMTU)
+      else
+         ulMSS = DEFAULT_MSS - (DEFAULT_LINK_MTU - MIN_LINK_MTU) - FRAGMENT_HEADER_SIZE
+      end if
+      ulNumPackets = 0
+      For ulCounter = 1 to 2 
+         Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 200, pIFace)
+         If (pPacket is Nothing) then
+            exit For
+         end if 
+         '
+         ' All but the last packet should have the expected MSS size
+         '
+         if ((ulBytesRcvd <> ulMSS) AND ((pPacket.TcpHeader.Flag AND TCP_PUSH)<>TCP_PUSH)) then
+            Core.FailSev1Variation "CorrectTCPPacketRexmitted: Intermediate packet has incorrect size - " & ulBytesRcvd & " <> " & ulMSS
+            exit do
+         end if
+         
+         '
+         ' Send PMTU notifications for teh appropriate packet
+         '
+         if (ulCounter = ulPacketNumber) then
+            if (ulNewMTU < ulMTU) then
+               ulMTU = ulNewMTU
+            end if
+            Set pPMTUPacket = CreatePMTUPacket(ulNewMTU, pPacket, 40+ulTCPHeaderLength)                  
+            IFace.Send(pPMTUPacket)
+         else    
+            ulLastAckNumber = ulAckNumber
+            ulLastSeqNumber = ulSeqNumber                                                                        
+         end if
+      Next
+      if (pPacket is Nothing) then
+         Core.FailSev1Variation "CorrectTCPPacketRexmitted: Failed to receive all packets"
+         exit do
+      end if
+
+      '
+      ' Receive/not a rexmit
+      '
+      Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 200, pIFace)
+      If ((pPacket is Nothing) AND fRetransmit) then
+         Core.FailSev1Variation "CorrectTCPPacketRexmitted: Packet not rexmitted"
+         exit do
+      elseIf (Not(pPacket is Nothing) AND Not(fRetransmit)) then
+         Core.FailSev1Variation "CorrectTCPPacketRexmitted: Packet rexmitted"
+         exit do
+      end if
+      
+      '
+      ' Send an ACK
+      '      
+      Core.StartVariation
+      Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulLastSeqNumber, ulLastAckNumber, TCP_ACK, 0)
+      pPacket.IpHeader.SourceAddress = szSrcIp
+      IFace.Send(pPacket) 
+      
+      '
+      ' Receive the next expected packet and ensure its limited by the PMTU
+      '
+      if (ulMTU > DEFAULT_LINK_MTU) then
+         ulMSS = DEFAULT_MSS
+      elseif (ulMTU > MIN_LINK_MTU) then
+         ulMSS = DEFAULT_MSS - (DEFAULT_LINK_MTU - ulMTU)
+      else
+         ulMSS = DEFAULT_MSS - (DEFAULT_LINK_MTU - MIN_LINK_MTU) - FRAGMENT_HEADER_SIZE
+      end if
+      Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 200, pIFace)
+      if (pPacket is Nothing) then            
+         Core.FailSev1Variation "CorrectTCPPacketRexmitted: Packet not rexmitted"
+         exit do
+      elseif (ulBytesRcvd <> ulMSS) then
+         Core.FailSev1Variation "CorrectTCPPacketRexmitted: Rexmit incorrect size - " & ulBytesRcvd & " <> " & ulMSS
+         exit do
+      elseif (ulLastAckNumber <> (ulAckNumber - ulBytesRcvd)) then
+         Core.FailSev1Variation "CorrectTCPPacketRexmitted: Incorrect SeqNumber - " & (ulAckNumber - ulBytesRcvd) & " <> " & ulFirstAckNumber
+         exit do
+      end if
+   
+   loop while(FALSE)   
+
+   '
+   ' Reset the connection
+   '   
+   ulStatus = ResetConnectionEx(usSrcPort, usDestPort, szSrcIp, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.log "ERROR: CorrectTCPPacketRexmitted: ResetConnectionEx - " & ulStatus
+   end if    
+   
+   '   
+   ' Cleanup
+   '
+   ulStatus = Cleanup(ulIfIndex, Array(Array(g_szIp6UnspecifiedAddress, 0, szGwIp)))
+   if (ulStatus <> 0) then   
+      Core.log "ERROR: CorrectTCPPacketRexmitted: Cleanup - " & ulStatus
+      exit sub
+   end if
+   
+End Sub
+
+'
+' Multiple connections using the same RCE
+' 
+Sub MultipleConnections
+   Dim ulStatus, szSrcIp, szGwIp, szGwMac, pPacket, AutoNDObject, pIFace 
+   Dim pPMTUPacket, ulMTU, ulMSS, fFragmentHeader
+   Dim usSrcPort, ulSeqNumber, ulAckNumber, ulTID, ulBytesRcvd, ulBytesSent, ulTotalBytesRcvd
+   Dim usDestPort1, ulSeqNumber1, ulAckNumber1, ulSessionId1, pACKPacket1
+   Dim usDestPort2, ulSeqNumber2, ulAckNumber2, ulSessionId2, pACKPacket2
+   Dim usDestPort3, ulSeqNumber3, ulAckNumber3, ulSessionId3, szSrcIp2, pIFace2
+      
+   usSrcPort = 15000
+   usDestPort1 = 15001
+   usDestPort2 = 15002
+   usDestPort3 = 15003
+   szGwIp = "FE80:0:0:0:1:1:1:1"
+   szGwMac = "33-33-AA-AA-AA-AA"
+   szSrcIp = "FEc0:0:0:0:1:1:1:1"
+   szSrcIp2 = "FEc0:0:0:0:1:1:1:2"
+   ulMTU = DEFAULT_LINK_MTU
+   ulTotalBytesRcvd = 0
+   
+   Core.StartVariation
+
+   '   
+   ' Cleanup
+   '
+   ulStatus = Cleanup(ulIfIndex, Array(Array(g_szIp6UnspecifiedAddress, 0, szGwIp)))
+   if (ulStatus <> 0) then   
+      Core.BlockVariation "MultipleConnections: Cleanup - " & ulStatus
+      exit sub
+   end if
+
+   '
+   ' Create an interface object to grab the packets sent from dest to source1
+   '
+   Set pIFace = CreateInterfaceEx(FALSE, g_szRemoteMacAddress, g_szRemoteIp6Address, szSrcIp, szGwMac)
+   pIFace.StartListening   
+
+   '
+   ' Create an interface object to grab the packets sent from dest to source2
+   '
+   Set pIFace2 = CreateInterfaceEx(FALSE, g_szRemoteMacAddress, g_szRemoteIp6Address, szSrcIp2, szGwMac)
+   pIFace2.StartListening   
+   
+   '
+   ' Add a default route
+   '
+   Set pPacket = CreateRAPacket(300, szGwIp, szGwMac)
+   IFace.Send(pPacket)
+   Set AutoNDObject = Sparta.AutoNeighbor(g_szLocalMacAddress, szGwMac, szGwIp, TRUE)
+
+   '
+   ' do loop used to get around using goto
+   '
+   do
+   
+      '
+      ' Establish teh first TCP connection
+      '
+      ulStatus = ActiveConnect(usSrcPort, usDestPort1, szSrcIp, ulSeqNumber1, ulAckNumber1, ulSessionId1, pIFace)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "MultipleConnections: ActiveConnect(1) - " & ulStatus
+         exit do
+      end if
+         
+      '
+      ' Establish teh second TCP connection
+      '
+      ulStatus = ActiveConnect(usSrcPort, usDestPort2, szSrcIp, ulSeqNumber2, ulAckNumber2, ulSessionId2, pIFace)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "MultipleConnections: ActiveConnect(2) - " & ulStatus
+         exit do
+      end if
+
+      '
+      ' Establish teh third TCP connection
+      '
+      ulStatus = ActiveConnect(usSrcPort, usDestPort3, szSrcIp2, ulSeqNumber3, ulAckNumber3, ulSessionId3, pIFace2)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "MultipleConnections: ActiveConnect(3) - " & ulStatus
+         exit do
+      end if
+   
+      '
+      ' Ask Autosrv to send data on session1
+      '
+      ulBytesSent = DEFAULT_MSS
+      ulStatus = pControllerObj.Send(ulSessionId1, 1, 0, ulBytesSent, ulTID)
+      if (ulStatus <> 0) then
+         if (ulStatus <> 0) then
+            Core.BlockVariation "MultipleConnections: Send - " & ulStatus
+            exit do
+         end if      
+      end if
+            
+      '
+      ' Ask Autosrv to send data on session2
+      '
+      ulStatus = pControllerObj.Send(ulSessionId2, 1, 0, ulBytesSent, ulTID)
+      if (ulStatus <> 0) then
+         if (ulStatus <> 0) then
+            Core.BlockVariation "MultipleConnections: Send - " & ulStatus
+            exit do
+         end if      
+      end if
+
+      '
+      ' Receive the packet for Session1 & create an ACK packet
+      ' 
+      Set pPacket = RecvTCPPacketEx(ulSeqNumber1, ulAckNumber1, ulBytesRcvd, TCP_ACK, 5000, pIFace)
+      If (pPacket is Nothing) then
+         Core.FailSev1Variation "MultipleConnections: Failed to receive packet for session1"
+         exit do
+      end if
+      Set pACKPacket1 = MakeTCPPacket(usSrcPort, usDestPort1, ulSeqNumber1, ulAckNumber1, TCP_ACK, 0)
+      pACKPacket1.IpHeader.SourceAddress = szSrcIp
+      
+      '
+      ' Create a PMTU packet 
+      '
+      ulMTU = DEFAULT_LINK_MTU - 100
+      Set pPMTUPacket = CreatePMTUPacket(ulMTU, pPacket, 60)
+      
+      '
+      ' Receive the packet for Session2 & create an ACK packet
+      '
+      Set pPacket = RecvTCPPacketEx(ulSeqNumber2, ulAckNumber2, ulBytesRcvd, TCP_ACK, 5000, pIFace)
+      If (pPacket is Nothing) then
+         Core.FailSev1Variation "MultipleConnections: Failed to receive packet for session2"
+         exit do
+      end if  
+      Set pACKPacket2 = MakeTCPPacket(usSrcPort, usDestPort2, ulSeqNumber2, ulAckNumber2, TCP_ACK, 0)
+      pACKPacket2.IpHeader.SourceAddress = szSrcIp
+      
+      '
+      ' Send the PMTU notification
+      '
+      IFace.Send(pPMTUPacket)
+      
+      '
+      ' Ensure the first packet is rexmitted
+      '
+      fFragmentHeader = FALSE      
+      if (ulMTU > DEFAULT_LINK_MTU) then
+         ulMSS = DEFAULT_MSS
+      elseif (ulMTU > MIN_LINK_MTU) then
+         ulMSS = DEFAULT_MSS - (DEFAULT_LINK_MTU - ulMTU)
+      else
+         fFragmentHeader = TRUE
+         ulMSS = DEFAULT_MSS - (DEFAULT_LINK_MTU - MIN_LINK_MTU) - FRAGMENT_HEADER_SIZE
+      end if
+      Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 200, pIFace)
+      if (pPacket is Nothing) then            
+         Core.FailSev1Variation "MultipleConnections: Packet not rexmitted"
+         exit do
+      elseif (ulBytesRcvd <> ulMSS) then
+         Core.FailSev1Variation "MultipleConnections: Rexmit incorrect size - " & ulBytesRcvd & " <> " & ulMSS
+         exit do
+      elseif ((ulAckNumber1-DEFAULT_MSS) <> (ulAckNumber - ulBytesRcvd)) then
+         Core.FailSev1Variation "MultipleConnections: Incorrect SeqNumber - " & (ulAckNumber - ulBytesRcvd) & " <> " & ulAckNumber1
+         exit do
+      end if
+      
+      '
+      ' Ensure the fragment header is present/not
+      '
+      If (pPacket.IpHeader.FragmentHeader.IsPresent <> fFragmentHeader) then
+         Core.FailSev1Variation "MultipleConnections: Fragment header in Rexmit - " & pPacket.IpHeader.FragmentHeader.IsPresent
+         exit do      
+      elseif (fFragmentHeader) then
+         if (pPacket.IpHeader.FragmentHeader.MoreFragments <> 0) then         
+            Core.FailSev1Variation "MultipleConnections: Incorrect MF - " & pPacket.IpHeader.FragmentHeader.MoreFragments
+            exit do      
+         elseif (pPacket.IpHeader.FragmentHeader.FragmentOffset <> 0) then         
+            Core.FailSev1Variation "MultipleConnections: Incorrect offset - " & pPacket.IpHeader.FragmentHeader.FragmentOffset
+            exit do      
+         end if 
+      end if
+      
+      '
+      ' Ensure nothing else is rexmitted
+      '
+      Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 200, pIFace)
+      if Not(pPacket is Nothing) then            
+         Core.FailSev1Variation "MultipleConnections: More than one packet rexmitted"
+         exit do
+      end if      
+      
+      '
+      ' Send the ACKs
+      '
+      IFace.Send(pACKPacket1)
+      IFace.Send(pACKPacket2)
+      
+      '
+      ' Ensure the MTU change gets reflected in connections 1 & 2
+      '
+      Core.StartVariation
+      ulBytesSent = 6000
+      ulStatus=DataSizeLimitedByMSS(ulSeqNumber1, ulAckNumber1, ulSessionId1, ulBytesSent, ulMSS, pIFace, TRUE, fFragmentHeader)
+      if (ulStatus <> 0) then
+         if (ulStatus <> 0) then
+            Core.FailSev1Variation "MultipleConnections: DataSizeLimitedByMSS - " & ulStatus
+            exit do
+         end if      
+      end if
+      ulStatus=DataSizeLimitedByMSS(ulSeqNumber2, ulAckNumber2, ulSessionId2, ulBytesSent, ulMSS, pIFace, TRUE, fFragmentHeader)
+      if (ulStatus <> 0) then
+         if (ulStatus <> 0) then
+            Core.FailSev1Variation "MultipleConnections: DataSizeLimitedByMSS - " & ulStatus
+            exit do
+         end if      
+      end if
+
+      '
+      ' Ensure connection3 is not affected by this PMTU notification
+      '
+      Core.StartVariation
+      ulMSS=DEFAULT_MSS
+      ulStatus=DataSizeLimitedByMSS(ulSeqNumber3, ulAckNumber3, ulSessionId3, ulBytesSent, ulMSS, pIFace2, TRUE, FALSE)
+      if (ulStatus <> 0) then
+         if (ulStatus <> 0) then
+            Core.FailSev1Variation "MultipleConnections: DataSizeLimitedByMSS - " & ulStatus
+            exit do
+         end if      
+      end if
+   loop while(FALSE)   
+
+   '
+   ' Reset connection1
+   '   
+   ulStatus = ResetConnectionEx(usSrcPort, usDestPort1, szSrcIp, ulSeqNumber1, ulAckNumber1, ulSessionId1)
+   if (ulStatus <> 0) then
+      Core.log "ERROR: MultipleConnections: ResetConnectionEx - " & ulStatus
+   end if    
+
+   '
+   ' Reset connection2
+   '   
+   ulStatus = ResetConnectionEx(usSrcPort, usDestPort2, szSrcIp, ulSeqNumber2, ulAckNumber2, ulSessionId2)
+   if (ulStatus <> 0) then
+      Core.log "ERROR: MultipleConnections: ResetConnectionEx - " & ulStatus
+   end if    
+
+   '
+   ' Reset connection3
+   '   
+   ulStatus = ResetConnectionEx(usSrcPort, usDestPort3, szSrcIp2, ulSeqNumber3, ulAckNumber3, ulSessionId2)
+   if (ulStatus <> 0) then
+      Core.log "ERROR: MultipleConnections: ResetConnectionEx - " & ulStatus
+   end if  
+   
+   '   
+   ' Cleanup
+   '
+   ulStatus = Cleanup(ulIfIndex, Array(Array(g_szIp6UnspecifiedAddress, 0, szGwIp)))
+   if (ulStatus <> 0) then   
+      Core.log "ERROR: MultipleConnections: Cleanup - " & ulStatus
+      exit sub
+   end if
+     
+End Sub
+      
+'
+' Routine to ensure 
+'                    
+Sub TCPRetransmissionRetainsCWin
+   Dim ulStatus, szSrcIp, szGwIp, szGwMac, pPacket, AutoNDObject 
+   Dim usSrcPort, usDestPort, ulSessionId, ulTID, pIFace, pPMTUPacket, ulMTU, ulMSS
+   Dim ulCWin, ulSeqNumber, ulAckNumber, ulBytesRcvd, ulLastSeqNumber, ulLastAckNumber
+   Dim ulBytesSent, ulTotalBytesRcvd, ulCounter, ulIndex, ulNumPackets
+   Dim ulFirstSeqNumber, ulFirstAckNumber
+      
+   usSrcPort = 15000
+   usDestPort = 15001
+   szGwIp = "FE80:0:0:0:1:1:1:1"
+   szGwMac = "33-33-AA-AA-AA-AA"
+   szSrcIp = "FEc0:0:0:0:1:1:1:1"
+   ulMTU = DEFAULT_LINK_MTU
+   ulTotalBytesRcvd = 0
+   Core.StartVariation
+
+   '   
+   ' Cleanup
+   '
+   ulStatus = Cleanup(ulIfIndex, Array(Array(g_szIp6UnspecifiedAddress, 0, szGwIp)))
+   if (ulStatus <> 0) then   
+      Core.BlockVariation "TCPRetransmissionRetainsCWin: Cleanup - " & ulStatus
+      exit sub
+   end if
+
+   '
+   ' Create an interface object to grab the packets sent from dest to source
+   '
+   Set pIFace = CreateInterfaceEx(FALSE, g_szRemoteMacAddress, g_szRemoteIp6Address, szSrcIp, szGwMac)
+   pIFace.StartListening   
+
+   '
+   ' Add a default route
+   '
+   Set pPacket = CreateRAPacket(300, szGwIp, szGwMac)
+   IFace.Send(pPacket)
+   Set AutoNDObject = Sparta.AutoNeighbor(g_szLocalMacAddress, szGwMac, szGwIp, TRUE)
+
+   '
+   ' Establish a TCP connection
+   '
+   ulStatus = ActiveConnect(usSrcPort, usDestPort, szSrcIp, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "TCPRetransmissionRetainsCWin: ActiveConnect - " & ulStatus
+      exit Sub
+   end if
+   
+   '
+   ' do loop used to get around using goto
+   '
+   do
+      '****************************************************************************
+      ' Open up CWin while ensuring the stack sends out packets with the correct MSS
+      '****************************************************************************
+      
+      ulMSS = DEFAULT_MSS
+      ulBytesSent = 6000
+      ulStatus=DataSizeLimitedByMSS(ulSeqNumber, ulAckNumber, ulSessionId, ulBytesSent, ulMSS, pIFace, TRUE, FALSE)
+      if (ulStatus <> 0) then
+         if (ulStatus <> 0) then
+            Core.FailSev1Variation "TCPRetransmissionRetainsCWin: DataSizeLimitedByMSS - " & ulStatus
+            exit do
+         end if      
+      end if
+      
+   
+      '****************************************************************************
+      ' Now send PMTU messages in response to packets xmitted by the stack & validate
+      ' the packet rexmit on receiving the PMTU notifications
+      '****************************************************************************      
+      
+      '
+      ' Ask Autosrv to send data 
+      '  
+      ulCWin = 5*ulMSS    
+      Core.StartVariation 
+      ulBytesSent = ulCWin
+      ulStatus = pControllerObj.Send(ulSessionId, 1, 0, ulBytesSent, ulTID)
+      if (ulStatus <> 0) then
+         if (ulStatus <> 0) then
+            Core.BlockVariation "TCPRetransmissionRetainsCWin: Send - " & ulStatus
+            exit do
+         end if      
+      end if
+      
+      '
+      ' Receive all packets and send a PMTU message for each of them
+      '
+      ulTotalBytesRcvd = 0
+      ulNumPackets = 0
+      do      
+         Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 200, pIFace)
+         if ((pPacket is Nothing) OR (ulBytesRcvd = 0)) then
+            exit do
+         end if
+         if (ulNumPackets = 0) then
+            ulFirstSeqNumber = ulSeqNumber
+            ulFirstAckNumber = ulAckNumber - ulBytesRcvd
+         end if
+         ulNumPackets = ulNumPackets + 1
+         ulTotalBytesRcvd = ulTotalBytesRcvd + ulBytesRcvd
+         ulLastSeqNumber = ulSeqNumber
+         ulLastAckNumber = ulAckNumber
+         
+         '
+         ' All but the last packet should have the expected MSS size
+         '
+         if ((ulBytesRcvd <> ulMSS) AND ((pPacket.TcpHeader.Flag AND TCP_PUSH)<>TCP_PUSH)) then
+            Core.FailSev1Variation "TCPRetransmissionRetainsCWin: Intermediate packet has incorrect size - " & ulBytesRcvd & " <> " & ulMSS
+            exit do
+         end if
+         
+         '
+         ' Send PMTU notifications for each of those packets
+         '
+         ulMTU = DEFAULT_LINK_MTU - 100
+         Set pPMTUPacket = CreatePMTUPacket(ulMTU, pPacket, 60)      
+         IFace.Send(pPMTUPacket)
+      loop while(ulTotalBytesRcvd < ulBytesSent) 
+                  
+      '
+      ' Ensure we have all the data
+      '   
+      if (ulTotalBytesRcvd <> ulBytesSent) then      
+         Core.FailSev1Variation "TCPRetransmissionRetainsCWin: Failed to recv all data - " & ulTotalBytesRcvd & " <> " & ulBytesSent
+         exit do
+      end if
+      
+      '
+      ' Ensure that the first packet is rexmitted immediately with the correct size
+      '     
+      if (ulMTU > DEFAULT_LINK_MTU) then
+         ulMSS = DEFAULT_MSS
+      elseif (ulMTU > MIN_LINK_MTU) then
+         ulMSS = DEFAULT_MSS - (DEFAULT_LINK_MTU - ulMTU)
+      else
+         ulMSS = DEFAULT_MSS - (DEFAULT_LINK_MTU - MIN_LINK_MTU) - FRAGMENT_HEADER_SIZE
+      end if
+      Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 200, pIFace)
+      if (pPacket is Nothing) then            
+         Core.FailSev1Variation "TCPRetransmissionRetainsCWin: Packet not rexmitted"
+         exit do
+      elseif (ulBytesRcvd <> ulMSS) then
+         Core.FailSev1Variation "TCPRetransmissionRetainsCWin: Rexmit incorrect size - " & ulBytesRcvd & " <> " & ulMSS
+         exit do
+      elseif (ulFirstSeqNumber <> ulSeqNumber) then
+         Core.FailSev1Variation "TCPRetransmissionRetainsCWin: Incorrect AckNumber - " & ulSeqNumber & " <> " & ulFirstSeqNumber
+         exit do
+      elseif (ulFirstAckNumber <> (ulAckNumber - ulBytesRcvd)) then
+         Core.FailSev1Variation "TCPRetransmissionRetainsCWin: Incorrect SeqNumber - " & (ulAckNumber - ulBytesRcvd) & " <> " & ulFirstAckNumber
+         exit do
+      end if
+               
+      '
+      ' Ensure no more packets are rexmitted
+      '
+      Core.StartVariation
+      Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 200, pIFace)
+      if Not(pPacket is Nothing) then
+         Core.FailSev1Variation "TCPRetransmissionRetainsCWin: Received more than 1 rexmit"
+         Core.log "INFO: SeqNumber = " & (ulAckNumber - ulBytesRcvd) & ", AckNumber = " & ulSeqNumber & ", Flags = " & pPacket.TCPHeader.Flags
+         exit do
+      end if
+      
+      '
+      ' Send an ACK for all the rcvd segments
+      '
+      Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulLastSeqNumber, ulLastAckNumber, TCP_ACK, 0)
+      pPacket.IpHeader.SourceAddress = szSrcIp
+      IFace.Send(pPacket)
+
+
+      '****************************************************************************
+      ' Ensure that the packet rexmit didn't lower the CWin
+      '****************************************************************************      
+            
+      '
+      ' Ask Autosrv to send data 
+      '
+      Core.StartVariation
+      ulBytesSent = ulCWin
+      ulStatus = pControllerObj.Send(ulSessionId, 1, 0, ulBytesSent, ulTID)
+      if (ulStatus <> 0) then
+         if (ulStatus <> 0) then
+            Core.BlockVariation "TCPRetransmissionRetainsCWin: Send - " & ulStatus
+            exit do
+         end if      
+      end if
+
+      '
+      ' Receive all the packets and ensure CWin hasn't changed
+      '
+      ulTotalBytesRcvd = 0
+      do      
+         Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 200, pIFace)
+         if ((pPacket is Nothing) OR (ulBytesRcvd = 0)) then
+            exit do
+         end if
+         ulTotalBytesRcvd = ulTotalBytesRcvd + ulBytesRcvd
+         
+         '
+         ' All but the last packet should have the expected MSS size
+         '
+         if ((ulBytesRcvd <> ulMSS) AND ((pPacket.TcpHeader.Flag AND TCP_PUSH)<>TCP_PUSH)) then
+            Core.FailSev1Variation "TCPRetransmissionRetainsCWin: Intermediate packet has incorrect size - " & ulBytesRcvd & " <> " & ulMSS
+            exit do
+         end if
+      loop while(ulTotalBytesRcvd < ulBytesSent)  
+      
+      '
+      ' Ensure we have all the data
+      '   
+      if (ulTotalBytesRcvd <> ulBytesSent) then      
+         Core.WarnVariation "TCPRetransmissionRetainsCWin: Failed to recv all data - " & ulTotalBytesRcvd & " <> " & ulBytesSent
+         Core.log "COMMENT: We currently do slow start on rexmit triggered by PMTU message (Bug# 242757)"
+         exit do
+      end if
+   loop while(FALSE)   
+
+   '
+   ' Reset the connection
+   '   
+   ulStatus = ResetConnectionEx(usSrcPort, usDestPort, szSrcIp, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.log "ERROR: TCPRetransmissionRetainsCWin: ResetConnectionEx - " & ulStatus
+   end if    
+   
+   '   
+   ' Cleanup
+   '
+   ulStatus = Cleanup(ulIfIndex, Array(Array(g_szIp6UnspecifiedAddress, 0, szGwIp)))
+   if (ulStatus <> 0) then   
+      Core.log "ERROR: TCPRetransmissionRetainsCWin: Cleanup - " & ulStatus
+      exit sub
+   end if
+   
+End Sub
+
+'
+' Routine to ensure that for an existing TCP connection, the path MTU is raised after 
+' PATH_MTU_RETRY_TIME time
+'
+Sub PMTURaisedLazily
+   Dim ulStatus, szSrcIp, pIFace, pPacket, szGwIp, szGwMac, AutoNDObject, ulTotalBytesRcvd
+   Dim ulMSS, usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, fChanged
+   Dim ulBytesSent, ulTmpSeqNumber, ulCounter, ulBytesRcvd, ulMTU, fFragmentHeader, pPMTUPacket
+
+
+   usSrcPort = 15000
+   usDestPort = 15001
+   szGwIp = "FE80:0:0:0:1:1:1:1"
+   szGwMac = "33-33-AA-AA-AA-AA"
+   szSrcIp = "FEc0:0:0:0:1:1:1:1"
+   ulMTU = DEFAULT_LINK_MTU
+   ulMSS = DEFAULT_MSS
+
+   '   
+   ' Cleanup
+   '
+   ulStatus = Cleanup(ulIfIndex, Array(Array(g_szIp6UnspecifiedAddress, 0, szGwIp)))
+   if (ulStatus <> 0) then   
+      Core.log "PMTURaisedLazily: Cleanup - " & ulStatus
+      exit sub
+   end if
+
+   '
+   ' Create an interface object to grab the packets sent from dest to source
+   '
+   Set pIFace = CreateInterfaceEx(FALSE, g_szRemoteMacAddress, g_szRemoteIp6Address, szSrcIp, szGwMac)
+   pIFace.StartListening   
+
+   '
+   ' Add a default route
+   '
+   Set pPacket = CreateRAPacket(2000, szGwIp, szGwMac)
+   IFace.Send(pPacket)
+   Set AutoNDObject = Sparta.AutoNeighbor(g_szLocalMacAddress, szGwMac, szGwIp, TRUE)
+
+   '
+   ' Establish a TCP connection
+   '
+   ulStatus = ActiveConnect(usSrcPort, usDestPort, szSrcIp, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+   if (ulStatus <> 0) then
+      Core.log "PMTURaisedLazily: ActiveConnect - " & ulStatus
+      exit Sub
+   end if
+   
+   '
+   ' Do loop used to get around using goto
+   '       
+   do
+      Core.StartVariation
+      
+      '
+      ' Ask Autosrv to send data
+      '
+      ulBytesSent = ulMSS
+      ulStatus = pControllerObj.Send(ulSessionId, 1, 0, ulBytesSent, ulTID)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "PMTURaisedLazily: Send - " & ulStatus
+         exit do
+      end if
+      
+      ' 
+      ' Receive the first packet & verify the size
+      '      
+      Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 200, pIFace)
+      If (pPacket is Nothing) then
+         Core.FailSev1Variation "PMTURaisedLazily: Failed to receive TCP packet"
+         exit do
+      end if 
+      if (ulBytesRcvd <> ulMSS) then      
+         Core.FailSev1Variation "PMTURaisedLazily: Incorrect packet size " & ulBytesRcvd & " <> " & ulMSS
+         exit do
+      end if
+      
+      '
+      ' Send a PMTU notification lowering the MTU
+      '      
+      ulMTU = DEFAULT_LINK_MTU - 100
+      ulMSS = DEFAULT_MSS - (DEFAULT_LINK_MTU - ulMTU)
+      Set pPMTUPacket = CreatePMTUPacket(ulMTU, pPacket, 60)
+      pIFace.Send(pPMTUPacket)
+      
+      '
+      ' Ensure the remaining data transfer obeys the new MSS
+      '
+      ulStatus=DataSizeLimitedByMSS(ulSeqNumber, ulAckNumber, ulSessionId, ulBytesSent, ulMSS, pIFace, FALSE, FALSE)
+      if (ulStatus <> 0) then
+         Core.FailSev1Variation "PMTURaisedLazily: DataSizeLimitedByMSS - " & ulStatus
+         exit do
+      end if      
+   
+      '
+      ' Wait for the PMTU timeout - 1 minute 
+      '
+      Core.Sleep (PATH_MTU_RETRY_TIME*1000 - 60000)
+      
+      '
+      ' Ensure PMTU is still the same
+      '       
+      ulBytesSent = 6000
+      ulStatus=DataSizeLimitedByMSS(ulSeqNumber, ulAckNumber, ulSessionId, ulBytesSent, ulMSS, pIFace, TRUE, FALSE)
+      if (ulStatus <> 0) then
+         Core.FailSev1Variation "PMTURaisedLazily: DataSizeLimitedByMSS - " & ulStatus
+         exit do
+      end if      
+
+      Core.Sleep 60000+500
+       
+      '
+      ' Ensure the PMTU has been raised 
+      '
+      ulMSS = DEFAULT_MSS
+      ulBytesSent = 6000
+      ulStatus=DataSizeLimitedByMSS(ulSeqNumber, ulAckNumber, ulSessionId, ulBytesSent, ulMSS, pIFace, TRUE, FALSE)
+      if (ulStatus <> 0) then
+         Core.FailSev1Variation "PMTURaisedLazily: DataSizeLimitedByMSS - " & ulStatus
+         exit do
+      end if      
+   loop while (FALSE)
+      
+   '
+   ' Reset the connection
+   '   
+   ulStatus = ResetConnectionEx(usSrcPort, usDestPort, szSrcIp, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.log "ERROR: PMTURaisedLazily: ResetConnectionEx - " & ulStatus
+   end if    
+   
+   '   
+   ' Cleanup
+   '
+   ulStatus = Cleanup(ulIfIndex, Array(Array(g_szIp6UnspecifiedAddress, 0, szGwIp)))
+   if (ulStatus <> 0) then   
+      Core.log "ERROR: PMTURaisedLazily: Cleanup - " & ulStatus
+      exit sub
+   end if
+  
+End Sub
+
+      </script>
+   </job>
+</package>
+
+

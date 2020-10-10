@@ -1,0 +1,47 @@
+<?Mapping XmlNamespace="xaml" ClrNamespace="MSAvalon.Windows.Controls" Assembly="PresentationFramework" ?>
+<?Mapping XmlNamespace="anim" ClrNamespace="MSAvalon.Windows.Media.Animation" Assembly="PresentationFramework" ?>
+<?Mapping XmlNamespace="shapes" ClrNamespace="MSAvalon.Windows.Shapes" Assembly="PresentationFramework" ?>
+<?Mapping XmlNamespace="media" ClrNamespace="MSAvalon.Windows.Media" Assembly="PresentationCore" ?>
+
+<Canvas	ID="rootCanvas"
+	xmlns="http://schemas.microsoft.com/2005/xaml/"
+	xmlns:def="Definition"
+	def:CodeBehind="bounce.xaml.cs"
+	def:Class="ScreenSaver.MyPage"
+	Loaded="Start"
+	Width="100%" 
+	Height="100%">
+
+<Canvas.Resources>
+
+	<LengthAnimationCollection def:Name="myCenterXAnim">
+		<LengthAnimation Fill="Freeze" Acceleration="0.1" Deceleration="0.1" AutoReverse="True" />
+	</LengthAnimationCollection>
+
+	<LengthAnimationCollection xmlns="anim" def:Name="myCenterYAnim">
+
+		<!-- Simulate a bouncing motion. These must be in this order because of the code dependency. -->
+		<LengthAnimation Duration=".8" Fill="Freeze" />
+        <LengthAnimation Duration=".8" Fill="Freeze" />
+	    <LengthAnimation Duration="4.8" Fill="Freeze" />
+
+		<!-- This animation controls how long the balls move in the general Y direction -->
+		<LengthAnimation Duration="10" Fill="Freeze" Acceleration="0.2" Deceleration="0.2" AutoReverse="True" />
+
+		<!-- This one perturbs the motion a bit so it's not linear -->
+		<LengthAnimation Duration="2" Fill="Freeze" Acceleration="0.4" Deceleration="0.4" AutoReverse="True" />
+
+		<!-- This animation controls the balls as they fall off the screen -->
+		<LengthAnimation Duration="1.5" Fill="Freeze" Acceleration="0.2" Deceleration="0.1" />
+
+	</LengthAnimationCollection>
+
+	<LengthAnimationCollection xmlns="anim" def:Name="myRadiusAnim">
+		<LengthAnimation Duration="0.05" Fill="Freeze" By="30" />
+	</LengthAnimationCollection>
+
+
+</Canvas.Resources>
+
+
+</Canvas>

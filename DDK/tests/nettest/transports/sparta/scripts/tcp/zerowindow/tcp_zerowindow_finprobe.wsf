@@ -1,0 +1,175 @@
+'********************************* TCP_ZeroWindow_FINProbe.wsf ***********************
+'*                                                                                   *
+'* Author            :    Sandeep Prabhu                                             *
+'* Revision history  :                                                               *
+'*    09/20/2000     sandeep        Created                                          *
+'*    04/24/2003     karolys        added HCT-style comments for tst plan generation *
+'*                                                                                   *
+'* This script will test the TCP zero window probing screnarios                      *
+'*                                                                                   *
+'********************************* TCP_ZeroWindow_FINProbe.wsf ***********************
+
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\TCPLib.vbs"/>
+      <script language="VBScript" src="TCPZeroWindowLib.vbs"/>                  
+      <script id="TCP_ZeroWindow_FINProbe" language="VBScript">
+
+'/**
+' @area name="Offload Compliance Test Assertions"
+' @group name="TCP Zero Window Probing Assertions"
+' @group name="Zero window probing while sending FIN Assertions" 
+' @define name="Offload" Offload Compliance Test Assertions
+' @define name="TCPZW" TCP Zero Window Probing Assertions
+' @define name="FinZW" Zero window probing while sending FIN Assertions
+' @hierarchy Offload TCPZW FinZW
+' @key Reference="WLP# - x.x.x.x; RFC-793 Section 3.7, RFC-1122 Section 4.2.2.17"
+' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+' @key TestName="TCPv4 Zero Window Probing while sending FIN Functionality Tests"
+' @key TestLog="TCP_ZeroWindow_FINProbe.log"
+'*/
+
+option explicit
+    
+Dim Core, Sparta, Autosrv, MediaType, AutoArpObject, IFace, pControllerObj
+Const usMSS = 1460
+ 
+'
+' Start the script
+'           
+StartScript "TCP_ZeroWindow_FINProbe", g_szLogDirectory, "Tests for TCP zero window probing" 
+
+
+
+' ==================================================================================================
+' Main routine
+' ==================================================================================================
+Sub Main
+   Core.SetAssertionTracking "60300"
+   Dim ulStatus, ulWindowSize
+   
+   IFace.StartListening
+   Core.StartTest "Zero window probing while sending FIN"   
+
+   '/**
+   ' @test name="The stack must send a FIN if a zero window is advertised and it has no other data to send." 
+   ' Autosrv is requested to connect back to the script machine. Script machine accepts the connection and advertises a zero receive window in the SYN-ACK.<br/>
+   ' variation 1: The stack has no data to send and is requested to terminate the connection.
+   ' The stack should not do zero window probing just send the FIN.<br/>
+   ' variation 2: The stack is given data to send. Here the stack must send zero window probes.
+   ' The script opens up the window after the second probe is received and consumes the data that should come in the FIN.
+   ' The script sends its FIN-ACK with a zero window advertised. The stack should send a final ACK without zero window probing.<br/>
+   '*/
+   
+   ZeroWindowProbingForFIN 0
+   ZeroWindowProbingForFIN 1
+   Core.EndTest
+   Core.Sleep(2500)
+   IFace.StopListening
+   
+End Sub
+
+
+
+'
+' Routine to test that if the window is 0 when sending a FIN, zero window probing is done
+'
+Sub ZeroWindowProbingForFIN(ulDataSize)
+   Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim ulLastAck, ulBytesRcvd, ulDataLength, pTCPPacket
+   
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 5000
+   usDestPort = 5001
+   
+   Core.StartVariation
+
+   
+   '
+   ' Esatablish a TCP connection and advertize a 0 window in SYN-ACK
+   '
+   ulStatus = Connect(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, 0, usMSS)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "ZeroWindowProbingForFIN: Connect - " & ulStatus
+      exit sub
+   end if
+   
+   '
+   ' Ask Autosrv to do send and disconnect
+   '
+   ulStatus = pControllerObj.SendAndDisconnect(ulSessionId, ulDataSize, ulTID)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "ZeroWindowProbingForFIN: SendAndDisconnect - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+   
+   '
+   ' We don't expect zero window probing if there is no data to be sent
+   '
+   if (ulDataSize <> 0) then      
+      
+      '
+      ' Get to the point where the first window probe packet is received
+      '
+      ulStatus = GetToWindowProbeState(usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)
+      if (ulStatus <> 0) then
+         Core.FailSev1Variation "ZeroWindowProbingForFIN: GetToWindowProbeState - " & ulStatus
+         ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+         exit sub
+      end if
+
+      ' 
+      ' Do window probing for 2 times
+      '
+      ulStatus = DoZeroWindowProbe(2, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)
+      if (ulStatus <> 0) then
+         Core.FailSev1Variation "ZeroWindowProbingForFIN: DoZeroWindowProbe - " & ulStatus
+         ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+         exit sub
+      end if
+   end if
+   
+   '
+   ' Receive the FIN-ACK
+   '
+   set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulDataLength, (TCP_FIN or TCP_ACK), 5000)
+   if (pTCPPacket is Nothing) then
+      Core.FailSev1Variation "ZeroWindowProbingForFIN: FIN-ACK not rcvd"
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if 
+   
+   '
+   ' Send a FIN-ACK with a zero window
+   '
+   Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, (TCP_FIN or TCP_ACK), 0)
+   pTCPPacket.TCPHeader.WindowSize = 0
+   IFace.Send(pTCPPacket)
+   
+   '
+   ' Receive the ACK
+   '
+   set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulDataLength, TCP_ACK, 200)
+   if (pTCPPacket is Nothing) then
+      Core.FailSev1Variation "ZeroWindowProbingForFIN: ACK not rcvd"
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if 
+   
+   '
+   ' Reset the connection
+   '
+   ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+End Sub
+
+
+      </script>
+   </job>
+</package>

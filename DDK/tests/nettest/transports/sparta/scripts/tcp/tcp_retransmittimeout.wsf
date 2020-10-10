@@ -1,0 +1,676 @@
+'************************************* TCP_RetransmitTimeout.wsf ***********************
+'*                                                                                     *
+'* Author            :    Sandeep Prabhu                                               *
+'* Revision history  :                                                                 *
+'*    09/20/2000     sandeep        Created                                            *
+'*                                                                                     *
+'* This script will test # retransmissions and the exponential back off behavior       *
+'*                                                                                     *
+'************************************* TCP_RetransmitTimeout.wsf ***********************
+
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="TCPLib.vbs"/>                  
+      <script id="TCP_RetransmitTimeout" language="VBScript">
+
+
+option explicit
+    
+Dim Core, Sparta, Autosrv, MediaType, AutoArpObject, IFace, pControllerObj
+Const usMSS = 1460
+
+Const SEND              = 1
+Const CONNECTEX         = 2
+Const SENDANDDISCONNECT = 3
+ 
+'
+' Start the script
+'           
+StartScript "TCP_RetransmitTimeout", g_szLogDirectory, "Tests for TCP packet rexmits and exponential backoff (~40 min)" 
+
+
+
+' ==================================================================================================
+' Main routine
+' ==================================================================================================
+Sub Main
+   Core.SetAssertionTracking "50100"
+   Dim ulStatus, ulTcpInitialRTT, ulTcpMaxConnectRetransmissions
+   Dim ulTcpMaxConnectResponseRetransmissions, ulTcpMaxDataRetransmissions 
+
+   
+   '/**
+   ' @area name="Offload Compliance Test Assertions"
+   ' @group name="TCP Retransmission Assertions"
+   ' @group name="TCPv4 Retransmission Timeout Assertions" 
+   ' @define name="Offload" Offload Compliance Test Assertions
+   ' @define name="TCPR" TCP Retransmission Assertions
+   ' @define name="TCPRTTv4" TCPv4 Retransmission Timeout Assertions 
+   ' @hierarchy Offload TCPR TCPRTTv4
+   ' @key Reference="WLP# - x.x.x.x; RFC-1122 Section 4.2.2.15"
+   ' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+   ' @key TestName="TCPv4 Retransmition Timeout Tests"
+   ' @key TestLog="TCP_RetransmitTimeout.log"
+
+
+   
+   '*/
+
+   '/**
+   
+   
+   '
+   ' Alter the registry settings
+   '
+    '/**
+   ' @config conf="Change the following registry values:TcpInitialRTT = 5000, TcpMaxConnectRetransmissions = 1,TcpMaxConnectResponseRetransmissions =1, TcpMaxDataRetransmissions =3"
+   '*/
+
+   ulTcpInitialRTT = 5000
+   ulTcpMaxConnectRetransmissions = 1
+   ulTcpMaxConnectResponseRetransmissions = 1
+   ulTcpMaxDataRetransmissions = 3
+   ulStatus = pControllerObj.SetRegistryValueByIp(HKEY_LOCAL_MACHINE, g_szRemoteIpAddress, "TcpInitialRTT", ulTcpInitialRTT)
+   if (ulStatus <> 0) then
+      Core.Log "SetRegistryValueByIp - " & ulStatus
+      exit sub
+   end if
+   ulStatus = pControllerObj.SetRegistryValue(HKEY_LOCAL_MACHINE, TCPPARAMPATH, "TcpMaxConnectRetransmissions", ulTcpMaxConnectRetransmissions)
+   if (ulStatus <> 0) then
+      Core.Log "SetRegistryValue - " & ulStatus
+      exit sub
+   end if
+   ulStatus = pControllerObj.SetRegistryValue(HKEY_LOCAL_MACHINE, TCPPARAMPATH, "TcpMaxConnectResponseRetransmissions", ulTcpMaxConnectResponseRetransmissions)
+   if (ulStatus <> 0) then
+      Core.Log "SetRegistryValue - " & ulStatus
+      exit sub      
+   end if
+   ulStatus = pControllerObj.SetRegistryValue(HKEY_LOCAL_MACHINE, TCPPARAMPATH, "TcpMaxDataRetransmissions", ulTcpMaxDataRetransmissions)
+   if (ulStatus <> 0) then
+      Core.Log "SetRegistryValue - " & ulStatus
+      exit sub      
+   end if
+   ulStatus = Reboot(TRUE)   
+   if (ulStatus <> 0) then
+      Core.Log "Reboot - " & ulStatus
+      exit sub
+   end if
+
+   '/**
+   'Call the function DoRexmitTest that performs the tests
+   '*/
+   
+   DoRexmitTests ulTcpInitialRTT, ulTcpMaxConnectRetransmissions, ulTcpMaxConnectResponseRetransmissions, ulTcpMaxDataRetransmissions
+
+   '
+   ' Restore the default settings
+   '
+   ulTcpInitialRTT = DefaultTcpInitialRTT
+   ulTcpMaxConnectRetransmissions = DefaultTcpMaxConnectRetransmissions
+   ulTcpMaxConnectResponseRetransmissions = DefaultTcpMaxConnectResponseRetransmissions
+   ulTcpMaxDataRetransmissions = DefaultTcpMaxDataRetransmissions
+   ulStatus = pControllerObj.DeleteRegistryValueByIp(HKEY_LOCAL_MACHINE, g_szRemoteIpAddress, "TcpInitialRTT")
+   if (ulStatus <> 0) then
+      Core.Log "DeleteRegistryValueByIp - " & ulStatus
+      exit sub
+   end if
+   ulStatus = pControllerObj.DeleteRegistryValue(HKEY_LOCAL_MACHINE, TCPPARAMPATH, "TcpMaxConnectRetransmissions")
+   if (ulStatus <> 0) then
+      Core.Log "DeleteRegistryValue - " & ulStatus
+      exit sub
+   end if
+   ulStatus = pControllerObj.DeleteRegistryValue(HKEY_LOCAL_MACHINE, TCPPARAMPATH, "TcpMaxConnectResponseRetransmissions")
+   if (ulStatus <> 0) then
+      Core.Log "DeleteRegistryValue - " & ulStatus
+      exit sub      
+   end if
+   ulStatus = pControllerObj.DeleteRegistryValue(HKEY_LOCAL_MACHINE, TCPPARAMPATH, "TcpMaxDataRetransmissions")
+   if (ulStatus <> 0) then
+      Core.Log "DeleteRegistryValue - " & ulStatus
+      exit sub      
+   end if
+   ulStatus = Reboot(TRUE)   
+   if (ulStatus <> 0) then
+      Core.Log "Reboot - " & ulStatus
+      exit sub
+   end if
+
+   DoRexmitTests ulTcpInitialRTT, ulTcpMaxConnectRetransmissions, ulTcpMaxConnectResponseRetransmissions, ulTcpMaxDataRetransmissions
+      
+End Sub
+
+Sub DoRexmitTests(ulRTT, ulSynRexmit, ulSynAckRexmit, ulDataRexmit)
+
+   '/**
+   ' @test name="Stack must rexmit correct number of SYNs in the correct interval when Connect is called" Autosrv issue a connect we grab the first SYN the stack must retransmit the correct number of the SYNs in the correct interval
+   ' 
+   ' Verify that stack has retransmit the correct number of the SYNs in the correct interval
+   ' script must reset the connection
+   '*/
+
+   IFace.StartListening
+   Core.StartTest "SYN rexmit count test using connect" 
+   SYNRexmit FALSE, ulSynRexmit, ulRTT
+   Core.EndTest
+   Core.Sleep(2500)
+   IFace.StopListening
+   
+    '/**
+   ' @test name="Stack must rexmit correct number of SYNs in the correct interval when ConnectEx is called" Autosrv issue a ConnectEx we grab the first SYN the stack must retransmit the correct number of the SYNs in the correct interval
+   ' 
+   ' Verify that stack has retransmit the correct number of the SYNs in the correct interval
+   ' script must reset the connection
+   '*/
+
+   IFace.StartListening
+   Core.StartTest "SYN rexmit count using ConnectEx" 
+   SYNRexmit TRUE, ulSynRexmit, ulRTT
+   Core.EndTest
+   Core.Sleep(2500)
+   IFace.StopListening
+   
+       
+   '/**
+   ' @test name="Stack must rexmit correct number of SYN-ACKs in the correct interval when ConnectEx is called" Autosrv issues an accept, script sends the SYN. Stack must retransmit the correct number of the SYN-ACKs in the correct interval
+   ' Verify that stack has retransmit the correct number of the SYN-ACKs in the correct interval
+   ' script must reset the connection
+   ' 
+   '*/
+   
+   IFace.StartListening
+   Core.StartTest "SYN-ACK rexmit count test using ConnectEx" 
+   SYN_ACKRexmit ulSynAckRexmit, ulRTT
+   Core.EndTest
+   Core.Sleep(2500)
+   IFace.StopListening
+   
+   '/**
+   ' @test name="Stack must rexmit correct number of the Data packets in the correct interval when send is called"  Esatablish a TCP connection, issue a send and start receiving the data packets
+   'stop acking the data. Check that the connection goes to a closed state by sending a data packet and receving a reset
+   ' Verify that stack has retransmit the correct number of the retransmitt Datapackets in the correct interval
+   ' 
+   '*/
+   IFace.StartListening
+   Core.StartTest "Data rexmit count test using send" 
+   DataRexmit SEND, ulDataRexmit, ulRTT
+   Core.EndTest
+   Core.Sleep(2500)
+   IFace.StopListening
+   
+   '/**
+   ' @test name="Stack must rexmit correct number of the Data packets in the correct interval when ConnectEx is called" Esatablish a TCP connection, issue a send and start receiving the data packets
+   'stop acking the data Check that the connection goes to a closed state by sending a data packet and receving a reset
+   ' Verify that stack has retransmit the correct number of the retransmitt Datapackets in the correct interval
+   ' 
+   '*/
+   
+   IFace.StartListening
+   Core.StartTest "Data rexmit count test using ConnectEx" 
+   DataRexmit CONNECTEX, ulDataRexmit, ulRTT
+   Core.EndTest
+   Core.Sleep(2500)
+   IFace.StopListening
+   
+   '/**
+   ' @test name="Stack must rexmit correct number of the Data packets in the correct interval when SendAndDisconnect is called" Esatablish a TCP connection, issue a send and start receiving the data packets
+   'stop acking the data 
+   'Check that the connection goes to a closed state by sending a data packet and receving a reset
+   ' Verify that stack has retransmit the correct number of the retransmitted Datapackets in the correct interval
+   ' 
+   '*/
+   
+   IFace.StartListening
+   Core.StartTest "Data rexmit count test using SendAndDisconnect" 
+   DataRexmit SENDANDDISCONNECT, ulDataRexmit, ulRTT
+   Core.EndTest
+   Core.Sleep(2500)
+   IFace.StopListening
+   
+   
+   '/**
+   ' @test name="Stack must rexmit correct number of the FINs in the correct interval when SendAndDisconnect is called" Esatablish a TCP connection, start receiving the FINs
+   'Check that the connection goes to a closed state by sending a data packet and receving a reset
+   ' Verify that stack has retransmit the correct number of the FINs in the correct interval
+   ' 
+   '*/
+   
+   
+   IFace.StartListening
+   Core.StartTest "FIN rexmit count test using SendAndDisconnect" 
+   FINRexmit FALSE, ulDataRexmit, ulRTT
+   Core.EndTest
+   Core.Sleep(2500)
+   IFace.StopListening
+   
+   '/**
+   ' @test name="Stack must rexmit correct number of the FINs in the correct interval after Close is called" Esatablish a TCP connection uisng connectEX, issue a close and start receiving the FINs
+   'Check that the connection goes to a closed state by sending a data packet and receving a reset
+   ' Verify that stack has retransmit the correct number of the FINs in the correct interval
+   ' 
+   '*/
+   
+   
+   IFace.StartListening
+   Core.StartTest "FIN rexmit count test using close" 
+   FINRexmit TRUE, ulDataRexmit, ulRTT
+   Core.EndTest
+   Core.Sleep(2500)
+   IFace.StopListening
+
+End Sub
+
+'Function to test number of the SYN retransmissions 
+
+Sub SYNRexmit(fConnectEx, ulSynRexmitCount, ulInterval)
+   Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim pTCPPacket, ulBytesRcvd, ulNumSyns, ulTimeout, ulStartTime, ulElapsedTime
+   
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 5000
+   usDestPort = 5001
+   
+ 
+   Core.StartVariation
+   
+   '
+   ' Ask Autosrv to issue a connect/connectex and grab the first SYN
+   '
+   Set pTCPPacket = GrabSyn(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, fConnectEx, 100)
+   if (pTCPPacket is Nothing) then
+      Core.BlockVariation "SYNRexmit: Failed to receive a SYN"
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub   
+   end if 
+   
+   '
+   ' Start receiving the SYNs
+   '
+   ulTimeout = ulInterval
+   ulNumSyns = 1
+   do 
+      ulStartTime = Timer
+      set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_SYN, Clng(1.3*ulTimeout))
+      if not (pTCPPacket is Nothing) then
+         ulNumSyns = ulNumSyns + 1
+         ulElapsedTime = (Timer - ulStartTime)*1000
+         if (ulElapsedTime < 0.7*ulTimeout) then
+            Core.FailSev1Variation "SYNRexmit: Incorrect timeout - " & ulElapsedTime & " <> " & ulTimeout
+            ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+            exit sub   
+         end if
+      end if 
+      ulTimeout = ulTimeout * 2
+   loop while not(pTCPPacket is Nothing)
+   
+   '
+   ' Verify the SYN count
+   '
+   Core.StartVariation 
+   if (ulNumSyns <> (ulSynRexmitCount+1)) then
+      Core.FailSev1Variation "SYNRexmit: Incorrect SYN count - " & ulNumSyns
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub   
+   end if
+   
+   '
+   ' Reset the connection
+   '
+   ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+End Sub
+
+'Function to test number of the SYN-ACK retransmissions 
+
+Sub SYN_ACKRexmit(ulSYN_ACKRexmitCount, ulInterval)
+   Dim ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim ulBytesRcvd, ulNumSynAcks, ulTimeout, ulStartTime, ulElapsedTime
+   Dim ulStatus, pTCPPacket, pSYNPacket
+   
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 5000
+   usDestPort = 5001
+    
+   Core.StartVariation
+
+   '
+   ' Create the SYN packet
+   '   
+   Set pSYNPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_SYN, 0)
+   
+   '
+   ' Ask Autosrv to issue an accept, send a SYN and grab the SYN-ACK
+   '
+   Set pTCPPacket = GrabSynAck(pSYNPacket, usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (pTCPPacket is Nothing) then
+      Core.BlockVariation "SYN_ACKRexmit: Failed to receive a SYN-ACK"
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub   
+   end if 
+
+   
+   '
+   ' Start receiving the SYN-ACKs
+   '
+   ulTimeout = ulInterval
+   ulNumSynAcks = 1
+   do 
+      ulStartTime = Timer
+      set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, (TCP_SYN or TCP_ACK), Clng(1.3*ulTimeout))
+      if not (pTCPPacket is Nothing) then
+         ulNumSynAcks = ulNumSynAcks + 1
+         ulElapsedTime = (Timer - ulStartTime)*1000
+         if (ulElapsedTime < (0.7*ulTimeout)) then
+            if (IsSynAttackProtectOn and (Abs(ulElapsedTime - DefaultTcpInitialRTT) < 0.3*DefaultTcpInitialRTT)) then
+               Core.WarnVariation "SYN_ACKRexmit: Incorrect timeout - " & ulElapsedTime & " <> " & ulTimeout
+               Core.Log "Known problem through Longhorn: We don't use TcpInitialRTT"
+               Core.Log "setting until the connection enters the ESTABLISHED state."
+               ulTimeout = DefaultTcpInitialRTT
+            else
+               Core.FailSev1Variation "SYN_ACKRexmit: Incorrect timeout - " & ulElapsedTime & " <> " & ulTimeout
+               ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+               exit sub   
+            end if
+         end if
+      end if 
+      ulTimeout = ulTimeout * 2
+   loop while not(pTCPPacket is Nothing)
+   
+   '
+   ' Verify the SYN-ACK count
+   '
+   Core.StartVariation
+   if (ulNumSynAcks <> (ulSYN_ACKRexmitCount+1)) then
+      Core.FailSev1Variation "SYN_ACKRexmit: Incorrect SYN-ACK count - " & ulNumSynAcks
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub   
+   end if
+   
+   '
+   ' Reset the connection
+   '
+   ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+End Sub 
+
+
+'Function to test number of the DataPacket retransmissions 
+
+Sub DataRexmit(iType, ulDataRexmitCount, ulInterval)
+   Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim pTCPPacket, ulBytesRcvd, ulNumXmits, ulTimeout, ulStartTime, ulElapsedTime
+   
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 5000
+   usDestPort = 5001
+   
+   Core.StartVariation
+   
+   '
+   ' Esatablish a TCP connection 
+   '
+   ulStatus = EstablishConnection(iType, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "DataRexmit: EstablishConnection - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+   
+   '
+   ' Issue a send if not connectex
+   '
+   if (iType = SEND) then
+      ulStatus = pControllerObj.Send(ulSessionId, 1, 0, 100, ulTID)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "DataRexmit: Send - " & ulStatus
+         ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+         exit sub   
+      end if
+   elseif (iType = SENDANDDISCONNECT) then
+      ulStatus = pControllerObj.SendAndDisconnect(ulSessionId, usMSS, ulTID)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "DataRexmit: SendAndDisconnect - " & ulStatus
+         ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+         exit sub   
+      end if
+   end if
+   
+   '
+   ' Start receiving the data packets
+   '
+   ulTimeout = ulInterval
+   ulNumXmits = 0
+   do 
+      ulStartTime = Timer
+      set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, Clng(1.3*ulTimeout))
+      if not (pTCPPacket is Nothing) then
+         ulNumXmits = ulNumXmits + 1
+         ulElapsedTime = (Timer - ulStartTime)*1000
+         if ((ulNumXmits > 1) AND (ulElapsedTime < 0.7*ulTimeout)) then
+            Core.FailSev1Variation "DataRexmit: Incorrect timeout - " & ulElapsedTime & " <> " & ulTimeout
+            ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+            exit sub   
+         end if
+      end if 
+      if (ulNumXmits > 1) then
+         ulTimeout = ulTimeout * 2
+      end if
+   loop while not(pTCPPacket is Nothing)
+   
+   '
+   ' Verify the rexmit count
+   '
+   Core.StartVariation 
+   if (ulNumXmits <> (ulDataRexmitCount+1)) then
+      Core.FailSev1Variation "DataRexmit: Incorrect rexmit count - " & ulNumXmits
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub   
+   end if
+
+   '
+   ' Check that the connection goes to a closed state by sending a data packet
+   ' and receving a reset
+   '   
+   Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK or TCP_PUSH, 100)
+   IFace.Send(pTCPPacket)
+   
+   '
+   ' Check we receive a RST response immediately
+   '
+   set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_RST, 300)
+   if (pTCPPacket is Nothing) then
+      Core.FailSev1Variation "DataRexmit: Didn't receive a RST to the data packet"
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if 
+
+   '
+   ' Reset the connection
+   '
+   ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+End Sub
+
+'Function to test number of the FIN retransmissions 
+
+Sub FINRexmit(fClose, ulFINRexmitCount, ulInterval)
+   Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim pTCPPacket, ulBytesRcvd, ulNumXmits, ulTimeout, ulStartTime, ulElapsedTime
+   
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 5000
+   usDestPort = 5001
+    
+   Core.StartVariation
+   
+   '
+   ' Esatablish a TCP connection 
+   '
+   ulStatus = EstablishConnection(SEND, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "FINRexmit: EstablishConnection - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+   
+   '
+   ' Issue a send if not connectex
+   '
+   ulTimeout = ulInterval
+   if (fClose) then
+      ulStatus = pControllerObj.Close(ulSessionId, ulTID)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "FINRexmit: Close - " & ulStatus
+         ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+         exit sub   
+      end if
+   else
+      ulStatus = pControllerObj.SendAndDisconnect(ulSessionId, 0, ulTID)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "FINRexmit: SendAndDisconnect - " & ulStatus
+         ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+         exit sub   
+      end if
+      
+      '
+      ' Receive 2 data rexmits
+      '
+      'Dim ulCounter
+      'for ulCounter = 1 to 2
+      '   set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 5000)
+      '   if (pTCPPacket is Nothing) then            
+      '      Core.BlockVariation "FINRexmit: Rcvd < 2 rexmits"
+      '      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      '      exit sub   
+      '   end if 
+      'Next
+      
+      '
+      ' Send the ACK
+      '
+      'Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+      'IFace.Send(pTCPPacket)
+      
+      'ulTimeout = ulTimeout * 2 
+   end if
+   
+   '
+   ' Start receiving the FINs
+   '
+   ulNumXmits = 0
+   do 
+      ulStartTime = Timer
+      set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_FIN, Clng(1.3*ulTimeout))
+      if not (pTCPPacket is Nothing) then
+         ulNumXmits = ulNumXmits + 1
+         ulElapsedTime = (Timer - ulStartTime)*1000
+         if ((ulNumXmits > 1) AND (ulElapsedTime < 0.7*ulTimeout)) then
+            Core.FailSev1Variation "FINRexmit: Incorrect timeout - " & ulElapsedTime & " <> " & ulTimeout
+            ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+            exit sub   
+         end if
+      end if 
+      if (ulNumXmits > 1) then
+         ulTimeout = ulTimeout * 2
+      end if
+   loop while not(pTCPPacket is Nothing)
+   
+   '
+   ' Verify the rexmit count
+   '
+   Core.StartVariation 
+   if (ulNumXmits <> (ulFINRexmitCount+1)) then
+      Core.FailSev1Variation "FINRexmit: Incorrect rexmit count - " & ulNumXmits
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub   
+   end if
+
+   If not IsConnectionOffloaded(usSrcPort, usDestPort, ulSessionId) and g_fTestOffload And g_fTOENic Then
+      Sev1 "FINRexmit : Failed to offload the connection"
+      Exit sub
+   End If
+   '
+   ' Check that the connection goes to a closed state by sending a data packet
+   ' and receving a reset
+   ' 
+   Core.StartVariation  
+   Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK or TCP_PUSH, 100)
+   IFace.Send(pTCPPacket)
+   
+   '
+   ' Check we receive a RST response immediately
+   '
+   set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_RST, 300)
+   if (pTCPPacket is Nothing) then
+      Core.FailSev1Variation "FINRexmit: Didn't receive a RST to the data packet"
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if 
+
+   '
+   ' Reset the connection
+   '
+   g_fCheckOffloadConnection = false
+   ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+   g_fCheckOffloadConnection = true
+End Sub
+ 
+
+'
+' Function to establish a connection
+'
+Function EstablishConnection(iType, usSrcPort, usDestPort, ByRef ulSessionId, ByRef ulSeqNumber, ByRef ulAckNumber)
+   Dim ulStatus, ulTID, pTCPPacket, ulBytesRcvd, fConnectEx
+   
+   '
+   ' Ask Autosrv to issue a Connect/ConnectEx and grab the SYN
+   '
+   fConnectEx = FALSE
+   if (iType = CONNECTEX) then
+      fConnectEx = TRUE
+   end if
+   Set pTCPPacket = GrabSyn(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, fConnectEx, 100)
+   if (pTCPPacket is Nothing) then
+      Core.log "EstablishConnection: Failed to receive a SYN"
+      EstablishConnection = 1
+      exit Function
+   end if
+   
+   '
+   ' Send the SYN-ACK
+   '
+   Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, (TCP_SYN or TCP_ACK), 0)
+   pTCPPacket.TCPHeader.TCPOption(0).AddMSS(usMSS)
+   IFace.Send(pTCPPacket)
+   
+   '
+   ' If not ConnectEx, grab the ACK
+   '
+   if (iType <> CONNECTEX) then
+      Set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 1000)
+      if (pTCPPacket is Nothing) then
+         Core.log "EstablishConnection: Didn't receive an ACK"
+         EstablishConnection = 1
+         exit Function
+      end if
+   end if
+
+   '
+   ' Check if connection is offloaded
+   '
+   If Not IsConnectionOffloaded(usSrcPort, usDestPort, ulSessionId) and g_fTestOffload And g_fTOENic Then
+      Core.Log "EstablishConnection : Failed to offload the connection"
+      EstablishConnection = 3
+   End If
+      
+   EstablishConnection = 0
+End Function
+                                       
+      </script>
+   </job>
+</package>

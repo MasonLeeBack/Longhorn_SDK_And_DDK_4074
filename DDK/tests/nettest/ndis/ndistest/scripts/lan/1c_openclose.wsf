@@ -1,0 +1,280 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, 802_5, FDDI, IRDA
+</MEDIA>
+<CARDMACH>
+1C,1M
+</CARDMACH>
+<RUNORDER>
+1250
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[This script verifies the ability to open and close an adapter multiple
+times. Miniport drivers are shielded from these opens by ndis.sys, so
+this script tests ndis.sys, not the driver.
+First, this opens and close one NdisOpen 25 times.
+Then, it opens and closes 8 NdisOpens concurently 10 times.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="1c_OpenClose" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      
+      <!-- Begin Wireless Specific Includes -->
+      <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	   <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	   <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	   <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	   <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+      <!-- End Wireless Specific Includes -->
+      
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/> 
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CIrdaCard.vbs"/>      
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CIrdaOpen.vbs"/>      
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script id="1c_OpenClose" language="VBScript">
+'==========================================================================
+' Script Name:    1c_OpenClose
+'
+' TODO:  Change the number of MaxOpens from 8 to 128 once the ndis open
+'        has been modified to speed up
+'==========================================================================
+Option Explicit 
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0)) 
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard
+   Private oOpenInstance()
+   Private m_lMaxOpens
+   Private m_lTestAdapterIndex
+   
+   Private Sub Class_Initialize
+      ' Supporting only NDIS version 5 and above
+      ' For now, lets keep the MaxOpens at 8. Actually, we should be 
+      ' trying till 128   
+      m_lMaxOpens = 8
+      ReDim oOpenInstance (m_lMaxOpens)
+      
+   End Sub
+   
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+   End Sub
+   
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+      
+      Set pAdapterList = oNDInfo.AdapterList
+      
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = CreateCardObject(pAdapterList (m_lTestAdapterIndex))
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+      
+      If (Not oTestCard.vbCreateAdapter(pAdapterList(m_lTestAdapterIndex))) Then
+         Exit Function
+      End If
+      
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+         
+         Dim oOpen : Set oOpen = oTestCard.vbOpenAdapter()
+         
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")           
+         If(vbAssociateWep(oOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If	
+         
+         Set oOpen = Nothing
+                                    
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+      
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+   
+   Public Function RunTest (lTestAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+      
+      ExecuteTestCore
+   End Function
+   
+   Private Function ExecuteTestCore
+      ' oLog.Variation("Testing if NDIS properly handles opening an instance on an nonexistant driver")
+      ' The createadapter call takes an object that has some other
+      ' information besides the GUID. Hence, to get a bogus adapter,
+      ' we need to create the adapter object. This is used to test if
+      ' ndis properly handles opening an instance of a nonexistent driver
+      '
+      '   OrigGUID = pAdapterList(0).AdapterGUID
+      '   pAdapterList(0).AdapterGUID = "{ec7f3620-f6a0-11d2-97b3-00c04f7f8a77}"
+      
+      '   Set oBadCard = oNDTCore.CreateAdapter(pAdapterList(0))
+      
+      '   If (oBadCard is Nothing) Then
+      '      oNDTLog.Write("Unable to create bad adapter" & vblf)
+      '   Else
+      '      Set oWorkOpen = oBadCard.CreateOpen()
+      '      If(oWorkOpen is Nothing) Then
+      '         oNDTLog.Write("Unable to create object on bad adapter!" & vblf)
+      '      Else
+      '         bResult = oWorkOpen.NdisOpen(nMedium, bForceNdis30)
+      '         If(bResult) Then
+      '            oNDTLog.Failed(" NDIS improperly opened an instance on a nonexistant driver. This is not a driver failure.",88888 )
+      '            bResult = oWorkOpen.NdisClose()
+      '            If(Not bResult) Then
+      '               oNDTLog.Write("Could not close open instance" & vblf)
+      '            End If
+      '         Else
+      '            oNDTLog.Write("NDIS failed to open an instance on a nonexistant driver. GOOD" & vblf)
+      '         End If      
+      '         Set oWorkOpen = Nothing
+      '      End If
+      '      Set oBadCard = Nothing
+      '   End If
+      
+      '
+      ' cleanup the bogus adapter stuff
+      '
+      '   pAdapterList(0).AdapterGUID = OrigGUID      
+      
+      ' -------------------------------------------------------
+      ' variation:  repeatedly open and close the card, 25 times.
+      '--------------------------------------------------------
+      Dim oWorkOpen
+      Dim nCount, iIndex, bResult
+      Dim i
+      
+      oLog.Variation("Repeatedly open and close the card")
+      nCount = CLng(0)
+      
+      For nCount = 0 To 24
+         oLog.Variation("Open/Close " & nCount)
+         Set oWorkOpen = oTestCard.vbOpenAdapter()
+         If(oWorkOpen is Nothing) Then
+            Exit For
+         End If
+         
+         bResult = oWorkOpen.vbClearEvents()
+         If(Not bResult) Then
+            Exit For
+         End If
+         
+         bResult = oWorkOpen.vbNdisClose()
+         If(Not bResult) Then
+            Call oLog.Write("Could not close open instance")
+         End If
+         
+         Set oWorkOpen = Nothing      
+      Next
+      
+      '--------------------------------------------------------
+      ' variation:  Open the card n times representing n
+      '             different protocols opening the card at once.
+      '--------------------------------------------------------
+      
+      ' Supporting only NDIS version 5 and above
+      ' For now, lets keep the MaxOpens at 8. Actually, we should be 
+      ' trying till 128
+      
+      oLog.Variation("Open card multiple times, then close each open instance")
+      
+      For iIndex = 1 To 10
+         oLog.Variation("Opening multiple adapter instances")
+         nCount = CLng(0)
+         
+         While(nCount < m_lMaxOpens)
+            Set oOpenInstance(nCount) = oTestCard.vbOpenAdapter()
+            If(oOpenInstance(nCount) is Nothing) Then
+               ' This Exit would break out of the While-WEnd, and also the For
+               Exit For
+            End If
+            
+            nCount = nCount + 1         
+         WEnd
+         
+         oLog.Variation("Closing all adapter instances")
+         i = CLng(0)
+         While(i < nCount)
+            Call oOpenInstance(i).vbClearEvents()
+            
+            bResult = oOpenInstance(i).vbNdisClose()
+            If(Not bResult) Then
+               oLog.Write("Could not close open instance" )
+            End If
+            
+            Set oOpenInstance(i) = Nothing      
+            i = i + 1
+         WEnd
+      Next
+      
+      ' branch here if need to do cleanup after a failure
+      oLog.Variation("Cleaning Up")
+      If (iIndex<10) Then
+         i = CLng(0)
+         Do While(i < nCount)
+            Call oOpenInstance(i).vbClearEvents()
+            
+            bResult = oOpenInstance(i).vbNdisClose()
+            If(Not bResult) Then
+               Call oLog.Write("Could not close open instance")
+            End If
+            
+            Set oOpenInstance(i) = Nothing      
+            i = i + 1
+         Loop
+      End If
+      
+   End Function
+   
+End Class
+
+</script>
+</job>
+</package>
+
+
+<!--- CRC = 0xda66401b --->

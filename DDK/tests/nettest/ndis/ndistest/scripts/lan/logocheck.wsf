@@ -1,0 +1,141 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3,802_5,FDDI
+</MEDIA>
+<WHQL>
+802_3,802_5,FDDI
+</WHQL>
+<CARDMACH>
+1C,1M
+</CARDMACH>
+<RUNORDER>
+1110
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[This script checks certain requirements for Logo of a device. The 
+tests done by the script are:
+* Check that the driver supports promiscuos mode (unless prohibited for this
+particular media type)
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="LogoCheck" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <reference object="NDTCore.base.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oKrnlCallsVerifier" progid="NDTSupp.KernelCallsVerifier.1" events="true"/>                
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/>                
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CIrdaCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CIrdaOpen.vbs"/>      
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\DevChars.vbs"/>
+      <script language="VBScript" src="..\inc\Offload.vbs"/>        
+      <script id="LogoCheck" language="VBScript">
+'==========================================================================
+' Script Name:    LogoCheck
+'==========================================================================
+Option Explicit
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0)) 
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Dim m_lTestAdapterIndex
+   Dim oTestCard, oTestOpen
+   Dim TestCardGUID
+
+   Private Sub Class_Initialize
+   End Sub
+   
+   Private Sub Class_Terminate
+      Set oTestOpen = Nothing
+      Set oTestCard = Nothing
+   End Sub
+
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList, bResult
+      Dim nResult
+
+      SetupTest = FALSE
+      Set pAdapterList = oNDInfo.AdapterList
+
+      TestCardGUID = pAdapterList(m_lTestAdapterIndex).GUID
+      
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = CreateCardObject(pAdapterList (m_lTestAdapterIndex))
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oTestOpen = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpen is Nothing) Then
+         Exit Function
+      End If
+      
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+   
+   
+   Public Function RunTest(lTestAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+
+      CheckCardProperties
+      oTestOpen.vbNdisClose
+   End Function
+
+   Private Function CheckCardProperties
+      ' This version of ndistest works with NDIS 5, so we should have 
+      ' promiscuous mode support
+      Dim bResult
+      bResult = oTestOpen.vbSetPacketFilter(PROMISCUOUS)
+      If (Not bResult) Then
+         Dim lPhysicalMedium
+         lPhysicalMedium = oTestCard.vbGetPhysicalMedium
+         ' We are supporting only NDIS version 5
+         If (lPhysicalMedium <> NDISPHYSICALMEDIUMWIRELESSLAN And lPhysicalMedium <> NDISPHYSICALMEDIUMCABLEMODEM) Then
+            call oLog.Failed ("Promiscuous mode support is required for NDIS 5 drivers." , 22860)
+         End If
+      End If
+
+   End Function
+End Class
+</script>
+</job>
+</package>
+
+
+<!--- CRC = 0x640cb65d --->

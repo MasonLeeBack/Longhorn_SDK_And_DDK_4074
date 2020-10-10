@@ -1,0 +1,259 @@
+'/**
+'
+' A script to create tons of connections in half close (FIN-WAIT-2/TIME-WAIT)
+' state. The connections are created against the HTTP port
+'
+' Notes:
+' - Ensure that HTTP server is running on the remote machine
+' - Modify szHostName to that of the remote machine
+' - Monitor the CPU usage during the attack
+' - Monitor the memory usage after the attack
+' - Ensure that the half close connections eventually timeout
+'
+' @module TCPHalfClose.wsf
+' @author Sandeep Prabhu
+' @alias sandeep@microsoft.com
+' @date 07/22/2002
+'
+'*/
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\common\Common.Lib"/>
+      <script language="VBScript" src="..\common\TCPHelper.Lib"/>
+      <script id="TCPHalfClose" language="VBScript">
+
+
+option explicit
+
+
+dim Core, Sparta, Autosrv, pController, MediaType, IFace, ExceptionStatus
+
+
+StartScript "TCPHalfClose", g_szLogDirectory, "Connections in half-close state"
+
+sub Main
+   Core.SetAssertionTracking "10100"
+   '/**
+   ' @area name="Offload Compliance Test Assertions"
+   ' @group name="TCP Vulnerabilities and Attacks Assertions"
+   ' @group name="Half-closed Connection Assertions" 
+   ' @define name="Offload" Offload Compliance Test Assertions
+   ' @define name="Attacks" TCP Vulnerabilities and Attacks Assertions
+   ' @define name="HalfClose" Half-closed Connection Assertions
+   ' @hierarchy Offload Attacks HalfClose
+   ' @key Reference="WLP# - x.x.x.x; RFC-793 Section 3.5, RFC-1122 Section 4.2.2.13"
+   ' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+   ' @key TestName="Maintaining Many Connections in the Half-closed State Tests"
+   ' @key TestParam="-v6: uses IPv6 transport [default is IPv4]; -d duration: runs tests for duration seconds [default is 180 seconds]; -n hostname: identifies the web site [default is NetBios name]"
+   ' @key TestLog="TCPHalfClose.log"
+   '*/
+   dim ValueArray, szHostName
+   ValueArray = Array(false, 180, g_szRemoteNBName, false, false, false, false)
+   ParseArguments Array("-v6", "-d", "-n", "-offload", "-nocap", "-popup", "-Autosrv"), Array(vbBoolean, vbLong, vbString, vbBoolean, vbBoolean, vbBoolean, vbBoolean), ValueArray
+
+   '/**
+   ' @config conf="The name of the computer with the stack to be tested may be given with the -n switch as a command-line parameter. An HTTP server must be running on port 80 on that computer."
+   ' @test name="The stack must be responsive while maintaining many connections in the FIN-WAIT-2 state."
+   '    Over the specified duration of the test (default 3 minutes),
+   '    connections are repeatedly established on port 80. A simple HTTP
+   '    GET request is issued. After the request is completed, the stack
+   '    sends a FIN packet. The stack then receives an ACK packet, which places the
+   '    connection in the FIN-WAIT-2 state. The connection 
+   '    eventually finishes closing. The stack must remain responsive,
+   '    while maintaining thousands of connections in the FIN-WAIT-2
+   '    state.
+   '*/
+   if (ShouldExecuteTest("FIN_WAIT_2")) then
+      StartTest "Create lots of connections in FIN_WAIT_2 state"
+      TCPHalfCloseAttack ValueArray(0), ValueArray(1), ValueArray(2), false, ValueArray(6)
+      EndTest
+   end if
+
+   '/**
+   ' @test name="The stack must be responsive while maintaining many connections in the TIME-WAIT state."
+   '    Over the specified duration of the test (default 3 minutes),
+   '    connections are repeatedly established on port 80. A simple
+   '    HTTP GET request is issued. After the request is completed, the
+   '    stack sends a FIN packet. The stack then receives a FIN-ACK packet, which places
+   '    the connection in the TIME-WAIT state. The connection 
+   '    eventually finishes closing. The stack must remain responsive,
+   '    while maintaining thousands of connections in the TIME-WAIT
+   '    state.
+   '*/
+   if (ShouldExecuteTest("TIME_WAIT")) then
+      StartTest "Create lots of connections in TIME_WAIT state"
+      TCPHalfCloseAttack ValueArray(0), ValueArray(1), ValueArray(2), true, ValueArray(6)
+      EndTest
+   end if
+
+end sub
+
+'
+'/**
+' Routine to create lots of connections in FIN_WAIT2/TIME_WAIT state
+'
+' @params
+' !fVersion6      - true/false for TCPv6/TCPv4
+' !ulDuration     - Duration of run in secs
+' !szHostName     - Name to be included in HTTP Get request
+' !fTimeWait      - true/false to get connection in TIME_WAIT/FIN_WAIT2 state
+'
+' @return nothing
+'*/
+'
+sub TCPHalfCloseAttack(fVersion6, ulDuration, szHostName, fTimeWait, fAutosrv)
+   dim ulStatus, pPacket, pIFace, pAutoDisc, StartTime, szGetRequest
+   dim usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber
+   dim ulBytesRcvd, ulSessionId, ulTID, fClosed, fIIS
+
+   fIIS = not fAutosrv
+   randomize
+   usSrcPort = Clng(60535*Rnd) + 5000
+   if fIIS then
+       usDestPort = 80
+   else
+       usDestPort = Clng(60535*Rnd) + 5000
+   end if
+   ulSeqNumber = Clng(60535*Rnd)
+   ulAckNumber = Clng(60535*Rnd)
+   szGetRequest = "GET / HTTP/1.1" & VbCr & VbLf & "Host: & szHostName & " & VbCr & VbLf & "Connection: close" & VbCr & VbLf & VbCr & VbLf
+
+   StartVariation
+
+   '
+   ' Start off auto discovery and create the interfaces
+   '
+   if (fVersion6) then
+      szSrcAddress = g_szLocalSpoofIp6Address
+      szDestAddress = g_szRemoteIp6Address
+      set pAutoDisc = sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, szSrcAddress, FALSE)
+   else
+      szSrcAddress = g_szLocalSpoofIp
+      szDestAddress = g_szRemoteIpAddress
+      set pAutoDisc = sparta.AutoArp(g_szLocalMacAddress, g_szLocalMacAddress, szSrcAddress)
+   end if
+   set pIFace = CreateInterface(fVersion6, TRUE, g_szRemoteMacAddress, g_szLocalMacAddress, szDestAddress, szSrcAddress)
+   pIFace.StartListening
+
+   StartTime = Timer
+   do
+
+      usSrcPort = usSrcPort + 1
+      if fAutosrv then
+          usDestPort = usDestPort + 1
+      end if
+      if (usSrcPort = 65535) then
+         usSrcPort = 10001
+         if fAutosrv then
+            usDestPort = 10001
+         end if
+      end if
+
+      if fAutosrv then
+          ulStatus = PassiveConnect(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+          if (ulStatus <> 0) then
+             Sev1 "TCPHalfCloseAttack: Failed to connect to " & usDestPort & " using src port - " & usSrcPort
+             exit do
+          end if
+      else
+          '
+          ' Send a SYN from the appropriate src port
+          '
+          set pPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_SYN, 0)
+          pPacket.TcpHeader.TcpOption(0).AddMSS(EthernetMss(fVersion6))
+          pIFace.Send(pPacket)
+
+          '
+          ' Grab a SYN-ACK
+          '
+          set pPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_SYN or TCP_ACK, 300, pIFace)
+          if (pPacket is nothing) then
+             Sev1 "TCPHalfCloseAttack: Failed to connect to " & usDestPort & " using src port - " & usSrcPort
+             exit do
+          end if
+
+          '
+          ' Send an ACK
+          '
+          set pPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+          pIFace.Send(pPacket)
+      end if
+
+      '
+      ' Check if connection is offloaded
+      '
+      If Not IsConnectionOffloaded(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSessionId) and g_fTestOffload And g_fTOENic Then
+          Sev1 "TCPHalfCloseAttack : Failed to offload the connection"
+          ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+          exit do
+      End If
+
+      '
+      ' Issue a get request
+      '
+      set pPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_ACK or TCP_PUSH, 0)
+      pPacket.UserData Len(szGetRequest), szGetRequest
+      pIFace.Send(pPacket)
+
+      '
+      ' Receive the data packets and ack them till a FIN is received
+      '
+      fClosed = false
+      do
+         set pPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 300, pIFace)
+         if (pPacket is nothing) then
+            Sev1 "TCPHalfCloseAttack: Unable to complete data exchange"
+            ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+            exit do
+         end if
+
+         if ((pPacket.TcpHeader.Flag and TCP_FIN) = TCP_FIN) then
+            exit do
+         end if
+
+         if fIIS then
+             set pPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+             pIFace.Send(pPacket)
+         else
+             if fClosed then
+                Sev1 "TCPHalfCloseAttack: Unable to close the connection"
+                ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+                exit do
+             else
+                 ulStatus = pController.Shutdown(ulSessionId, ulTID)
+                 fClosed = true
+             end if
+             
+         end if
+      loop while (true)
+
+      '
+      ' Send an ACK/FIN-ACK to get the connection in FIN-WAIT2/TIME-WAIT state
+      '
+      if (fTimeWait) then
+         set pPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_FIN or TCP_ACK, 0)
+      else
+         set pPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+      end if
+      pIFace.Send(pPacket)
+      if not fIIS then
+          if not IsConnectionOffloaded(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSessionId) and g_fTestOffload And g_fTOENic Then
+              Sev1 "TCPHalfCloseAttack: Failed to keep the connection offlaoded"
+              exit do
+          end If
+      end if
+   loop while ((Timer - StartTime) <= ulDuration)
+
+   Shout "Ensure that the half close connections eventually timeout"
+
+end sub
+
+      </script>
+   </job>
+</package>
+

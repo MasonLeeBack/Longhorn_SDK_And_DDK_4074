@@ -1,0 +1,24 @@
+'
+' THIS is a HiGhLy CaSe SeNsItIvE file.
+'
+' Database tag format:
+' [DATABASE INTERFACE[!|=]={WMI}|{NDISREQUEST}|{DEVIOCTL}|{WMIEVENTS}|{ALL}; MEDIA[!|=]=..; OIDSUPPORT[!|=]={REQUIRED}|{OPTIONAL}]
+' Note that items withing a tag cannot contain spaces and are ofcourse case sensitive
+'
+' Database entry format:
+' OIDHexVal, OIDString, DataLength, DataType, Required/Optional (OID), Set/Query (OID), Fault Severity (OID), ClassName (GUID), PropertyName (GUID), Set/Query (GUID), Fault Severity (GUID), WMIFlags (GUID)
+' Items must be separated by a "," and 0 or 1 space.
+'
+' ALL ALL is not a good idea
+
+'
+' All the required general oids
+'
+[DATABASE INTERFACE==NDISREQUEST,DEVIOCTL; MEDIA==ALL; OIDSUPPORT==REQUIRED]
+&HFC010201, "OID_TCP_TASK_OFFLOAD", 500, ARRAYDATA, QUERYSET, LOG_AS_FAIL, "INVALID", "INVALID", "{FFFFFFFF-FFFF-FFFF-FF-FF-FF-FF-FF-FF-FF-FF}", INVALID, INVALID, &H00000000
+&HFC010207, "OID_TCP_OFFLOAD_STATS", 500, STATDATA, QUERYSET, LOG_AS_FAIL, "INVALID", "INVALID", "{FFFFFFFF-FFFF-FFFF-FF-FF-FF-FF-FF-FF-FF-FF}", INVALID, INVALID, &H00000000
+&HFC010208, "OID_IP4_OFFLOAD_STATS", 500, STATDATA, QUERYSET, LOG_AS_FAIL, "INVALID", "INVALID", "{FFFFFFFF-FFFF-FFFF-FF-FF-FF-FF-FF-FF-FF-FF}", INVALID, INVALID, &H00000000
+&HFC010209, "OID_IP6_OFFLOAD_STATS", 500, STATDATA, QUERYSET, LOG_AS_FAIL, "INVALID", "INVALID", "{FFFFFFFF-FFFF-FFFF-FF-FF-FF-FF-FF-FF-FF-FF}", INVALID, INVALID, &H00000000
+
+
+'<!-- CRC = 0x590aecee --->

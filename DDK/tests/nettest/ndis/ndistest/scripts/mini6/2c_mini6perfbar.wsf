@@ -1,0 +1,1471 @@
+<package>
+<SCRIPTDEF>
+<RUNORDER>
+3060
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[
+This is a Ndis 6.0 based miniport drivers performance test. It verifies that
+the miniport meets a certain performance bar.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="2c_Mini6PerfBar" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore6" progid="NDTCore6.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oLargeMath" progid="NDTSupp.LargeMath.1" events="true"/>
+      <object id="oCoreFactory" progid="NDTCore6.Factory.1" events="true"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\inc\Constants6.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard6.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen6.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanEndPoint6.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\inc\ConstLAN.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script language="VBScript" src="..\inc\dbread.vbs"/>
+      <script language="VBScript" src="..\wmi\wmierror.vbs"/>
+      <script language="VBScript" src="..\wmi\CWin32_Processor.vbs"/>
+      <script id="2c_Mini6PerfBar" language="VBScript">
+'==========================================================================
+' Script Name:    2c_Mini6PerfBar
+'==========================================================================
+Option Explicit
+
+' Types of tests we want to run
+Const SEND_ONLY            = 1
+Const RECEIVE_ONLY         = 2
+Const SEND_RECEIVE         = 3
+
+' Types of addresses we want to send to
+Const UNICAST_ADDRESS      = 1
+Const MULTICAST_ADDRESS    = 2
+Const BROADCAST_ADDRESS    = 3
+Const PROMISCUOUS_ADDRESS  = 4
+Const MIXED_ADDRESS        = 5
+
+' Number of threads sending
+Const NUM_SENDERS          = 4
+
+Dim oTestObj
+
+' We are going to be using ndis 6 protocol
+g_UseNdis6Protocol = TRUE
+
+' We would also be using the trick to point oNDTCore to oNDTCore6, so that anyone who
+' uses oNDTCore would automatically get oNDTCore6. Only problem is we might be masking
+' some errors, so this would not be done just yet
+Call Initialize
+
+'Set oTestObj = New DBTestObject
+'Call oTestObj.RunTest
+
+Set oTestObj = New PerfTestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0), GetSupportAdapterIndex (oNDInfo.AdapterList, 0))
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+
+Class PerfTestObj
+   Dim m_lTestAdapterIndex, m_lSuppAdapterIndex
+   Dim oTestCard, oSuppCard
+   Dim ArrTestOpen, ArrSuppOpen
+   Dim ArrTestEndPoint, ArrSuppEndPoint
+
+   Dim oSendCommMgrConfig, oSendNBConfig, oSendMediaConfig
+   Dim oSendCommMgrStats
+   Dim oRecvCommMgrConfig, oRecvNBConfig, oRecvMediaConfig
+   Dim oRecvCommMgrStats, oRecvNBStats
+
+   Dim nTotalNumCallsToSend, nSendDuration
+   Dim nInitialBurstSize
+   Dim nTimeSampleNBLCount, nReceiveMode
+   Dim nNBLPerSend, nNBPerNBL
+
+   Dim oDBManager, oDataLogger
+   Dim nLinkSpeed, nPhysicalMedium, nMaxPacketSize
+   Dim TestAddr, SuppAddr, BroadcastAddr
+   Dim nTestID, nReceiveDelay
+   Dim LocalClockSpeed    ' Local machine CPU cycles
+
+   Dim FullSendThroughput, FullRecvThroughput, bCheckFullThroughput
+
+   Private Sub Class_Initialize
+      ' Both test and support adapters can be sending simultaneously
+      ReDim ArrTestOpen(NUM_SENDERS)
+      ReDim ArrTestEndPoint(NUM_SENDERS)
+
+      ReDim ArrSuppOpen(NUM_SENDERS)
+      ReDim ArrSuppEndPoint(NUM_SENDERS)
+
+      nLinkSpeed = 0
+   End Sub
+
+   Private Sub Class_Terminate
+      Dim nCount
+
+      Set oDBManager = Nothing
+      Set oDataLogger = Nothing
+
+      For nCount = 1 To NUM_SENDERS
+         Set ArrTestEndPoint(nCount) = Nothing
+         Set ArrTestOpen(nCount) = Nothing
+      Next
+      Set oTestCard = Nothing
+
+      For nCount = 1 To NUM_SENDERS
+         Set ArrSuppEndPoint(nCount) = Nothing
+         Set ArrSuppOpen(nCount) = Nothing
+      Next
+
+      Set oSuppCard = Nothing
+   End Sub
+
+   Public Sub SetStaticConfiguration
+      '----------------------------------------
+      ' All configurable options
+      '----------------------------------------
+
+      ' The number of times we want to call the NdisSend routines (if we want this
+      ' to be a number based test)
+      nTotalNumCallsToSend = 0
+      ' How long (if 0, then based on number) do we want to run the timed test?
+      nSendDuration = 30000
+      ' Before starting tests, flood the pipeline with these many NBL's (these are
+      ' the number of NBLs we try to maintain in the pipeline, and are included in
+      ' the total number of NBLs to send)
+      nInitialBurstSize = 50
+
+      ' The receive mode (a zero means do not verify data, anything else means verify
+      ' contents of received NBLs)
+      nReceiveMode = 1
+      ' The frequency at which to sample the performance counters. This is actually
+      ' the number of NBLs receive between each sampling
+      nTimeSampleNBLCount = 5
+
+      ' Num NBLs to use per call to NdisSend
+      nNBLPerSend = 2
+
+      ' Number of Net Buffers in each Net Buffer List
+      nNBPerNBL = 5
+   End Sub
+
+   Private Function TestIsRunnable
+      Dim oTestOpen
+
+      TestIsRunnable = False
+
+      ' Create an open for our use
+      Set oTestOpen = oTestCard.vbOpenAdapter()
+      If (oTestOpen is Nothing) Then
+         Exit Function
+      End If
+
+      Do
+         TestIsRunnable = True
+
+         ' Get the physical medium of this device
+         If (oTestOpen.vbFastNdisRequest(OID_GEN_PHYSICAL_MEDIUM, nPhysicalMedium, 4)) Then
+            ' Only if query succeeds do we check
+            ' Currently only work on copper or fibre medium
+            If (nPhysicalMedium <> NDISPHYSICALMEDIUMUNSPECIFIED) Then
+               oLog.Write ("Physical medium not supported")
+               TestIsRunnable = False
+               Exit Do
+            End If
+         Else
+            ' Default, assume NdisMediumUnspecified
+            nPhysicalMedium = NDISPHYSICALMEDIUMUNSPECIFIED
+         End If
+
+         If (Not oTestOpen.vbFastNdisRequest(OID_GEN_LINK_SPEED, nLinkSpeed, 4)) Then
+            Call oLog.Write ("Unable to obtain link speed from miniport")
+            TestIsRunnable = False
+            Exit Do
+         End If
+
+         If (nLinkSpeed = 0) Then
+            Call oLog.Failed ("Invalid link speed reported by the miniport", 88888)
+            TestIsRunnable = False
+            Exit Do
+         End If
+
+         ' If both conditions are false, we can run this test
+      Loop While (FALSE)
+
+      ' Close the extra open we had created
+      oTestOpen.vbNdisClose
+
+   End Function
+
+
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      Dim nCount, nError
+      Dim oProcessor
+      Dim nTestMaxPacketSize, nSuppMaxPacketSize
+
+      SetupTest = FALSE
+
+      oNDTCore6.DebugLevel = NORMAL_LOGGING_LEVEL
+
+      ' Set the fixed configuration variables
+      SetStaticConfiguration
+
+      Set pAdapterList = oNDInfo.AdapterList
+
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard6
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+
+      If (Not oTestCard.vbCreateAdapter(pAdapterList (m_lTestAdapterIndex))) Then
+         Exit Function
+      End If
+
+      ' Check if we can run the test on this adapter
+      If (Not TestIsRunnable) Then
+         Set oTestCard = Nothing
+         Exit Function
+      End If
+
+
+      ' We create the actual test send threads
+      For nCount = 1 To NUM_SENDERS
+
+         ' Create the opens
+         Set ArrTestOpen(nCount) = oTestCard.vbOpenAdapter()
+         If (ArrTestOpen(nCount) is Nothing) Then
+            Exit Function
+         End If
+
+         ' Create the endpoints
+         Set ArrTestEndPoint(nCount) = ArrTestOpen(nCount).vbCreateEndPoint(CLENDPOINT)
+         If (ArrTestEndPoint(nCount) is Nothing) Then
+            Exit Function
+         End If
+
+         ' Prepare the endpoints for sending
+         If (ArrTestEndPoint(nCount).vbOpenCommunicationChannel(PERFORMANCE_COMM_MGR, _
+                  NDISTEST_PERF_CONSTRUCTOR, NDIS_MEDIUM_802_3_MEDIA_MODULE) <> 0) Then
+            Exit Function
+         End If
+      Next
+
+      TestAddr = ArrTestOpen(1).vbGetCardAddress
+
+      oLog.Variation ("Setting up Support Adapter")
+      Set oSuppCard = New CLanCard6
+      If (oSuppCard is Nothing) Then
+         Exit Function
+      End If
+
+      If (Not oSuppCard.vbCreateAdapter(pAdapterList (m_lSuppAdapterIndex))) Then
+         Exit Function
+      End If
+
+      For nCount = 1 To NUM_SENDERS
+         Set ArrSuppOpen(nCount) = oSuppCard.vbSetupBasicTest(pAdapterList (m_lSuppAdapterIndex))
+         If (ArrSuppOpen(nCount) is Nothing) Then
+            Exit Function
+         End If
+
+         ' Create the endpoints
+         Set ArrSuppEndPoint(nCount) = ArrSuppOpen(nCount).vbCreateEndPoint(CLENDPOINT)
+         If (ArrSuppEndPoint(nCount) is Nothing) Then
+            Exit Function
+         End If
+
+         ' Prepare the endpoints for receiving
+         If (ArrSuppEndPoint(nCount).vbOpenCommunicationChannel(PERFORMANCE_COMM_MGR, _
+                  NDISTEST_PERF_CONSTRUCTOR, NDIS_MEDIUM_802_3_MEDIA_MODULE) <> 0) Then
+            Exit Function
+         End If
+      Next
+
+      SuppAddr = ArrSuppOpen(1).vbGetCardAddress
+
+      Set pAdapterList = Nothing
+
+      oLog.Variation("Setting up test environment")
+      ' Open the database so that we can read and write
+      Set oDBManager = New CPerfDBManager
+      If (oDBManager.OpenDB(nPhysicalMedium) <> True) Then
+         Exit Function
+      End If
+
+      ' Create the various send and receive configs and stat objects we want to use
+      Set oSendCommMgrConfig = oCoreFactory.CommMgrSendConfig(PERFORMANCE_COMM_MGR)
+      Set oSendNBConfig = oCoreFactory.ConstructorSendConfig(NDISTEST_PERF_CONSTRUCTOR)
+      Set oSendMediaConfig = oCoreFactory.MediaModuleSendConfig(NDIS_MEDIUM_802_3_MEDIA_MODULE)
+
+      Set oSendCommMgrStats = oCoreFactory.CommMgrSendStatistics(PERFORMANCE_COMM_MGR)
+
+      Set oRecvCommMgrConfig = oCoreFactory.CommMgrRecvConfig(PERFORMANCE_COMM_MGR)
+      Set oRecvNBConfig = oCoreFactory.ConstructorRecvConfig(NDISTEST_PERF_CONSTRUCTOR)
+      Set oRecvMediaConfig = oCoreFactory.MediaModuleRecvConfig(NDIS_MEDIUM_802_3_MEDIA_MODULE)
+
+      Set oRecvCommMgrStats = oCoreFactory.CommMgrRecvStatistics(PERFORMANCE_COMM_MGR)
+      Set oRecvNBStats = oCoreFactory.ConstructorRecvStatistics(NDISTEST_PERF_CONSTRUCTOR)
+
+      ' We use a unique send receive combination
+      nTestID = oNDTSupp.Random(0, 32765)
+      nReceiveDelay = ArrTestOpen(1).vbGetReceiveDelay
+
+      BroadcastAddr = oTestCard.vbGetBroadcastAddress()
+
+      ' Query the test adapter for OID_GEN_MAXIMUM_FRAME_SIZE
+      nTestMaxPacketSize = ArrTestOpen(1).vbGetMaxPacketSize()
+
+      ' If support does not support this packet size, we reduce it
+      nSuppMaxPacketSize = ArrSuppOpen(1).vbGetMaxPacketSize()
+
+      nMaxPacketSize = nTestMaxPacketSize
+      If (nSuppMaxPacketSize < nMaxPacketSize) Then
+         nMaxPacketSize = nSuppMaxPacketSize
+      End If
+
+      ' Create the object that logs to the text file
+      Set oDataLogger = New CPerfResultLogger
+      oDataLogger.OpenLogger
+
+      ' Obtain the current machine's processor clock speed
+      LocalClockSpeed = 0
+      Set oProcessor = New CWin32_Processor
+      nError = oProcessor.vbQuery("SELECT * FROM Win32_Processor")
+      If (nError <> WBEM_ERR_NO_ERROR) Then
+         oLog.Write("Failure: " & vbGetWMIError(nError))
+      Else
+         oLog.Write ("Number of Processors : " & oProcessor.vbNumProcessors)
+
+         ' Get the current clock speed of the first processor, we use that
+         LocalClockSpeed = oProcessor.CurrentClockSpeed
+         oLog.Write ("Processor Clock Speed: " & LocalClockSpeed & " MHz")
+
+         ' Convert it to cycles/second
+         LocalClockSpeed = oLargeMath.MultiplyLargeIntegers(LocalClockSpeed, 1000000)
+      End If
+
+      SetupTest = TRUE
+   End Function
+
+   Public Function RunTest(lTestAdapterIndex, lSuppAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      m_lSuppAdapterIndex = lSuppAdapterIndex
+
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+
+      ExecuteTestCore
+
+      oDBManager.CloseDB
+      oDataLogger.CloseLogger
+   End Function
+
+   Private Sub ExecuteTestCore
+      Dim oDBEntry
+
+      ' The entry that we would populate from the database
+      Set oDBEntry = New CPerfDBEntry
+      Do
+         ' Read a database entry
+         If (oDBManager.ReadDBEntry(oDBEntry) = True) Then
+            ExecutePerfVariation oDBEntry
+         Else
+            Exit Do
+         End If
+      Loop While (TRUE)
+
+      Set oDBEntry = Nothing
+   End Sub
+
+   Private Function SetupSendConfig(oDBEntry)
+      '============================================================================
+      ' Setup the send side config objects
+      '============================================================================
+      ' NumNetBufferListsPerSend would be filled later
+      oSendCommMgrConfig.NumSends = nTotalNumCallsToSend
+      '  The processor affinity mask depends on the open and would be filled in later
+      oSendCommMgrConfig.SendDuration = nSendDuration
+      oSendCommMgrConfig.InitialBurstSize = nInitialBurstSize
+      oSendCommMgrConfig.NumNetBufferListsPerSend = nNBPerNBL
+      ' Using synchronous start mode for the tests
+      oSendCommMgrConfig.SynchronousStart = TRUE
+      ' Use polling instead of timers to determine send test duration expiration
+      oSendCommMgrConfig.PollForSendEndTime = TRUE
+      '----------------------------------------------------------------------------
+      oSendNBConfig.NumNBLToPreallocate = nInitialBurstSize
+      oSendNBConfig.NumNetBuffersPerNetBufferList = nNBPerNBL
+      ' Fill the packet Size based on the data base entry
+      oSendNBConfig.NetBufferSize = oDBEntry.PacketSize
+      ' Fill the max MDL size based on the packet size and MDL count request
+      ' TODO: Need to round up
+      oSendNBConfig.MaxMdlSize = oDBEntry.PacketSize / oDBEntry.MDLCount
+      oSendNBConfig.TestID = nTestID
+      '----------------------------------------------------------------------------
+      ' We need to fill the destination address depending on whether it is the
+      ' sender or receiver. Will fill that later
+   End Function
+
+   Private Function SetupReceiveConfig(oDBEntry)
+      '============================================================================
+      ' Setup the receive side config objects
+      '============================================================================
+      oRecvCommMgrConfig.TimeSampleNBLCount = nTimeSampleNBLCount
+      oRecvCommMgrConfig.ReceiveMode = nReceiveMode
+
+      oRecvNBConfig.TestID = nTestID
+
+   End Function
+
+   Private Function SetupReceiveOpen(oOpen, AddressType)
+      Dim PacketFilters, bResult
+      Select Case (AddressType)
+         Case UNICAST_ADDRESS:
+            PacketFilters = DIRECTED
+         Case MULTICAST_ADDRESS:
+            PacketFilters = MULTICAST
+         Case BROADCAST_ADDRESS:
+            PacketFilters = BROADCAST
+         Case PROMISCUOUS_ADDRESS:
+            PacketFilters = PROMISCUOUS
+         Case MIXED_ADDRESS:
+            PacketFilters = DIRECTED Or MULTICAST Or BROADCAST Or PROMISCUOUS
+      End Select
+
+      ' Now, set the packet filter
+      bResult = oOpen.vbSetPacketFilter(PacketFilters)
+      If (Not bResult) Then
+         oLog.Write ("Unable to set packet filter. Testing inspite of this")
+      End If
+
+      ' Add the multicast address to the open
+      If (AddressType = MULTICAST_ADDRESS Or AddressType = MIXED_ADDRESS) Then
+         If (Not oOpen.vbAddMulticastAddr(GoodMulticastAddr)) Then
+            oLog.Write ("Unable to add multicast address. Testing inspite of this")
+         End If
+      End If
+
+   End Function
+
+   Private Function CleanupReceiveOpen(oOpen, AddressType)
+      Dim bResult
+
+      bResult = oOpen.vbSetPacketFilter(CLng(0))
+      If (Not bResult) Then
+         oLog.Write ("Unable to clear packet filter.")
+      End If
+
+      If (AddressType = MULTICAST_ADDRESS Or AddressType = MIXED_ADDRESS) Then
+         If (Not oOpen.vbRemoveMulticastAddr(GoodMulticastAddr)) Then
+            oLog.Write ("Unable to remove multicast address.")
+         End If
+      End If
+   End Function
+
+   Private Function SelectDestinationAddress(oSendMediaConfig, nSenderIndex, ByVal AddressType, UnicastAddr)
+      If (AddressType = MIXED_ADDRESS) Then
+         ' Depending on the sender Index, choose one of the
+         ' 4 address types
+         AddressType = nSenderIndex Mod 4 + 1
+      End If
+
+      Select Case (AddressType)
+         Case UNICAST_ADDRESS:
+            oSendMediaConfig.DestinationAddress = UnicastAddr
+         Case MULTICAST_ADDRESS:
+            oSendMediaConfig.DestinationAddress = GoodMulticastAddr
+         Case BROADCAST_ADDRESS:
+            oSendMediaConfig.DestinationAddress = BroadcastAddr
+         Case PROMISCUOUS_ADDRESS:
+            oSendMediaConfig.DestinationAddress = RandomAddr
+      End Select
+   End Function
+
+   Private Function ExecutePerfVariation(oDBEntry)
+      Dim bTestSends, bSuppSends
+      Dim Status, nSenderIndex, bFullDuplex
+
+      oLog.Variation("Setting Up Test")
+      ' Based on the selected test type, the test and support adapters
+      ' will send and receive
+      Select Case (oDBEntry.TestType)
+         Case SEND_ONLY: ' Only test adapter sends, the support receives
+            oLog.Write ("Sender         : Test Adapter")
+            oLog.Write ("Receiver       : Support Adapter")
+            bTestSends = TRUE
+            bSuppSends = FALSE
+            bFullDuplex = FALSE
+         Case RECEIVE_ONLY:   ' Only support adapter sends, the test receives
+            oLog.Write ("Sender         : Support Adapter")
+            oLog.Write ("Receiver       : Test Adapter")
+            bTestSends = FALSE
+            bSuppSends = TRUE
+            bFullDuplex = FALSE
+         Case SEND_RECEIVE:   ' Both test and support adapters sends and receive
+            oLog.Write ("Senders        : Test And Support Adapters")
+            oLog.Write ("Receivers      : Support And Test Adapters")
+            bTestSends = TRUE
+            bSuppSends = TRUE
+            bFullDuplex = TRUE
+      End Select
+
+      Select Case (oDBEntry.AddressType)
+         Case UNICAST_ADDRESS:
+            oLog.Write ("Destination    : Receiver's Directed Address")
+         Case MULTICAST_ADDRESS:
+            oLog.Write ("Destination    : Multicast Address")
+         Case BROADCAST_ADDRESS:
+            oLog.Write ("Destination    : Broadcast Address")
+         Case PROMISCUOUS_ADDRESS:
+            oLog.Write ("Destination    : Random Directed Address")
+         Case MIXED_ADDRESS:
+            oLog.Write ("Destination    : Receiver's Directed + Multicast + Broadcast + Random Directed intermixed")
+      End Select
+
+      ' Adjust packet size
+      oDBEntry.PacketSize = (nMaxPacketSize * oDBEntry.PacketSize) / 100
+      oDBEntry.PacketSize = CLng(oDBEntry.PacketSize)
+
+      oLog.Write ("Packet Size    : " & oDBEntry.PacketSize)
+      oLog.Write ("Number of MDLs : " & oDBEntry.MDLCount)
+
+      Set oDataLogger.DBEntry = oDBEntry
+
+      ' Setup the two configuration objects
+      SetupSendConfig(oDBEntry)
+      SetupReceiveConfig(oDBEntry)
+
+      ' If test adapter is sending, setup the support adapter to receive
+      If (bTestSends) Then
+         oLog.Variation("Starting Support Receive")
+         ' Set packet filter on support adapter
+         Call SetupReceiveOpen(ArrSuppOpen(1), oDBEntry.AddressType)
+
+         ' Start receiving at this open
+         Status = ArrSuppEndPoint(1).vbStartReceive(oRecvCommMgrConfig, oRecvNBConfig, oRecvMediaConfig)
+         If (Status <> 0) Then
+            Call oLog.Failed("Unable to start receiving on support adapter", 88888)
+         End If
+      End If
+
+      ' If the support adapter is sending, setup the test adapter to receive
+      If (bSuppSends) Then
+         oLog.Variation("Starting Test Receive")
+         ' Set packet filter on support adapter
+         Call SetupReceiveOpen(ArrTestOpen(1), oDBEntry.AddressType)
+
+         ' Start receiving at this open
+         Status = ArrTestEndPoint(1).vbStartReceive(oRecvCommMgrConfig, oRecvNBConfig, oRecvMediaConfig)
+         If (Status <> 0) Then
+            Call oLog.Failed("Unable to start receiving on test adapter", 88888)
+         End If
+      End If
+
+      oLog.Variation("Starting Senders")
+      For nSenderIndex = 1 To NUM_SENDERS
+         ' Setup the test sender
+         If (bTestSends) Then
+            ' Set the destination address for this particular sender
+            Call SelectDestinationAddress(oSendMediaConfig, nSenderIndex, oDBEntry.AddressType, SuppAddr)
+
+            Status = ArrTestEndPoint(nSenderIndex).vbSendNetBufferLists(   _
+               oSendCommMgrConfig,  _
+               oSendNBConfig, _
+               oSendMediaConfig)
+            If (Status <> 0) Then
+               Call oLog.Failed ("Unable to start sending on test sender " & nSenderIndex, 88888)
+               Exit For ' quitting out of external loop
+            End If
+         End If
+
+         ' Setup the support sender
+         If (bSuppSends) Then
+            ' Set the destination address for this particular sender
+            Call SelectDestinationAddress(oSendMediaConfig, nSenderIndex, oDBEntry.AddressType, TestAddr)
+
+            Status = ArrSuppEndPoint(nSenderIndex).vbSendNetBufferLists(   _
+               oSendCommMgrConfig,  _
+               oSendNBConfig, _
+               oSendMediaConfig)
+            If (Status <> 0) Then
+               Call oLog.Failed ("Unable to start sending on support sender " & nSenderIndex, 88888)
+               Exit For ' quitting out of external loop
+            End If
+         End If
+      Next
+
+      ' Start sending from both sides
+      If (bTestSends) Then
+         ' Signal one sender to start sending
+         Status = ArrTestEndPoint(1).vbStartAllSends()
+         If (Status <> 0) Then
+            Call oLog.Failed ("Unable to start performance sending from test opens", 88888)
+            Exit Function
+         End If
+      End If
+
+      If (bSuppSends) Then
+         ' Signal one sender to start sending (this is mainly to handle the remote
+         ' side)
+         Status = ArrSuppEndPoint(1).vbStartAllSends()
+         If (Status <> 0) Then
+            Call oLog.Failed ("Unable to start performance sending from support opens", 88888)
+            Exit Function
+         End If
+      End If
+
+      ' Now wait for the sending to complete from each sender
+      oLog.Variation ("Wait For Sends")
+      For nSenderIndex = 1 To NUM_SENDERS
+         If (bTestSends) Then
+            Status = ArrTestEndPoint(nSenderIndex).vbWaitForSendsToComplete(0)
+            If (Status <> 0) then
+               Call oLog.Failed ("Unable to wait for send complete on test sender " & nSenderIndex, 88888)
+            End If
+         End If
+
+         If (bSuppSends) Then
+            Status = ArrSuppEndPoint(nSenderIndex).vbWaitForSendsToComplete(0)
+            If (Status <> 0) then
+               Call oLog.Failed ("Unable to wait for send complete on support sender " & nSenderIndex, 88888)
+            End If
+         End If
+      Next
+
+      ' Wait for a while to ensure that receives happen
+      WScript.Sleep(nReceiveDelay)
+
+      ' Stop all the receives
+      oLog.Variation ("Stop Receives")
+      If (bTestSends) Then
+         Status = ArrSuppEndPoint(1).vbStopReceive()
+         If (Status <> 0) then
+            Call oLog.Failed ("Unable to stop receiving on support adapter", 88888)
+         End If
+         Call CleanupReceiveOpen(ArrSuppOpen(1), oDBEntry.AddressType)
+      End If
+
+      If (bSuppSends) Then
+         Status = ArrTestEndPoint(1).vbStopReceive()
+         If (Status <> 0) then
+            Call oLog.Failed ("Unable to stop receiving on test adapter", 88888)
+         End If
+         Call CleanupReceiveOpen(ArrTestOpen(1), oDBEntry.AddressType)
+      End If
+
+      ' Now we collect all the statistics and actually verify that everything is
+      ' happening as desired
+      FullSendThroughput = 0
+      FullRecvThroughput = 0
+      bCheckFullThroughput = FALSE
+
+      If (bTestSends) Then
+         Call VerifyStatistics(ArrTestEndPoint, ArrSuppEndPoint(1), oDBEntry, TRUE, bFullDuplex)
+      End If
+
+      If (bSuppSends) Then
+         Call VerifyStatistics(ArrSuppEndPoint, ArrTestEndPoint(1), oDBEntry, FALSE, bFullDuplex)
+      End If
+
+      oDataLogger.Flush
+   End Function
+
+   Function VerifyStatistics(ArrSendEndPoints, oRecvEndPoint, oDBEntry, bTestSender, bFullDuplex)
+      Dim MaxSendTime, CurrentSendTime, NWThroughput
+      Dim MaxRecvTime, CurrentRecvTime, strCpuUtilization
+      Dim TotalPacketsSent, TotalPacketsReceived, TotalBytesSent, TotalBytesReceived
+      Dim SendCpuUtilization, RecvCpuUtilization
+      Dim SendThroughput, RecvThroughput
+      Dim SenderType, ReceiverType
+      Dim nSenderIndex, Status
+
+      VerifyStatistics = FALSE
+
+      If (bTestSender) Then
+         SenderType = "Test open "
+         ReceiverType = "Support open"
+      Else
+         SenderType = "Support open "
+         ReceiverType = "Test open"
+      End If
+
+      oLog.Variation (SenderType & "Send results")
+
+      ' We would be collecting max send time and total packets sent
+      ' Using strings since thats what large math functions expect
+      MaxSendTime = 0
+      TotalPacketsSent = 0
+      SendCpuUtilization = 0
+
+      ' Obtain send statistics from each open
+      For nSenderIndex = 1 To NUM_SENDERS
+         Status = ArrSendEndPoints(nSenderIndex).vbGetSendResults(oSendCommMgrStats, Nothing)
+         If (Status <> 0) then
+            Call oLog.Failed ("Unable to obtain send results from " & SenderType & nSenderIndex, 88888)
+            Exit For
+         End If
+
+         oLog.Write ("Total Counts : " & oSendCommMgrStats.TotalCounts)
+         oLog.Write ("Counter Precision: " & oSendCommMgrStats.CounterPrecision)
+
+         If (oLargeMath.LargeCompare(oSendCommMgrStats.TotalNetBufferListsSent, 0) = 0) Then
+            Call oLog.Failed ("Did not send any net buffer lists on " & SenderType & nSenderIndex, 88888)
+         End If
+
+         If (oLargeMath.LargeCompare(oSendCommMgrStats.TotalNetBufferListsSendCompleted, oSendCommMgrStats.TotalNetBufferListSendsSuccessful) <> 0) Then
+            Call oLog.Failed ("Sends failed on " & SenderType & nSenderIndex, 88888)
+         End If
+
+         ' We end up logging CPU utilization for each open, this might
+         ' not be the right way to do this, since the utilization in each
+         ' open would mismatch
+         strCpuUtilization = oSendCommMgrStats.CpuUtilization
+         oLog.Write ("Cpu Utilization: " & strCpuUtilization)
+
+         CurrentSendTime = oLargeMath.DivideLargeIntegers(oSendCommMgrStats.TotalCounts, oSendCommMgrStats.CounterPrecision)
+
+         ' Now work on the all sent cumulative times, etc
+         ' Total number of NBLs sent?
+         TotalPacketsSent = oLargeMath.LargeAdd(TotalPacketsSent, oSendCommMgrStats.TotalNetBufferListsSent)
+
+         ' We use the largest send time
+         If (CurrentSendTime > MaxSendTime) Then
+            MaxSendTime = CurrentSendTime
+         End If
+
+         ' The cpu utilization numbers should not differ much between
+         ' various opens, we use the max
+         If (strCpuUtilization > SendCpuUtilization) Then
+            SendCpuUtilization = strCpuUtilization
+         End If
+      Next
+
+      ' For network throughput, first get the number of NBs sent
+      TotalPacketsSent = oLargeMath.MultiplyLargeIntegers (TotalPacketsSent, nNBPerNBL)
+
+      ' Now the number of bytes sent
+      TotalBytesSent = oLargeMath.MultiplyLargeIntegers (TotalPacketsSent, oDBEntry.PacketSize)
+
+      ' Convert that to bits
+      NWThroughput = oLargeMath.MultiplyLargeIntegers (TotalBytesSent, 8)
+
+      ' Finally, compute the bps
+      NWThroughput = oLargeMath.DivideIntegerFloat (NWThroughput, MaxSendTime)
+      SendThroughput = oLargeMath.LargeInteger(NWThroughput)
+
+
+      ' Write summary
+      oLog.Write (vblf & "Sender Summary " & vblf)
+      oLog.Write ("Total Packets Sent : " & TotalPacketsSent)
+      oLog.Write ("Sender Time (seconds) : " & MaxSendTime)
+      oLog.Write ("NW Throughput (bps): " & SendThroughput)
+      oLog.Write ("Overall CPU utilization: " & SendCpuUtilization)
+
+      oDataLogger.PacketsSent = TotalPacketsSent
+      oDataLogger.BytesSent = TotalBytesSent
+      oDataLogger.SendThroughput = SendThroughput
+      oDataLogger.SendUtilization = SendCpuUtilization
+
+      oLog.Variation (ReceiverType & " Receive results")
+
+      ' We would be collecting max receiver time and total packets received
+      ' Using strings since thats what large math functions expect
+      MaxRecvTime = 0
+      TotalPacketsReceived = 0
+      RecvCpuUtilization = 0
+
+      ' Obtain receive statistics from each open
+      Status = oRecvEndPoint.vbGetReceiveResults(oRecvCommMgrStats, oRecvNBStats)
+      If (Status <> 0) then
+         Call oLog.Failed ("Unable to obtain receive results from " & ReceiverType, 88888)
+      End If
+
+      If (nReceiveMode <> 0) Then
+         If (oRecvNBStats.TotalNetBufferListsReceived = 0) Then
+            Call oLog.Failed ("Received 0 net buffer lists on " & ReceiverType,  88888)
+         End If
+      Else
+         If (oRecvCommMgrStats.TotalRawNetBufferListsReceived = 0) Then
+            Call oLog.Failed ("Received 0 net buffer lists on " & ReceiverType, 88888)
+         End If
+      End If
+
+      oLog.Write ("Total Counts : " & oRecvCommMgrStats.TotalCounts)
+      oLog.Write ("Counter Precision: " & oRecvCommMgrStats.CounterPrecision)
+
+      ' We end up logging CPU utilization for each open, this might
+      ' not be the right way to do this, since the utilization in each
+      ' open would mismatch
+      strCpuUtilization = oRecvCommMgrStats.CpuUtilization
+      oLog.Write ("Cpu Utilization: " & strCpuUtilization)
+
+      CurrentRecvTime = oLargeMath.DivideLargeIntegers(oRecvCommMgrStats.TotalCounts, oRecvCommMgrStats.CounterPrecision)
+
+      ' Now work on the all receives cumulative times, etc
+      If (nReceiveMode <> 0) Then
+         TotalPacketsReceived = oLargeMath.LargeAdd(TotalPacketsReceived, oRecvNBStats.TotalNetBuffersAccepted)
+      Else
+         TotalPacketsReceived = oLargeMath.LargeAdd(TotalPacketsReceived, oRecvCommMgrStats.TotalRawNetBufferListsReceived)
+      End If
+
+      ' We use the largest receiver time
+      If (CurrentRecvTime > MaxRecvTime) Then
+         MaxRecvTime = CurrentRecvTime
+      End If
+
+      ' The cpu utilization numbers should not differ much between
+      ' various opens, we use the max
+      If (strCpuUtilization > RecvCpuUtilization) Then
+         RecvCpuUtilization = strCpuUtilization
+      End If
+
+      ' Now the number of bytes received (here, we assume that we only received the NBLs
+      ' we created, irrespective of receive mode)
+      TotalBytesReceived = oLargeMath.MultiplyLargeIntegers (TotalPacketsReceived, oDBEntry.PacketSize)
+
+      ' Convert that to bits
+      NWThroughput = oLargeMath.MultiplyLargeIntegers (TotalBytesReceived, 8)
+
+      ' Finally, compute the bps (note, we are using the senders time)
+      NWThroughput = oLargeMath.DivideIntegerFloat (NWThroughput, MaxSendTime)
+      RecvThroughput = oLargeMath.LargeInteger(NWThroughput)
+      ' Write summary
+      oLog.Write (vblf & "Receiver Summary " & vblf)
+      oLog.Write ("Total Packets Received : " & TotalPacketsReceived)
+      oLog.Write ("Receiver Time (seconds) : " & MaxRecvTime)
+      oLog.Write ("NW Throughput (bps): " & RecvThroughput & " (using senders time)")
+
+      oDataLogger.PacketsReceived = TotalPacketsReceived
+      oDataLogger.BytesReceived = TotalBytesReceived
+      oDataLogger.ReceiveThroughput = RecvThroughput
+      oDataLogger.ReceiveUtilization = RecvCpuUtilization
+
+      oLog.Variation("Verifying Performance Results")
+      If (bTestSender) Then
+         oLog.Write ("Test adapter sending, support receiving")
+      Else
+         oLog.Write ("Support adapter sending, test receiving")
+      End If
+
+      ' Check that the throughput is above the threshold
+      Call VerifyThroughput(bTestSender, bFullDuplex, SendThroughput, RecvThroughput, oDBEntry)
+
+      ' Check that the number of packets dropped is an acceptable value
+      Call VerifyPacketDrops(bTestSender, TotalPacketsSent, TotalPacketsReceived, oDBEntry)
+
+      ' Check that the CPU utilization was not too high
+      Call VerifyCPUUtilization(bTestSender, SendCpuUtilization, SendThroughput,  _
+            RecvCpuUtilization, RecvThroughput, oDBEntry)
+
+   End Function
+
+   Private Function VerifyThroughput(ByVal bLocalSender, ByVal bFullDuplex, ByVal SendThroughput, ByVal RecvThroughput, oDBEntry)
+      Dim ExpectedThroughput
+
+      ' First we compare the throughput
+      ' The link speed is in 100bps, which adjusts with BitsPerSecond, which is
+      ' in percent
+      ExpectedThroughput = oLargeMath.MultiplyLargeIntegers(nLinkSpeed, oDBEntry.BitsPerSecond)
+
+      oLog.Write ("Send Throughput        = " & SendThroughput)
+      oLog.Write ("Receive Throughput     = " & RecvThroughput)
+      oLog.Write ("Expected Throughput    = " & ExpectedThroughput)
+
+      If (bFullDuplex) Then
+         ' We are sending/receiving from both sides, add to the overall
+         ' send throughput
+         FullSendThroughput = FullSendThroughput + SendThroughput
+         FullRecvThroughput = FullRecvThroughput + RecvThroughput
+
+         ' Do we have the full duplex throughput values so that we can check?
+         If (bCheckFullThroughput) Then
+            ' For Full Duplex, we expect total = 2 * Link Speed
+            ExpectedThroughput = oLargeMath.MultiplyLargeIntegers(ExpectedThroughput, 2)
+            oLog.Write ("Full Duplex Throughput = " & ExpectedThroughput)
+
+            If (oLargeMath.LargeCompare(FullSendThroughput, ExpectedThroughput) = -1 ) Then
+               Call oLog.Failed ("Full duplex send throughput less than expected minimum", 88888)
+            End If
+
+            If (oLargeMath.LargeCompare(FullRecvThroughput, ExpectedThroughput) = -1 ) Then
+               Call oLog.Failed ("Full duplex receive throughput less than expected minimum", 88888)
+            End If
+         Else
+            ' Next time we want to check full duplex throughput
+            bCheckFullThroughput = TRUE
+         End If
+
+      Else
+         ' Unidirectional, check throughput
+         If (bLocalSender) Then
+            ' If local adapter was sending, we check send throughput
+            If (oLargeMath.LargeCompare(SendThroughput, ExpectedThroughput) = -1 ) Then
+               Call oLog.Failed ("Send side throughput less than expected minimum", 88888)
+            End If
+         Else
+            ' If it was receiving, we test receive throughput
+            If (oLargeMath.LargeCompare(RecvThroughput, ExpectedThroughput) = -1 ) Then
+               Call oLog.Failed ("Receive side throughput less than expected minimum", 88888)
+            End If
+         End If
+      End If
+
+   End Function
+
+   Private Function VerifyPacketDrops(ByVal bLocalSender, ByVal TotalPacketsSent, ByVal TotalPacketsReceived, oDBEntry)
+      ' Next we compare the packets dropped
+      Dim PktsDropped, MaxAllowableDrop
+      PktsDropped = TotalPacketsSent - TotalPacketsReceived
+
+      ' The number of packets we are allowed to drop is percent of the number
+      ' we sent
+      MaxAllowableDrop = oDBEntry.PktDrops * (TotalPacketsSent / 100)
+
+      If (PktsDropped > MaxAllowableDrop) Then
+         If (bLocalSender) Then
+            ' If local adapter was sending, this is just a warning
+            Call oLog.Warned("Receiver dropped more packets (" & PktsDropped & ") than the allowed limit of " & MaxAllowableDrop)
+         Else
+            ' If local adapter was receiving, this is a failure
+            Call oLog.Failed ("Receiver dropped more packets (" & PktsDropped & ") than the allowed limit of " & MaxAllowableDrop, 88888)
+         End If
+      End If
+   End Function
+
+   Private Function VerifyCPUUtilization(ByVal bLocalSender, ByVal SendCpuUtilization, ByVal liSendThroughput, _
+      ByVal RecvCpuUtilization, ByVal liRecvThroughput, oDBEntry)
+
+      Dim ActualClocksPerByte, MaxAllowedClocksPerByte
+
+      ' DBEntry contains the maximum number of clock cycles per byte (we do not care
+      ' about the link speed)
+      MaxAllowedClocksPerByte = oDBEntry.ClocksPerByte
+
+      oLog.Write ("Max allowed clocks per bytes          = " & MaxAllowedClocksPerByte)
+
+      If (bLocalSender) Then
+         ' Check send side cpu utilization
+         ' The actual send side clocks per byte = (CPU% * ClockPerSecond) / (BitsPerSecond/8)
+         ActualClocksPerByte = SendCpuUtilization * 8 / 100
+         ActualClocksPerByte = oLargeMath.MultiplyLargeIntegers(ActualClocksPerByte, LocalClockSpeed)
+         ActualClocksPerByte = oLargeMath.DivideLargeIntegers(ActualClocksPerByte, liSendThroughput)
+
+         oLog.Write ("Actual send side clocks per byte      = " & ActualClocksPerByte)
+
+         If (ActualClocksPerByte > MaxAllowedClocksPerByte) Then
+            Call oLog.Warned ("Send side clocks per byte greater than the allowed maximum")
+         End If
+      Else
+         ' Check receive side cpu utilization
+         ' The actual send side clocks per byte = (CPU% * ClockPerSecond) / (BitsPerSecond/8)
+         ActualClocksPerByte = RecvCpuUtilization * 8 / 100
+         ActualClocksPerByte = oLargeMath.MultiplyLargeIntegers(ActualClocksPerByte, LocalClockSpeed)
+         ActualClocksPerByte = oLargeMath.DivideLargeIntegers(ActualClocksPerByte, liRecvThroughput)
+
+         oLog.Write ("Actual receive side clocks per byte   = " & ActualClocksPerByte)
+
+         If (ActualClocksPerByte > MaxAllowedClocksPerByte) Then
+            Call oLog.Warned ("Receive side clocks per byte greater than the allowed maximum")
+         End If
+      End If
+   End Function
+End Class
+
+Class CPerfResultLogger
+   Dim oStatsStream
+   Dim oFileSys
+
+   Private Sub Class_Initialize
+      Set oStatsStream = Nothing
+      Set oFileSys = Nothing
+   End Sub
+
+   Private Sub Class_Terminate
+      Set oStatsStream = Nothing
+      Set oFileSys = Nothing
+   End Sub
+
+   Public Function OpenLogger
+      Set oFileSys = CreateObject("Scripting.FileSystemObject")
+
+      ' We create a tab separated file inside the log directory
+      Set oStatsStream = oFileSys.CreateTextFile (oLog.LogDirectory & "\PerfResults.txt", True)
+      oStatsStream.Write("Test Type" & vbTab & " Address Type" & vbTab & " Packet Size" & vbTab)
+      oStatsStream.Write("MDL Count" & vbTab & " Req bps" & vbTab & " Max Pkt Drop" & vbTab)
+      oStatsStream.Write("Clocks per byte" & vbTab)
+
+      oStatsStream.Write("Packets Sent" & vbTab)
+      oStatsStream.Write("Bytes Sent" & vbTab)
+      oStatsStream.Write("Send bps" & vbTab)
+      oStatsStream.Write("Send Util" & vbTab)
+
+      oStatsStream.Write("Packets Rcvd" & vbTab)
+      oStatsStream.Write("Bytes Rcvd" & vbTab)
+      oStatsStream.Write("Recv bps" & vbTab)
+      oStatsStream.Write("Recv Util" & vbTab)
+
+      oStatsStream.Write("Clocks per byte" & vbTab)
+
+   End Function
+
+   Public Function CloseLogger
+      oStatsStream.Close()
+
+      Set oStatsStream = Nothing
+      Set oFileSys = Nothing
+   End Function
+
+   Public Property Set DBEntry (oDBEntry)
+      Dim bTestSends
+
+      bTestSends = TRUE
+      Select Case (oDBEntry.TestType)
+         Case SEND_ONLY:
+            oStatsStream.Write("SEND_ONLY   " & vbTab & "  ")
+         Case RECEIVE_ONLY:
+            oStatsStream.Write("RECEIVE_ONLY" & vbTab & "  ")
+            bTestSends = FALSE
+         Case SEND_RECEIVE:
+            oStatsStream.Write("SEND_RECEIVE" & vbTab & "  ")
+      End Select
+
+      Select Case (oDBEntry.AddressType)
+         Case UNICAST_ADDRESS:
+            oStatsStream.Write("DIRECTED " & vbTab & "  ")
+         Case MULTICAST_ADDRESS:
+            oStatsStream.Write("MULTICAST" & vbTab & "  ")
+         Case BROADCAST_ADDRESS:
+            oStatsStream.Write("BROADCAST" & vbTab & "  ")
+         Case PROMISCUOUS_ADDRESS:
+            oStatsStream.Write("RANDOM   " & vbTab & "  ")
+         Case MIXED_ADDRESS:
+            oStatsStream.Write("MIXED    " & vbTab & "  ")
+      End Select
+
+      oStatsStream.Write(oDBEntry.PacketSize & vbTab & "  ")
+      oStatsStream.Write(oDBEntry.MDLCount & vbTab & "  ")
+      oStatsStream.Write(oDBEntry.BitsPerSecond & vbTab & "  ")
+      oStatsStream.Write(oDBEntry.PktDrops & vbTab & "  ")
+      oStatsStream.Write(oDBEntry.ClocksPerByte & vbTab & "  ")
+
+      If (Not bTestSends) Then
+         ' If test adapter is not sending, fill padding to align receive side results
+         PacketsSent = 0
+         BytesSent = 0
+         SendThroughput = 0
+         SendUtilization = 0
+         PacketsReceived = 0
+         BytesReceived = 0
+         ReceiveThroughput = 0
+         ReceiveUtilization = 0
+         LocalCyclesPerByte = 0
+      End If
+   End Property
+
+   Public Property Let PacketsSent(nPacketsSent)
+      oStatsStream.Write(nPacketsSent & vbTab & "  ")
+   End Property
+
+   Public Property Let BytesSent(nBytesSent)
+      oStatsStream.Write(nBytesSent & vbTab & "  ")
+   End Property
+
+   Public Property Let SendThroughput(nSendThroughput)
+      oStatsStream.Write(nSendThroughput & vbTab & "  ")
+   End Property
+
+   Public Property Let SendUtilization(nSendUtilization)
+      oStatsStream.Write(nSendUtilization & vbTab & "  ")
+   End Property
+
+   Public Property Let PacketsReceived(nPacketsReceived)
+      oStatsStream.Write(nPacketsReceived & vbTab & "  ")
+   End Property
+
+   Public Property Let BytesReceived(nBytesReceived)
+      oStatsStream.Write(nBytesReceived & vbTab & "  ")
+   End Property
+
+   Public Property Let ReceiveThroughput(nReceiveThroughput)
+      oStatsStream.Write(nReceiveThroughput & vbTab & "  ")
+   End Property
+
+   Public Property Let ReceiveUtilization(nReceiveUtilization)
+      oStatsStream.Write(nReceiveUtilization & vbTab & "  ")
+   End Property
+
+   Public Property Let LocalCyclesPerByte(nLocalCyclesPerByte)
+      oStatsStream.Write(nLocalCyclesPerByte & vbTab & "  ")
+   End Property
+
+   Public Function Flush
+      oStatsStream.WriteLine(" ")
+   End Function
+
+End Class
+
+Class CPerfDBManager
+   Dim ArrTestTypes, NumTestTypes, CurrTestTypeIndex
+   Dim ArrAddressTypes, NumAddressTypes, CurrAddressTypeIndex
+   Dim ArrPacketSizes, NumPacketSizes, CurrPacketSizeIndex
+   Dim ArrMDLCount, NumMDLCount, CurrMDLCountIndex
+
+   Dim BitsPerSecondFromDB
+   Dim PktDropsFromDB
+   Dim ClocksPerByteFromDB
+
+   Dim oDBReader
+
+   Private Sub Class_Initialize
+      ReDim ArrTestTypes(3)
+      ReDim ArrAddressTypes(5)
+      ReDim ArrPacketSizes(5)
+      ReDim ArrMDLCount(4)
+
+      NumTestTypes = 0
+      NumAddressTypes = 0
+      NumPacketSizes = 0
+      NumMDLCount = 0
+
+      CurrTestTypeIndex = 0
+      CurrAddressTypeIndex = 0
+      CurrPacketSizeIndex = 0
+      CurrMDLCountIndex = 0
+
+      Set oDBReader = Nothing
+   End Sub
+
+   Private Sub Class_Terminate
+      Set oDBReader = Nothing
+   End Sub
+
+   ' Called by the DatabaseReader to obtain the expression to use for reading from our database
+   Public Function EntryRegExp (NumEntries)
+      ' We are only concerned with these fields:
+      '               TestType    ,AddressType    ,PacketSize       ,MDLs           ,bps%       , PktDrop%  , CPUperByte%
+      EntryRegExp = "^([A-Z0-9_]+),\s?([A-Z0-9_]+),\s?([A-Z0-9_\.]+),\s?([A-Z0-9_]+),\s?([-\d]+),\s?([-\d]+),\s?([-\d]+)"
+      NumEntries = 7
+   End Function
+
+   Public Function OpenDB(PhysicalMedium)
+      Dim strFileName
+      Dim FileSys
+
+      OpenDB = False
+      ' Figure out the file we want to use as our database
+      On Error Resume Next
+
+      Set FileSys = CreateObject ("Scripting.FileSystemObject")
+      If Err.number > 0 Then
+         Call oLog.Failed ("Unable to create Scripting.FileSystemObject", 88888)
+         On Error Goto 0
+         Exit Function
+      End If
+
+      ' First, we try to use the special database file
+      If (FileSys.FileExists ("..\inc\perfspdb.vbs")) Then
+         oLog.Write ("Using special performance database")
+         strFileName = "..\inc\perfspdb.vbs"
+      ElseIf (FileSys.FileExists ("..\inc\perfdb.vbs")) Then
+         oLog.Write ("Using default performance database")
+         strFileName = "..\inc\perfdb.vbs"
+      Else
+         Call oLog.Failed("No performance data information file found", 88888)
+         On Error Goto 0
+         Exit Function
+      End If
+
+      On Error Goto 0
+
+      ' Now, open the database
+      Set oDBReader = New CDatabaseReader
+      ' Create the list of tag keys we are interested in
+      Dim TagArray(1,2)
+      TagArray(0,0) = "PhysicalMedium"
+
+      ' Convert the physical medium value to a string for looking into
+      ' the database
+      Select Case (PhysicalMedium)
+         Case NDISPHYSICALMEDIUMUNSPECIFIED:
+            TagArray(0,1) = "Unspecified"
+         Case NDISPHYSICALMEDIUMRESERVED0:
+            TagArray(0,1) = "Unspecified"
+         Case NDISPHYSICALMEDIUMWIRELESSLAN:
+            TagArray(0,1) = "WirelessLan"
+         Case NDISPHYSICALMEDIUMCABLEMODEM:
+            TagArray(0,1) = "CableModem"
+         Case NDISPHYSICALMEDIUMPHONELINE:
+            TagArray(0,1) = "PhoneLine"
+         Case NDISPHYSICALMEDIUMPOWERLINE:
+            TagArray(0,1) = "PowerLine"
+         Case NDISPHYSICALMEDIUMDSL:
+            TagArray(0,1) = "DSL"
+         Case NDISPHYSICALMEDIUMFIBRECHANNEL:
+            TagArray(0,1) = "FibreChannel"
+         Case NDISPHYSICALMEDIUM1394:
+            TagArray(0,1) = "1394"
+         Case NDISPHYSICALMEDIUMWIRELESSWAN:
+            TagArray(0,1) = "WirelessWan"
+         Case NDISPHYSICALMEDIUMNATIVE802_11:
+            TagArray(0,1) = "Native802_11"
+         Case Else
+            TagArray(0,1) = "Other"
+      End Select
+
+      ' Ask the database manager to open the file
+      OpenDB = oDBReader.OpenDB(strFileName, TagArray, 1)
+   End Function
+
+   Public Function CloseDB
+      If (Not (oDBReader is Nothing)) Then
+         oDBReader.CloseDB
+      End If
+      Set oDBReader = Nothing
+   End Function
+
+   ' This is called by the script to read an entry from the database. We will
+   ' use a previously read entry, but if we have exhausted all previous reads, we
+   ' would read afresh
+   Public Function ReadDBEntry(oPerfDBEntry)
+
+      ' First check if we have already returned all the previously
+      ' read values
+      ReadDBEntry = ConsumeStoredEntry(oPerfDBEntry)
+      If (ReadDBEntry = True) Then
+         ' Copied the entry, done
+         Exit Function
+      End If
+
+      ' Clear all indices since we are reading afresh
+      CurrMDLCountIndex = 0
+      CurrPacketSizeIndex = 0
+      CurrAddressTypeIndex = 0
+      CurrTestTypeIndex = 0
+
+      ' We cannot use a previously stored entry, read new line from database (passing
+      ' myself)
+      ReadDBEntry = oDBReader.ReadDBLine(Me)
+      If (ReadDBEntry = True) Then
+         ReadDBEntry = ConsumeStoredEntry(oPerfDBEntry)
+      End If
+
+   End Function
+
+   Private Function CopyCurrentStoredEntry(oPerfDBEntry)
+      ' Use the current indices and copy the values to our DB
+      oPerfDBEntry.TestType = ArrTestTypes(CurrTestTypeIndex)
+      oPerfDBEntry.AddressType = ArrAddressTypes(CurrAddressTypeIndex)
+      oPerfDBEntry.PacketSize = ArrPacketSizes(CurrPacketSizeIndex)
+      oPerfDBEntry.MDLCount = ArrMDLCount(CurrMDLCountIndex)
+      oPerfDBEntry.BitsPerSecond = BitsPerSecondFromDB
+      oPerfDBEntry.PktDrops = PktDropsFromDB
+      oPerfDBEntry.ClocksPerByte = ClocksPerByteFromDB
+
+      CurrMDLCountIndex = CurrMDLCountIndex + 1
+
+      CopyCurrentStoredEntry = True
+   End Function
+
+   ' This reads in an entry from the store values. It appropriately
+   ' circulates through the list stored returning a new entry if
+   ' available or FALSE otherwise
+   Private Function ConsumeStoredEntry(oPerfDBEntry)
+
+      If (CurrMDLCountIndex < NumMDLCount) Then
+         ConsumeStoredEntry = CopyCurrentStoredEntry(oPerfDBEntry)
+         Exit Function
+      End If
+
+      ' We have now looped through all MDLs counts under this packet size
+      ' check next
+      CurrPacketSizeIndex = CurrPacketSizeIndex + 1
+      If (CurrPacketSizeIndex < NumPacketSizes) Then
+         ' Start with zeros for previous indices
+         CurrMDLCountIndex = 0
+         ConsumeStoredEntry = CopyCurrentStoredEntry(oPerfDBEntry)
+         Exit Function
+      End If
+
+      CurrAddressTypeIndex = CurrAddressTypeIndex + 1
+      If (CurrAddressTypeIndex < NumAddressTypes) Then
+         ' Start with zeros for previous indices
+         CurrMDLCountIndex = 0
+         CurrPacketSizeIndex = 0
+         ConsumeStoredEntry = CopyCurrentStoredEntry(oPerfDBEntry)
+         Exit Function
+      End If
+
+      CurrTestTypeIndex = CurrTestTypeIndex + 1
+      If (CurrTestTypeIndex < NumTestTypes) Then
+         ' Start with zeros for previous indices
+         CurrMDLCountIndex = 0
+         CurrPacketSizeIndex = 0
+         CurrAddressTypeIndex = 0
+         ConsumeStoredEntry = CopyCurrentStoredEntry(oPerfDBEntry)
+         Exit Function
+      End If
+
+      ' Didnt find any entry to use up
+      ConsumeStoredEntry = False
+   End Function
+
+   ' This is called by the DatabaseReader to copy an entry
+   ' read from the database into our object
+   Public Function FillEntry (ArrMatches, ArrLength)
+      FillEntry = False
+
+      If (ArrLength <> 7) Then
+         Call oLog.Failed ("Invalid database or database entry", 88888)
+         Exit Function
+      End If
+
+      ' First element in the table is Test Type
+      NumTestTypes = 1
+      Select Case (ArrMatches(0))
+         Case "SEND_ONLY":
+            ArrTestTypes(0) = SEND_ONLY
+         Case "RECEIVE_ONLY":
+            ArrTestTypes(0) = RECEIVE_ONLY
+         Case "SEND_RECEIVE":
+            ArrTestTypes(0) = SEND_RECEIVE
+         Case Else:
+            ' Save all the test types
+            ArrTestTypes(0) = SEND_ONLY
+            ArrTestTypes(1) = RECEIVE_ONLY
+            ArrTestTypes(2) = SEND_RECEIVE
+            NumTestTypes = 3
+      End Select
+
+      ' Second entry is the Address Type
+      NumAddressTypes = 1
+      Select Case (ArrMatches(1))
+         Case "UNICAST_ADDRESS":
+            ArrAddressTypes(0) = UNICAST_ADDRESS
+         Case "MULTICAST_ADDRESS":
+            ArrAddressTypes(0) = MULTICAST_ADDRESS
+         Case "BROADCAST_ADDRESS":
+            ArrAddressTypes(0) = BROADCAST_ADDRESS
+         Case "PROMISCUOUS_ADDRESS":
+            ArrAddressTypes(0) = PROMISCUOUS_ADDRESS
+         Case "MIXED_ADDRESS":
+            ArrAddressTypes(0) = MIXED_ADDRESS
+         Case Else:  ' ALL
+            ' Save all the address types
+            ArrAddressTypes(0) = UNICAST_ADDRESS
+            ArrAddressTypes(1) = MULTICAST_ADDRESS
+            ArrAddressTypes(2) = BROADCAST_ADDRESS
+            ArrAddressTypes(3) = PROMISCUOUS_ADDRESS
+            ArrAddressTypes(4) = MIXED_ADDRESS
+
+            NumAddressTypes = 5
+      End Select
+
+      ' Next is the packet size
+      If (StrComp(ArrMatches(2), "ALL", vbTextCompare) = 0) Then
+         ' All possible packet size percents
+         ArrPacketSizes(0) = 3.5    ' 3.5 percent of total packet size
+         ArrPacketSizes(1) = 6      ' 6 percent of total packet size
+         ArrPacketSizes(2) = 30     ' 30 percent of total packet size
+         ArrPacketSizes(3) = 60     ' 60 percent of total packet size
+         ArrPacketSizes(4) = 100    ' 100 percent of total packet size
+
+         NumPacketSizes = 5
+      Else
+         ' Convert input to single precision float
+         ArrPacketSizes(0) = CSng(ArrMatches(2))
+         NumPacketSizes = 1
+      End If
+
+      ' Next is the number of MDLs
+      If (StrComp(ArrMatches(3), "ALL", vbTextCompare) = 0) Then
+         ' Use all the MDL counts
+         ArrMDLCount(0) = 1
+         ArrMDLCount(1) = 3
+         ArrMDLCount(2) = 10
+         ArrMDLCount(3) = 30
+
+         NumMDLCount = 4
+      Else
+         ArrMDLCount(0) = CLng(ArrMatches(3))
+         NumMDLCount = 1
+      End If
+
+      ' Next is bits per second (expressed as percent of link speed)
+      BitsPerSecondFromDB = CLng(ArrMatches(4))
+
+      ' Allowed Packet drops per second (expressed as percent of packets sent)
+      PktDropsFromDB = CLng(ArrMatches(5))
+
+      ' Maximum CPU clock cycles per byte transferred (expressed as percent of bytes
+      ' transferred)
+      ClocksPerByteFromDB = CLng(ArrMatches(6))
+   End Function
+End Class
+
+
+' This is what is actually read from the database
+Class CPerfDBEntry
+   Dim TestType
+   Dim AddressType
+   Dim PacketSize       ' Read as percent of total, later modified
+   Dim MDLCount
+   Dim BitsPerSecond    ' In percent
+   Dim PktDrops         ' In percent
+   Dim ClocksPerByte    ' In percent
+End Class
+
+' This is a test object to verify the database parsing engine
+Class DBTestObject
+   Public Function RunTest
+      Dim   oDBManager, oDBEntry
+
+      Set oDBManager = New CPerfDBManager
+      Set oDBEntry = New CPerfDBEntry
+
+      If (oDBManager.OpenDB(NDISPHYSICALMEDIUMUNSPECIFIED) <> True) Then
+         Exit Function
+      End If
+
+      Do
+         ' Read a database entry
+         If (oDBManager.ReadDBEntry(oDBEntry) = True) Then
+            oLog.Write TypeName(oDBEntry.AddressType)
+            oLog.Write ("Unspecified " & oDBEntry.TestType & " " & oDBEntry.AddressType & " " & oDBEntry.PacketSize & " " & oDBEntry.MDLCount & " " & oDBEntry.BitsPerSecond & " " & oDBEntry.PktDrops & " " & oDBEntry.ClocksPerByte)
+         Else
+            Exit Do
+         End If
+
+      Loop While (TRUE)
+   End Function
+End Class
+
+</script>
+</job>
+</package>
+
+
+<!--- CRC = 0xfe58ed79 --->

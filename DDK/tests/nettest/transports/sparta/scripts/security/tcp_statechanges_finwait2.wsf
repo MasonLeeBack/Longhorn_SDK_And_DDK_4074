@@ -1,0 +1,233 @@
+'
+' File          : TCP_StateChanges_FinWait2.wsf
+' Author        : Sandeep Prabhu 
+'
+' A script to test the FIN_WAIT_2 state behavior
+'
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\common\Common.Lib"/>
+      <script language="VBScript" src="..\common\TCPHelper.Lib"/>
+      <script id="TCP_StateChanges_FinWait2" language="VBScript">
+
+
+option explicit
+                                                                                
+dim Core, Sparta, Autosrv, pController, MediaType, IFace, ExceptionStatus
+
+'
+' Start the script
+'
+StartScript "TCP_StateChanges_FinWait2", g_szLogDirectory, "Tests for FIN_WAIT_2 state"
+
+sub Main
+   Core.SetAssertionTracking "21300"
+   dim ValueArray, ulStatus, ulKeepAliveTime
+   ValueArray = Array(false)
+   ParseArguments array("-v6"), array(vbBoolean), ValueArray
+
+   '/**
+   ' @area name="Offload Compliance Test Assertions"
+   ' @group name="TCP Connection State Transition Assertions"
+   ' @group name="State Conformance Assertions for Both TCP/IP v4 and v6" 
+   ' @define name="Offload" Offload Compliance Test Assertions
+   ' @define name="TCPStates" TCP Connection State Transition Assertions
+   ' @define name="StateConfBoth" State Conformance Assertions for Both TCP/IP v4 and v6
+   ' @hierarchy Offload TCPStates StateConfBoth
+   ' @key Reference="WLP# - x.x.x.x; RFC-793 Sections 3.2, 3.4, 3.5, RFC-1122 Section 4.2.2.8, 4.2.2.12, 4.2.2.13"
+   ' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+   ' @key TestName="TCP Connection State Conformance in FIN_WAIT2 Tests"
+   ' @key TestParam="-v6: uses IPv6 [Default: IPv4]"   
+   ' @key TestLog="Security_TCP_StateChanges_FinWait2.log"
+   '*/
+
+   StartTest "Stack correctly receives data in FIN_WAIT_2 state (SendAndDisconnect)"
+   '/**
+   ' @test name="The stack transitions the connection to FIN_WAIT1 state when application issues a disconnect, and Stack must be able to receive data when the TCP connection is in FIN_WAIT_2 state"
+   ' Application on the test machine establishes a connection to the remote end.
+   ' Application closes the connection.
+   ' Test verifies that Stack sends FIN and transitions the connection to FIN_WAIT1 state. 
+   ' Upon stack receiving an ACK, test verifies that Stack sends nothing and transitions the connection to FIN_WAIT2 state.
+   ' While the connection is at FIN_WAIT2 state, test sends data and verifies that Stack receives it and ACKs without the FIN bit set. 
+   '*/
+   DoTestInFinWait2State ValueArray(0), true, "RecvData"
+   EndTest
+
+   StartTest "Stack correctly receives data in FIN_WAIT_2 state (Shutdown)"
+   '/**
+   ' @test name="The stack transitions the connection to FIN_WAIT1 state when application issues a send and disconnect, and Stack must be able to receive data when the TCP connection is in FIN_WAIT_2 state"
+   ' Application on the test machine establishes a connection to the remote end.
+   ' Application sends data and closes the connection.
+   ' Test verifies that Stack sends data with FIN bit set and and transitions the connection to FIN_WAIT1 state. 
+   ' Upon stack receiving an ACK, test verifies that Stack sends nothing and transitions the connection to FIN_WAIT2 state.
+   ' While the connection is at FIN_WAIT2 state, test sends data and verifies that Stack receives it and ACKs without the FIN bit set. 
+   '*/
+   DoTestInFinWait2State ValueArray(0), false, "RecvData"
+   EndTest
+                                                                    
+   core.sleep 2000
+end sub
+
+'
+' Routine to get a connection in FIN_WAIT_2 state and do the specific test
+' The connection goes into the FIN_WAIT_2 state thru a Shutdown/SendAndDisconnect
+' call, specified thru the fShutdown argument
+' In case of send and disconnect, will also test that if the FIN is not acked, it's
+' rexmitted
+'
+sub DoTestInFinWait2State(fVersion6, fShutdown, szTest)
+   dim szSrcAddress, szDestAddress, usSrcPort, usDestPort, ulSeqNumber, ulAckNumber
+   dim ulSessionId, ulBytesRcvd, pPacket, ulStatus, pIFace, pAutoDisc, ulTID
+
+   randomize
+   usSrcPort = clng(60534*rnd)+5000
+   usDestPort = null
+   StartVariation
+   
+   '
+   ' Start off auto discovery and create the interfaces
+   '   
+   if (fVersion6) then
+      if not(fShutdown) then
+         Warn "DoTestInFinWait2State: v6 stack doesn't support SendAndDisconnect"
+         exit sub
+      end if
+      szSrcAddress = g_szLocalSpoofIp6Address
+      szDestAddress = g_szRemoteIp6Address
+      set pAutoDisc = sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, szSrcAddress, FALSE)
+   else
+      szSrcAddress = g_szLocalSpoofIp
+      szDestAddress = g_szRemoteIpAddress
+      set pAutoDisc = sparta.AutoArp(g_szLocalMacAddress, g_szLocalMacAddress, szSrcAddress)
+   end if
+   set pIFace = CreateInterface(fVersion6, TRUE, g_szRemoteMacAddress, g_szLocalMacAddress, szDestAddress, szSrcAddress)
+   pIFace.StartListening
+   
+   '
+   ' Establish a TCP connnection
+   '
+   ulStatus = ActiveConnect(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+   if (ulStatus <> 0) then
+      Block "DoTestInFinWait2State: ActiveConnect - " & ulStatus
+      exit sub
+   end if
+   
+   '
+   ' Ask autosrv to issue a Shutdown/SendAndDisconnect
+   ' 
+   if (fShutdown) then
+      ulStatus = pController.Shutdown(ulSessionId, ulTID)
+   else
+      ulStatus = pController.SendAndDisconnect(ulSessionId, 1000, ulTID)
+   end if
+   if (ulStatus <> 0) then
+      Block "DoTestInFinWait2State: Shutdown/SendAndDisconnect - " & ulStatus
+      ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+      exit sub
+   end if
+
+   '
+   ' If it's a send and disconnect, receive the data and ack it but don't ack the FIN
+   ' We will ensure that the stack actually rexmits the FIN
+   '
+   if not(fShutdown) then
+      set pPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_FIN or TCP_ACK or TCP_PUSH, 3000, pIFace)
+      if (pPacket is nothing) then
+         Block "DoTestInFinWait2State: Failed to receive data"
+         ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+         exit sub
+      end if
+      
+      set pPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber-1, TCP_ACK, 0)
+      pIFace.Send(pPacket)
+   end if
+                                                              
+   '
+   ' Receive the FIN 
+   '
+   set pPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_FIN or TCP_ACK, 3000, pIFace)
+   if (pPacket is nothing) then
+      Block "DoTestInFinWait2State: Failed to receive FIN"
+      ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+      exit sub
+   elseif (ulBytesRcvd <> 1) then  
+      Sev1 "SendAndDisconnect: Incorrect byte count in FIN - " & ulBytesRcvd & " <> 1"
+   end if
+   
+   '
+   ' Send an ACK
+   '
+   set pPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+   pIFace.Send(pPacket)
+
+   '
+   ' At this point the connection is in FIN_WAIT_2 state. Execute the specific test
+   '   
+   Execute szTest & " fShutdown, fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace"
+   
+   '
+   ' Reset the connection
+   '   
+   ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+
+end sub
+
+
+'
+' Routine to ensure that the stack correctly receives data in FIN_WAIT_2 state
+' - Make the stack receive data
+' - Ensure that the stack correctly acks the data and the FIN bit is not set in the ACK
+' - Optionally validate the data indicated to the application
+'
+function RecvData(fCheckRecvStats, fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+   dim ulCounter, ulExpectSeqNumber, pPacket, ulBytesRcvd, ulBytesSent, ulTID, ulStatus
+   dim ulRecvStatus   
+      
+   for ulCounter = 1 to 5
+      '
+      ' Send data
+      '
+      ulExpectSeqNumber = ulSeqNumber + 1000
+      set pPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_ACK or TCP_PUSH, 1000)
+      pIFace.Send(pPacket)
+   
+      '
+      ' Receive the ack and validate it
+      '     - it acks the data correctly
+      '     - FIN bit is not set in the ACK
+      '
+      set pPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 500, pIFace)
+      if (pPacket is nothing) then
+         Sev1 "RecvData: Failed to receive ack for data"
+         exit function
+      elseif (ulSeqNumber <> ulExpectSeqNumber) then
+         Sev1 "RecvData: Incorrect ack number in ACK - " & ulSeqNumber & " <> " & ulExpectSeqNumber
+         exit function
+      elseif ((pPacket.TcpHeader.Flag and TCP_FIN) = TCP_FIN) then
+         Sev1 "RecvData: FIN bit set in the ACK"
+         exit function
+      end if
+   next          
+ 
+   if (fCheckRecvStats) then
+      '
+      ' Ensure that autosrv received all the data
+      '
+      ulStatus = pController.GetSessionStats(ulSessionId, ulBytesSent, ulBytesRcvd)
+      if (ulStatus <> 0) then
+         Sev1 "RecvData: GetSessionStats - " & ulStatus
+      elseif (ulBytesRcvd <> 5*1000) then
+         Sev1 "RecvData: Incorrect byte count - " &  ulBytesRcvd & " <> 5*1000"
+      end if
+   end if
+   
+end function
+
+      </script>
+   </job>
+</package>

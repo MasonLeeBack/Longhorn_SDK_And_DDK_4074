@@ -1,0 +1,103 @@
+Test Assertion_A13471
+
+Assertion '13.4.7.1 WIA_IPA_TYMED' 
+[
+If the current values of WIA_IPA_TYMED and the WIA_IPA_FORMAT are changed, the value of 
+WIA_IPA_PREFERRED_FORMAT must still be one of the valid values of WIA_IPA_FORMAT.
+]
+
+Var p:Property, pFormat:Property, pPreferred:Property, root:Item, fmt:Format
+Var lVal, fmtSize, guid:GUID, tymed, bExist, Idx
+{   
+    StartWia()
+    GetRoot(root)
+  
+    GetNextItem(root)
+
+    While ( root ) Do 
+    {
+        If ( !CheckItemType(root, WiaItemTypeImage) And 
+             !CheckItemType(root, WiaItemTypeAudio) And
+         !CheckItemType(root, WiaItemTypeVideo) )
+        Then Goto label
+
+        GetFormatInfo(root, fmt)
+
+        fmtSize = GetFormatSize(fmt)
+
+        If (!GetProperty(root, p, WIA_IPA_TYMED))
+        Then 
+        {   
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+
+        If (!GetProperty(root, pFormat, WIA_IPA_FORMAT))
+        Then 
+        {   
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+
+        If (!GetProperty(root, pPreferred, WIA_IPA_PREFERRED_FORMAT))
+        Then 
+        {   
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+
+        For lVal = 0 To fmtSize -1
+        {
+            GetFormatAt(fmt, lVal, guid)
+            tymed = GetTymedAt(fmt, lVal)
+            
+            If (!SetPropertyLong(root, WIA_IPA_TYMED, tymed))
+            Then 
+            {   
+                Writeln '\tSetting valid property value failed'
+                Exit Failed
+            }
+
+            If (!SetPropertyGUID(root, WIA_IPA_FORMAT, guid))
+            Then 
+            {   
+                Writeln '\tSetting valid property value failed'
+                Exit Failed
+            }
+    
+
+            If (!GetProperty(root, pPreferred, WIA_IPA_PREFERRED_FORMAT))
+            Then 
+            {   
+                Writeln '\tThis mandatory property does not exist'
+                Exit Failed
+            }
+
+            bExist = 0
+            For Idx = 0 To fmtSize -1
+            {
+                GetFormatAt(fmt, Idx, guid)
+
+                If (CheckValueGUID(pPreferred, guid))
+                Then 
+                {
+                    bExist = 1
+                    Break
+                }
+            }
+
+            If ( !bExist )
+            Then 
+            {
+                Writeln '\tThe value of WIA_IPA_PREFERRED_FORMAT is not a valid value for this item' 
+                Writeln '\tRefer to WIA_IPA_FORMAT for a list of valid values for this item' 
+                Exit Failed
+            }
+         }
+
+:label:
+        GetNextItem(root)
+    }
+
+    StopWia()
+}

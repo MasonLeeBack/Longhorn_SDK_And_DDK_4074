@@ -1,0 +1,262 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3
+</MEDIA>
+<CARDMACH>
+1C,1M
+</CARDMACH>
+<RUNORDER>
+3000
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[
+This is a Ndis 6.0 based miniport drivers test. It calls the miniport a number of
+times, sending a bunch of Net Buffers and Net Buffer Lists each time from the test
+card to a random address. It goes through a combination of send configuration
+parameters, varying the number of net buffer lists in each call to send, the number
+of net buffers in each net buffer lists, the number and size of data buffers in each
+net buffer. It is not a stress test, and in each variation, the configuration
+parameters remain the same. Each send variation runs for 20 seconds and the complete
+test would run for about 2 hours.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="1c_Mini6Send" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore6" progid="NDTCore6.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oCoreFactory" progid="NDTCore6.Factory.1" events="true"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\inc\Constants6.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard6.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen6.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanEndPoint6.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\inc\ConstLAN.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script id="1c_Mini6Send" language="VBScript">
+'==========================================================================
+' Script Name:    1c_Mini6Send
+'==========================================================================
+Option Explicit
+
+Dim oTestObj
+
+' We are going to be using ndis 6 protocol
+g_UseNdis6Protocol = TRUE
+
+' We would also be using the trick to point oNDTCore to oNDTCore6, so that anyone who
+' uses oNDTCore would automatically get oNDTCore6. Only problem is we might be masking
+' some errors, so this would not be done just yet
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0))
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard, oTestOpen, oTestEndPoint
+   Private m_lTestAdapterIndex
+
+   Dim nTotalNumCallsToSend, nSendDuration
+   Dim nInitialBurstSize
+   Dim nNBLPerSendStart, nNBLPerSendEnd, nNBLPerSendStep
+   Dim nNBPerNBLStart, nNBPerNBLEnd, nNBPerNBLStep
+   Dim nNBSizeStart, nNBSizeEnd, nNBSizeStep
+   Dim nMdlSizeStart, nMdlSizeEnd, nMdlSizeStep
+
+   Private Sub Class_Initialize
+
+   End Sub
+
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+      Set oTestOpen = Nothing
+      Set oTestEndPoint = Nothing
+   End Sub
+
+   Public Sub SetTestConfiguration
+      '----------------------------------------
+      ' All configurable options
+      '----------------------------------------
+
+      ' The number of times we want to call the NdisSend routines (if we want this
+      ' to be a number based test)
+      nTotalNumCallsToSend = 0
+      ' How long (if 0, then based on number) do we want to run the timed test?
+      nSendDuration = 20000
+
+      ' Before starting tests, flood the pipeline with these many NBL's (these are
+      ' the number of NBLs we try to maintain in the pipeline, and are included in
+      ' the total number of NBLs to send)
+      nInitialBurstSize = 50
+
+      ' The number of NBLs to send per send
+      nNBLPerSendStart = 1
+      nNBLPerSendEnd = 3
+      nNBLPerSendStep = 1
+
+      ' Each NBL should contain these many Net buffers
+      nNBPerNBLStart = 1
+      nNBPerNBLEnd = 20
+      nNBPerNBLStep = 5
+
+      ' What should be the size of each net buffer
+      nNBSizeStart = 100
+      nNBSizeEnd = 1500
+      nNBSizeStep = 700
+
+      ' What's the max size of each MDL (helps break a NB data into multiple MDLs)
+      nMdlSizeStart = 500
+      nMdlSizeEnd = 1500
+      nMdlSizeStep = 500
+      '----------------------------------------
+   End Sub
+
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+
+      oNDTCore6.DebugLevel = NORMAL_LOGGING_LEVEL
+
+      SetTestConfiguration
+
+      Set pAdapterList = oNDInfo.AdapterList
+
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard6
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+
+      Set oTestOpen = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpen is Nothing) Then
+         Exit Function
+      End If
+
+      Set oTestEndPoint = oTestOpen.vbCreateEndPoint(CLENDPOINT)
+      If (oTestEndPoint is Nothing) Then
+         Exit Function
+      End If
+
+      If (oTestEndPoint.vbOpenCommunicationChannel(SIMPLE_SEND_COMM_MGR, _
+            NDISTEST_CONSTRUCTOR, NDIS_MEDIUM_802_3_MEDIA_MODULE) <> 0) Then
+         Exit Function
+      End If
+
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+
+   Public Function RunTest (lTestAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+
+      ExecuteTestCore
+   End Function
+
+   Private Sub ExecuteTestCore
+      Dim bResult, Status
+      Dim oSendCommMgrConfig, oSendNBConfig, oSendMediaConfig, oSendCommMgrStats
+      Dim nNumNetBufferListsPerSend, nNumNetBuffersPerNBL, nNetBufferSize, nMaxMdlSize
+
+      ' Create the various config objects to be used
+      Set oSendCommMgrConfig = oCoreFactory.CommMgrSendConfig(oTestEndPoint.CommMgrType)
+      Set oSendNBConfig = oCoreFactory.ConstructorSendConfig(oTestEndPoint.ConstructorType)
+      Set oSendMediaConfig = oCoreFactory.MediaModuleSendConfig(oTestEndPoint.MediaModuleType)
+
+      ' Object to obtain send results from the test card
+      Set oSendCommMgrStats = oCoreFactory.CommMgrSendStatistics(oTestEndPoint.CommMgrType)
+
+      oSendCommMgrConfig.NumSends = nTotalNumCallsToSend
+      oSendCommMgrConfig.SendDuration = nSendDuration
+      oSendCommMgrConfig.InitialBurstSize = nInitialBurstSize
+
+      oSendNBConfig.NumNBLToPreallocate = nInitialBurstSize
+
+      ' We want to send to a random destination address
+      oSendMediaConfig.DestinationAddress = RandomAddr
+
+      ' Loop through the various send parameter configurations
+      For nNumNetBufferListsPerSend = nNBLPerSendStart To nNBLPerSendEnd Step nNBLPerSendStep
+         For nNumNetBuffersPerNBL = nNBPerNBLStart To nNBPerNBLEnd Step nNBPerNBLStep
+            For nNetBufferSize = nNBSizeStart To nNBSizeEnd Step nNBSizeStep
+               For nMaxMdlSize = nMdlSizeStart To nMdlSizeEnd Step nMdlSizeStep
+
+                  oSendCommMgrConfig.NumNetBufferListsPerSend = nNumNetBufferListsPerSend
+                  oSendNBConfig.NumNetBuffersPerNetBufferList = nNumNetBuffersPerNBL
+                  oSendNBConfig.NetBufferSize = nNetBufferSize
+                  oSendNBConfig.MaxMdlSize = nMaxMdlSize
+
+                  oLog.Variation ("Sends: " & nNumNetBufferListsPerSend & " " & nNumNetBuffersPerNBL & " " & nNetBufferSize & " " & nMaxMdlSize)
+
+                  ' Start sending on the open
+                  Status = oTestEndPoint.vbSendNetBufferLists(oSendCommMgrConfig, oSendNBConfig, oSendMediaConfig)
+
+                  ' Now, wait for the sending to complete on each open
+                  Status = oTestEndPoint.vbWaitForSendsToComplete(0)
+
+                  oLog.Variation ("Send results")
+
+                  Status = oTestEndPoint.vbGetSendResults(oSendCommMgrStats, Nothing)
+                  If (Status <> 0) then
+                     Call oLog.Failed ("Failed to get send results. Error " & Status, 88888)
+                  End If
+
+                  ' Did all our sends complete?
+                  If (oSendCommMgrStats.TotalNetBufferListsSent > oSendCommMgrStats.TotalNetBufferListsSendCompleted) Then
+                     Call oLog.Failed("Not all the Net Buffer Lists sent were completed", 88888)
+                  End If
+
+                  ' Did all our sends complete successfully?
+                  If (oSendCommMgrStats.TotalNetBufferListsSendCompleted > oSendCommMgrStats.TotalNetBufferListSendsSuccessful) Then
+                     Call oLog.Failed("Not all the Net Buffer Lists sent were completed successfully", 88888)
+                  End If
+
+                  ' Did we have the complete Net buffer in a single MDL. No point in varying
+                  ' the max size of the MDL anymore
+                  If (nMaxMdlSize > nNetBufferSize) Then
+                     Exit For
+                  End If
+               Next
+            Next
+         Next
+      Next
+
+      oLog.Variation("Clear Events")
+      Call oTestOpen.vbClearEvents()
+   End Sub
+
+End Class
+
+</script>
+</job>
+</package>
+
+<!--- CRC = 0x6c77f97a --->

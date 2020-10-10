@@ -1,0 +1,125 @@
+[WMI, Dynamic, Provider("WMIProv"),
+ guid("{F4A80276-23B7-11d1-9ED9-00A0C9010057}"),
+ localeid(0x409),
+ WmiExpense(1),
+ Description("A UINT to set")]
+class E100BExampleSetUINT_OID
+{
+   [key, read]
+   string   InstanceName;           // Instance name returned from WMI
+
+   [read]
+   boolean  Active;
+
+   [read, write,
+    Description("Set this UINT then query it."),
+    WmiDataId(1)] uint32   ExampleSetUINT_OID;
+};
+
+[WMI, Dynamic, Provider("WMIProv"),
+ guid("{F4A80277-23B7-11d1-9ED9-00A0C9010057}"),
+ localeid(0x409),
+ WmiExpense(1),
+ Description("A UINT to Query")]
+class E100BExampleQueryUINT_OID
+{
+   [key, read]
+   string   InstanceName;           // Instance name returned from WMI
+
+   [read]
+   boolean  Active;
+
+   [read,
+    Description("Query this UINT and get back the set UINT + 1."),
+    WmiDataId(1)] uint32   ExampleQueryUINT_OID;
+};
+
+[WMI, Dynamic, Provider("WMIProv"),
+ guid("{F4A80278-23B7-11d1-9ED9-00A0C9010057}"),
+ localeid(0x409),
+ WmiExpense(1),
+ Description("An Array to query (should be 4 bytes of MAC address)")]
+class E100BExampleQueryArrayOID
+{
+   [key, read]
+   string   InstanceName;           // Instance name returned from WMI
+
+   [read]
+   boolean  Active;
+
+   [read,
+      Description("Number of array elements."),
+      WmiDataId(1)] uint32 NumberElements;
+
+   [read,
+        Description("Query this array to get 4 bytes of MAC address."),
+      WmiDataId(2),
+      WmiSizeIs("NumberElements")]    uint8 ExampleQueryArray[];
+
+};
+
+[WMI, Dynamic, Provider("WMIProv"),
+ guid("{F4A80279-23B7-11d1-9ED9-00A0C9010057}"),
+ localeid(0x409),
+ WmiExpense(1),
+ Description("An ANSI string to Query")]
+class E100BExampleQueryStringOID
+{
+   [key, read]
+   string   InstanceName;           // Instance name returned from WMI
+
+   [read]
+   boolean  Active;
+
+   [read,
+    Description("Query this to get an ANSI string back (it will be the VENDORDESCRIPTOR string)."),
+    WmiDataId(1)] string   ExampleQueryStringOID;
+};
+
+[WMI, Dynamic, Provider("WMIProv"),
+ guid("{07f8e235-ddde-4c32-9225-36a1e15a9d64}"),
+ localeid(0x409),
+ WmiExpense(1),
+ Description("A test of method")]
+class E100BExampleExecuteMethod
+{
+   [key, read]
+   string   InstanceName;           // Instance name returned from WMI
+
+   [read]
+   boolean  Active;
+
+   [WmiMethodId(1),
+    Implemented,
+    DisplayName("Get Two Integers, Add them together"),
+    HeaderName("ADD_TWO_INTS"),
+    Description("Add two intergers and return the result")
+   ]     
+   void AddTwoInts(
+                [in,
+                 DisplayName("First interger")]
+                uint32 FirstInt,
+                [in,
+                 DisplayName("Second interger")]
+                uint32 SecondInt,
+                [out,
+                 DisplayName("The result")]
+                uint32  ResultInt); 
+   
+   [WmiMethodId(2),
+    Implemented,
+    DisplayName("Get Two Integers, First interger minus the second one and return result"),
+    HeaderName("MINUS_TWO_INTS"),
+    Description("First interger minus the seconde, and return the result")
+   ]     
+   void MinusTwoInts(
+                [in,
+                 DisplayName("First interger")]
+                uint32 FirstInt,
+                [in,
+                 DisplayName("Second interger")]
+                uint32 SecondInt,
+                [out,
+                 DisplayName("The result")]
+                uint32  ResultInt); 
+};

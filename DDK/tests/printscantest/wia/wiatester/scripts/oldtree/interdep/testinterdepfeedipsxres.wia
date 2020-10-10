@@ -1,0 +1,445 @@
+Test Assertion_A13478
+
+Assertion '13.4.7.8 WIA_IPS_XRES' 
+[
+If the device is a scanner, when the current value of this property is changed, the current and valid values of 
+the following properties shall be proportionally changed: WIA_IPS_XPOS, WIA_IPS_XEXTENT, WIA_IPA_PIXELS_PER_LINE, 
+(WIA_IPA_BYTES_PER_LINE, WIA_IPA_ITEM_SIZE: possible padding). 
+If the WIA_IPS_YRES property is read-only, the current and valid values of the following properties shall also be proportionally changed: 
+WIA_IPS_YPOS, WIA_IPS_YEXTENT, WIA_IPA_NUMBER_OF_LINES.
+]
+
+Var root:Item
+Var p:Property
+Var dt, temp, lVal, XPOS, YPOS, XEXTENT, YEXTENT, XRES, YRES, PPL
+Var maxXPOS, minXPOS, maxXEXTENT, minXEXTENT, maxYPOS, minYPOS, maxYEXTENT, minYEXTENT
+Var BedWidth: Real, BedHeight: Real
+Var minXRES, maxXRES, NUMBEROFLINES, ddd:Real
+{
+    StartWia()
+    GetRoot(root)
+    GetDeviceType(dt)
+    
+    If (dt != StiDeviceTypeScanner)
+    Then Exit Passed
+
+    # Get the bed width
+    If (GetProperty(root, p, WIA_DPS_HORIZONTAL_BED_SIZE))
+    Then 
+    {   
+        BedWidth = GetLongValue(p) 
+    }
+    Else
+    {
+        If (GetProperty(root, p, WIA_DPS_HORIZONTAL_SHEET_FEED_SIZE))
+        Then 
+        {   
+            BedWidth = GetLongValue(p) 
+        }
+        Else 
+        {   
+            Writeln '\tCould not get the bed width!'
+            Exit Failed
+        }
+    }
+
+    
+    GetNextItem(root)
+
+    While ( root ) Do
+    {
+        If ( !CheckItemType(root, WiaItemTypeImage) )
+        Then Goto label
+            
+        If ( !GetProperty(root, p, WIA_IPS_XPOS) )
+        Then 
+        {
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+        
+        XPOS = GetLongValue(p)
+        
+        minXPOS  = GetPropertyMinValue(p)
+        maxXPOS  = GetPropertyMaxValue(p)
+            
+        If ( !GetProperty(root, p, WIA_IPS_XEXTENT) )
+        Then 
+        {
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+
+        XEXTENT = GetLongValue(p)
+
+        minXEXTENT  = GetPropertyMinValue(p)
+        maxXEXTENT  = GetPropertyMaxValue(p)
+
+        If ( !GetProperty(root, p, WIA_IPA_PIXELS_PER_LINE) )
+        Then 
+        {
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+
+        PPL = GetLongValue(p)
+
+        If (PPL != XEXTENT) 
+        Then 
+        {
+            Write ' \tCurrent value of WIA_IPA_PIXELS_PER_LINE(' Write PPL 
+            Write ') != WIA_IPS_XEXTENT(' Write XEXTENT Writeln ')'
+            Exit Failed
+        }
+
+        If ( !GetProperty(root, p, WIA_IPS_XRES) )
+        Then 
+        {
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+
+        XRES = GetLongValue(p)
+        
+        minXRES  = GetPropertyMinValue(p)
+        maxXRES  = GetPropertyMaxValue(p)
+
+        # compare to the bed Width
+        If ( (XPOS + maxXEXTENT) != (BedWidth * XRES / 1000) ) 
+        Then
+        {
+            Writeln '\tIncorrect value of WIA_IPS_XPOS or WIA_IPS_XEXTENT property: '
+            Writeln '\t(current XPOS + maxXEXTENT) != (BedWidth * current XRES / 1000)'
+            Exit Failed
+        }
+
+        If ( (XPOS + XEXTENT) > (BedWidth * XRES / 1000) ) 
+        Then
+        {
+            Writeln '\tIncorrect value of WIA_IPS_XPOS or WIA_IPS_XEXTENT property: '
+            Writeln '\t(current XPOS + current XEXTENT) > (BedWidth * XRES / 1000)'
+            Exit Failed
+        }
+
+        If ( (maxXPOS + minXEXTENT) != (BedWidth * XRES / 1000) ) 
+        Then
+        {
+            Writeln '\tIncorrect value of WIA_IPS_XPOS or WIA_IPS_XEXTENT property: '
+            Writeln '\t(maxXPOS + minXEXTENT) != (BedWidth * XRES / 1000)'
+            Exit Failed
+        }
+
+
+        # check if Y-axis has dependency on X-axis
+        If ( !GetProperty(root, p, WIA_IPS_YRES) )
+        Then 
+        {
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+
+        YRES = GetLongValue(p)
+
+        If ( !IsPropertyReadWrite(p) )
+        Then 
+        {
+            If ( !GetProperty(root, p, WIA_IPS_YPOS) )
+            Then 
+            {
+                Writeln '\tThis mandatory property does not exist'
+                Exit Failed
+            }
+
+            YPOS = GetLongValue(p)
+
+            minYPOS  = GetPropertyMinValue(p)
+            maxYPOS  = GetPropertyMaxValue(p)
+        }
+
+
+        #
+        # Now change x-resolution to minXRES
+        #
+
+        ddd = minXRES / XRES
+        XRES = minXRES
+
+        If ( SetPropertyLong(root, WIA_IPS_XRES, XRES) )
+        Then
+        {
+            If ( !GetProperty(root, p, WIA_IPS_XPOS) )
+            Then 
+            {
+                Writeln '\tThis mandatory property does not exist'
+                Exit Failed
+            }
+
+            lVal = GetLongValue(p)
+            temp = ddd * XPOS
+
+            If ( lVal != temp )
+            Then 
+            {
+                Write '\tIncorrect current value of WIA_IPS_XPOS property after XRES was set to minXRES: '
+                Writeln lVal
+                Write '\t Expected:' Writeln temp
+                Exit Failed
+            }
+
+            XPOS = lVal
+
+            minXPOS  = GetPropertyMinValue(p)
+            maxXPOS  = GetPropertyMaxValue(p)
+
+            If ( !GetProperty(root, p, WIA_IPS_XEXTENT) )
+            Then 
+            {
+                Writeln '\tThis mandatory property does not exist'
+                Exit Failed
+            }
+
+            XEXTENT = GetLongValue(p)
+
+            minXEXTENT  = GetPropertyMinValue(p)
+            maxXEXTENT  = GetPropertyMaxValue(p)
+
+            # compare to the bed Width
+            If ( (XPOS + maxXEXTENT) != (BedWidth * XRES / 1000) ) 
+            Then
+            {
+                Writeln '\tIncorrect value of WIA_IPS_XPOS or WIA_IPS_XEXTENT property: '
+                Writeln '\t(current XPOS + maxXEXTENT) != (BedWidth * current XRES / 1000)'
+                Exit Failed
+            }
+
+            If ( (XPOS + XEXTENT) > (BedWidth * XRES / 1000) ) 
+            Then
+            {
+                Writeln '\tIncorrect value of WIA_IPS_XPOS or WIA_IPS_XEXTENT property: '
+                Writeln '\t(current XPOS + current XEXTENT) > (BedWidth * XRES / 1000)'
+                Exit Failed
+            }
+
+            If ( (maxXPOS + minXEXTENT) != (BedWidth * XRES / 1000) ) 
+            Then
+            {
+                Writeln '\tIncorrect value of WIA_IPS_XPOS or WIA_IPS_XEXTENT property: '
+                Writeln '\t(maxXPOS + minXEXTENT) != (BedWidth * XRES / 1000)'
+                Exit Failed
+            }
+
+        
+            # check if the new ppl equals to new XEXTENT
+            If ( !GetProperty(root, p, WIA_IPA_PIXELS_PER_LINE) )
+            Then 
+            {
+                Writeln '\tThis mandatory property does not exist'
+                Exit Failed
+            }
+            PPL = GetLongValue(p)
+            If ( PPL != XEXTENT ) 
+            Then 
+            {
+                Write ' \tCurrent value of WIA_IPA_PIXELS_PER_LINE(' Write PPL 
+                Write ') != WIA_IPS_XEXTENT(' Write XEXTENT Writeln ')'
+                Exit Failed
+            }
+
+           
+            If ( !GetProperty(root, p, WIA_IPS_YRES) )
+            Then 
+            {
+                Writeln '\tThis mandatory property does not exist'
+                Exit Failed
+            }
+
+            # If the WIA_IPS_YRES has not WIA_PROP_RW access, it depends on WIA_IPS_XRES 
+            If ( !IsPropertyReadWrite(p))
+            Then 
+            {
+                lVal = GetLongValue(p)
+                temp = ddd * YRES
+
+                If ( lVal != temp )
+                Then 
+                {
+                    Write '\tIncorrect current value of WIA_IPA_YRES property: '
+                    Writeln lVal
+                    Write '\t Expected:' Writeln temp
+                    Exit Failed
+                }
+
+                YRES = lVal
+
+                If ( !GetProperty(root, p, WIA_IPS_YPOS) )
+                Then 
+                {
+                    Writeln '\tThis mandatory property does not exist'
+                    Exit Failed
+                }
+
+                lVal = GetLongValue(p)
+                temp = ddd * YPOS
+
+                If ( lVal != temp )
+                Then 
+                {
+                    Writeln '\tIncorrect current value of WIA_IPA_YPOS property: '
+                    Writeln lVal
+                    Write '\t Expected:' Writeln temp
+                    Exit Failed
+                }
+            }
+        }
+
+
+        #
+        #  Now change x-resolution from minXRES to maxXRES
+        #
+
+        If (XRES == 0) 
+        Then
+        {
+            Write '\tIncorrect minimum value of WIA_IPS_XRES property: ' Writeln XRES
+            Exit Failed
+        }
+
+        ddd = maxXRES / XRES
+        XRES = maxXRES
+
+        If ( SetPropertyLong(root, WIA_IPS_XRES, maxXRES) )
+        Then
+        {
+            If ( !GetProperty(root, p, WIA_IPS_XPOS) )
+            Then 
+            {
+                Writeln '\tThis mandatory property does not exist'
+                Exit Failed
+            }
+
+            lVal = GetLongValue(p)
+            temp = ddd * XPOS
+
+            If ( lVal != temp )
+            Then 
+            {
+                Writeln '\tIncorrect current value of WIA_IPS_XPOS property after XRES was set to maxXRES: '
+                Writeln lVal
+                Write '\t Expected:' Writeln temp
+                Exit Failed
+            }
+
+            XPOS = lVal
+
+            minXPOS  = GetPropertyMinValue(p)
+            maxXPOS  = GetPropertyMaxValue(p)
+
+            If ( !GetProperty(root, p, WIA_IPS_XEXTENT) )
+            Then 
+            {
+                Writeln '\tThis mandatory property does not exist'
+                Exit Failed
+            }
+
+            XEXTENT = GetLongValue(p)
+            
+            minXEXTENT  = GetPropertyMinValue(p)
+            maxXEXTENT  = GetPropertyMaxValue(p)
+
+            # compare to the bed Width
+            If ( (XPOS + maxXEXTENT) != (BedWidth * XRES / 1000) ) 
+            Then
+            {
+                Writeln '\tIncorrect value of WIA_IPS_XPOS or WIA_IPS_XEXTENT property: '
+                Writeln '\t(current XPOS + maxXEXTENT) != (BedWidth * current XRES / 1000)'
+                Exit Failed
+            }
+
+            If ( (XPOS + XEXTENT) > (BedWidth * XRES / 1000) ) 
+            Then
+            {
+                Writeln '\tIncorrect value of WIA_IPS_XPOS or WIA_IPS_XEXTENT property: '
+                Writeln '\t(current XPOS + current XEXTENT) > (BedWidth * XRES / 1000)'
+                Exit Failed
+            }
+
+            If ( (maxXPOS + minXEXTENT) != (BedWidth * XRES / 1000) ) 
+            Then
+            {
+                Writeln '\tIncorrect value of WIA_IPS_XPOS or WIA_IPS_XEXTENT property: '
+                Writeln '\t(maxXPOS + minXEXTENT) != (BedWidth * XRES / 1000)'
+                Exit Failed
+            }
+
+            # check if the new ppl equals to new XEXTENT
+            If ( !GetProperty(root, p, WIA_IPA_PIXELS_PER_LINE) )
+            Then 
+            {
+                Writeln '\tThis mandatory property does not exist'
+                Exit Failed
+            }
+
+            PPL = GetLongValue(p)
+
+            If ( PPL != XEXTENT ) 
+            Then 
+            {
+                Write ' \tCurrent value of WIA_IPA_PIXELS_PER_LINE(' Write PPL 
+                Write ') != WIA_IPS_XEXTENT(' Write XEXTENT Writeln ')'
+                Exit Failed
+            }
+
+           
+            If ( !GetProperty(root, p, WIA_IPS_YRES) )
+            Then 
+            {
+                Writeln '\tThis mandatory property does not exist'
+                Exit Failed
+            }
+
+            # If the WIA_IPS_YRES has not WIA_PROP_RW access, it depends on WIA_IPS_XRES 
+            If ( !CheckAccess(p, WIA_PROP_RW) )
+            Then 
+            {
+                lVal = GetLongValue(p)
+                temp = ddd * YRES
+
+                If ( lVal != temp )
+                Then 
+                {
+                    Write '\tIncorrect current value of WIA_IPA_YRES property: '
+                    Writeln lVal
+                    Write '\t Expected:' Writeln temp
+                    Exit Failed
+                }
+
+                YRES = lVal
+
+                If ( !GetProperty(root, p, WIA_IPS_YPOS) )
+                Then 
+                {
+                    Writeln '\tThis mandatory property does not exist'
+                    Exit Failed
+                }
+
+                lVal = GetLongValue(p)
+                temp = ddd * YPOS
+
+                If ( lVal != temp )
+                Then 
+                {
+                    Writeln '\tIncorrect current value of WIA_IPA_YPOS property: '
+                    Writeln lVal
+                    Write '\t Expected:' Writeln temp
+                    Exit Failed
+                }
+            }
+        }
+
+
+:label:
+        GetNextItem(root)
+    }
+
+    StopWia()
+}

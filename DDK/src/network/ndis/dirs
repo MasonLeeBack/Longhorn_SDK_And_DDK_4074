@@ -1,0 +1,11 @@
+DIRS= \
+     coisdn \
+     e100bex \
+     filter \
+     isdnwan \
+     mux \
+     ndisprot \
+     ndiswdm \
+     netvmini \
+     passthru \
+     tbatm155

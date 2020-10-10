@@ -1,0 +1,137 @@
+Test Assertion_A13477
+
+Assertion '13.4.7.7 WIA_IPS_YPOS' 
+[
+If the device is a scanner, a change in the current value of this property shall affect the valid values for the WIA_IPS_YEXTENT property. 
+The current value for WIA_IPS_YEXTENT shall be clipped to the new valid values.
+]
+
+Var p:Property, root:Item
+Var dt, curYPOS, curYEXTENT, minYPOS, maxYPOS, minYEXTENT, maxYEXTENT
+{
+    StartWia()
+    GetRoot(root)
+    GetDeviceType(dt)
+    
+    If (dt != StiDeviceTypeScanner)
+    Then Exit Passed
+
+    GetNextItem(root)
+
+    While ( root ) Do
+    {
+        If ( !CheckItemType(root, WiaItemTypeImage))
+        Then Goto label
+        
+        If ( ! GetProperty(root, p, WIA_IPS_YPOS) )
+        Then 
+        {
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+        
+        curYPOS = GetLongValue(p)
+        
+        minYPOS  = GetPropertyMinValue(p)
+        maxYPOS  = GetPropertyMaxValue(p)   
+        
+        If (!GetProperty(root, p, WIA_IPS_YEXTENT))
+        Then 
+        {
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+        
+        curYEXTENT = GetLongValue(p)
+        
+        minYEXTENT  = GetPropertyMinValue(p)
+        maxYEXTENT  = GetPropertyMaxValue(p)   
+
+
+        # check valid values of WIA_IPS_YEXTENT
+        If ( maxYEXTENT > (maxYPOS + minYEXTENT - curYPOS) )
+        Then
+        {
+            Writeln '\tIncorrect max value of WIA_IPS_YEXTENT property'
+            Exit Failed
+        }
+
+        curYPOS = minYPOS
+
+        If ( !SetPropertyLong(root, WIA_IPS_YPOS, curYPOS))
+        Then
+        {
+            Writeln '\tSetting property value failed'
+            Exit Failed
+        }
+
+        If (!GetProperty(root, p, WIA_IPS_YEXTENT))
+        Then 
+        {
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+
+        curYEXTENT = GetLongValue(p)
+        
+        maxYEXTENT  = GetPropertyMaxValue(p)   
+
+        # check if current value of WIA_IPS_YEXTENT is clipped 
+        If ( (curYEXTENT + curYPOS) > (maxYPOS + minYEXTENT) )
+        Then 
+        {
+            Writeln '\tIncorrect current value of WIA_IPS_YEXTENT property'
+            Exit Failed
+        }
+
+        # check if valid value of WIA_IPS_YEXTENT is adjusted accordingly 
+        If (maxYEXTENT != (maxYPOS + minYEXTENT - curYPOS))
+        Then 
+        {
+            Writeln '\tIncorrect max value of WIA_IPS_YEXTENT property'
+            Exit Failed
+        }
+
+        # Repeat for maxYPOS
+        curYPOS = maxYPOS
+
+        If ( !SetPropertyLong(root, WIA_IPS_YPOS, curYPOS))
+        Then
+        {
+            Writeln '\tSetting property value failed'
+            Exit Failed
+        }
+
+        If (!GetProperty(root, p, WIA_IPS_YEXTENT))
+        Then 
+        {
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+
+        curYEXTENT = GetLongValue(p)
+
+        maxYEXTENT  = GetPropertyMaxValue(p)   
+
+        # check if current value of WIA_IPS_YEXTENT is clipped 
+        If ( (curYEXTENT + curYPOS) > (maxYPOS + minYEXTENT) )
+        Then 
+        {
+            Writeln '\tIncorrect current value of WIA_IPS_YEXTENT property'
+            Exit Failed
+        }
+
+        # check if valid value of WIA_IPS_YEXTENT is adjusted accordingly 
+        If (maxYEXTENT != (maxYPOS + minYEXTENT - curYPOS))
+        Then 
+        {
+            Writeln '\tIncorrect max value of WIA_IPS_YEXTENT property'
+            Exit Failed
+        }
+
+:label:
+        GetNextItem(root)
+    }
+
+    StopWia()
+}

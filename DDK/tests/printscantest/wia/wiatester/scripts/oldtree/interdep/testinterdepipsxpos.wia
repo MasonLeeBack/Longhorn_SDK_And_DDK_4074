@@ -1,0 +1,141 @@
+Test Assertion_A13476
+
+Assertion '13.4.7.6 WIA_IPS_XPOS' 
+[
+If the device is a scanner, a change in the current value of this property shall affect the valid values for the WIA_IPS_XEXTENT property. 
+The current value for WIA_IPS_XEXTENT shall be clipped to the new valid values.
+]
+
+Var p:Property, root:Item
+Var dt, lVal, curXPOS, curXEXTENT, minXPOS, maxXPOS, minXEXTENT, maxXEXTENT
+{
+    StartWia()
+    GetRoot(root)
+    GetDeviceType(dt)
+    
+    If (dt != StiDeviceTypeScanner)
+    Then Exit Passed
+    
+    GetNextItem(root)
+    
+    While ( root ) Do
+    {
+        If ( !CheckItemType(root, WiaItemTypeImage))
+        Then Goto label
+        
+        If ( ! GetProperty(root, p, WIA_IPS_XPOS) )
+        Then 
+        {
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+        curXPOS = GetLongValue(p)
+        
+        minXPOS  = GetPropertyMinValue(p)
+        maxXPOS  = GetPropertyMaxValue(p)     
+
+        If (!GetProperty(root, p, WIA_IPS_XEXTENT))
+        Then 
+        {
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+        curXEXTENT = GetLongValue(p)
+        
+        minXEXTENT  = GetPropertyMinValue(p)
+        maxXEXTENT  = GetPropertyMaxValue(p)     
+       
+        # check valid values of WIA_IPS_XEXTENT
+        If ( maxXEXTENT > (maxXPOS + minXEXTENT - curXPOS) )
+        Then
+        {
+            Writeln '\tIncorrect max value of WIA_IPS_XEXTENT property'
+            Exit Failed
+        }
+
+        If ( CheckAccess(p, WIA_PROP_NONE) ) 
+        Then Exit Passed
+
+        #
+        # Change staring X position
+        #
+
+        curXPOS = minXPOS
+        
+        If ( !SetPropertyLong(root, WIA_IPS_XPOS, curXPOS))
+        Then
+        {
+            Writeln '\tSetting property value failed'
+            Exit Failed
+        }
+        
+        If (!GetProperty(root, p, WIA_IPS_XEXTENT))
+        Then 
+        {
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+
+        curXEXTENT = GetLongValue(p)
+        
+        maxXEXTENT  = GetPropertyMaxValue(p)     
+          
+        # check if current value of WIA_IPS_XEXTENT is clipped 
+        If ( (curXEXTENT + curXPOS) > (maxXPOS + minXEXTENT) )
+        Then 
+        {
+            Writeln '\tIncorrect current value of WIA_IPS_XEXTENT property'
+            Exit Failed
+        }
+
+        # check if valid value of WIA_IPS_XEXTENT is adjusted accordingly 
+        If (maxXEXTENT != (maxXPOS + minXEXTENT - curXPOS))
+        Then 
+        {
+            Writeln '\tIncorrect max value of WIA_IPS_XEXTENT property'
+            Exit Failed
+        }
+
+        # Repeat for maxXPOS
+        curXPOS = maxXPOS
+
+        If ( !SetPropertyLong(root, WIA_IPS_XPOS, curXPOS))
+        Then
+        {
+            Writeln '\tSetting property value failed'
+            Exit Failed
+        }
+
+        If (!GetProperty(root, p, WIA_IPS_XEXTENT))
+        Then 
+        {
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+        
+        curXEXTENT = GetLongValue(p)
+        
+        maxXEXTENT  = GetPropertyMaxValue(p)   
+                   
+        # check if current value of WIA_IPS_XEXTENT is clipped 
+        If ( (curXEXTENT + curXPOS) > (maxXPOS + minXEXTENT) )
+        Then 
+        {
+            Writeln '\tIncorrect current value of WIA_IPS_XEXTENT property'
+            Exit Failed
+        }
+        
+        # check if valid value of WIA_IPS_XEXTENT is adjusted accordingly 
+        If (maxXEXTENT != (maxXPOS + minXEXTENT - curXPOS))
+        Then 
+        {
+            Writeln '\tIncorrect max value of WIA_IPS_XEXTENT property'
+            Exit Failed
+        }
+
+:label:
+        GetNextItem(root)
+    }
+    
+    StopWia()
+}

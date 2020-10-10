@@ -1,0 +1,785 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3
+</MEDIA>
+<CARDMACH>
+2C,1M
+</CARDMACH>
+<RUNORDER>
+3060
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[
+This is a Ndis 6.0 based miniport drivers performance test.
+
+Send:
+It sends from the test adapter to the various support adapters. It tries to keep
+the send path continuously busy. It starts by creating as many threads as processors on
+the test machine and from each of these threads sends (preallocated) packets to the
+support adapters. The rate of sends from each thread is controlled by the send complete
+rate of the miniport. It also measures the performance that the driver is able to achieve
+on the send path.
+
+Receive:
+Receive side performance is restricted by the fact that (normally) only one receive
+DPC runs for each NIC. We try to improve this by using as many support adapters as
+possible, creating one open on each of them which is receiving.
+
+Duration:
+The test goes through various combinations of send parameters (number
+of net buffers, number of net buffers per net buffer list, net buffer lists size, etc),
+each running for 30 seconds.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="2c_Min6Performance" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore6" progid="NDTCore6.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oLargeMath" progid="NDTSupp.LargeMath.1" events="true"/>
+      <object id="oCoreFactory" progid="NDTCore6.Factory.1" events="true"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\inc\Constants6.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard6.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen6.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanEndPoint6.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\inc\ConstLAN.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script id="2c_Min6Performance" language="VBScript">
+'==========================================================================
+' Script Name:    2c_Min6Performance
+'==========================================================================
+Option Explicit
+
+Dim oTestObj
+
+' We are going to be using ndis 6 protocol
+g_UseNdis6Protocol = TRUE
+
+' We would also be using the trick to point oNDTCore to oNDTCore6, so that anyone who
+' uses oNDTCore would automatically get oNDTCore6. Only problem is we might be masking
+' some errors, so this would not be done just yet
+Call Initialize
+
+' Test does not work
+Set oTestObj = New TestObj
+Call oTestObj.RunTest
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Dim m_lSendAdapterIndex
+   Dim oSendCard
+   Dim ArrSendOpen(32)
+   Dim ArrSendEndPoint(32)
+   Dim ArrRecvAdapterIndex(16)
+   Dim ArrRecvCard(16)
+   Dim ArrRecvOpen(16)
+   Dim ArrRecvEndPoint(16)
+
+
+   Dim nNumSenders       ' There can be more than one sender/card instance
+   Dim nNumReceivers       ' This is same as number of receiving opens => 1 receiver/card
+   Dim nNumSendersPerReceiver    ' Number of senders per receiver (capped by num processors)
+   Dim nTotalNumCallsToSend, nSendDuration
+   Dim nInitialBurstSize
+   Dim bWriteToTextFile, bWriteAdvancedToTextFile
+   Dim nNBLPerSendStart, nNBLPerSendEnd, nNBLPerSendStep
+   Dim nNBPerNBLStart, nNBPerNBLEnd, nNBPerNBLStep
+   Dim nNBSizeStart, nNBSizeEnd, nNBSizeStep
+   Dim nMdlSizeStart, nMdlSizeEnd, nMdlSizeStep
+   Dim nTimeSampleNBLCount, nReceiveMode
+
+   Dim bTestCardReceiver
+   Dim oStatsStream
+   Dim oSendCommMgrConfig, oSendNBConfig, oSendMediaConfig, oSendCommMgrStats
+   Dim oRecvCommMgrConfig, oRecvNBConfig, oRecvMediaConfig, oRecvCommMgrStats, oRecvNBStats
+
+   Private Sub Class_Initialize
+      nNumSenders = 0
+      nNumReceivers = 0
+   End Sub
+
+   Private Sub Class_Terminate
+      Dim nCount
+
+      For nCount = 0 To 32 - 1
+         Set ArrSendEndPoint(nCount) = Nothing
+         Set ArrSendOpen(nCount) = Nothing
+      Next
+      Set oSendCard = Nothing
+
+      For nCount = 0 To 16 - 1
+         Set ArrRecvEndPoint(nCount) = Nothing
+         Set ArrRecvOpen(nCount) = Nothing
+         Set ArrRecvCard(nCount) = Nothing
+      Next
+
+   End Sub
+
+   Public Sub SetStaticConfiguration
+      '----------------------------------------
+      ' All configurable options
+      '----------------------------------------
+
+      ' Set the number of senders that would be sending to each receiver (only
+      ' for remote receivers, for same machine test, we would have number of processors)
+      nNumSendersPerReceiver = 2
+
+      '
+      ' If you want the test card to do receiving, set this flag to true
+      '
+      bTestCardReceiver = TRUE
+
+      ' The number of times we want to call the NdisSend routines (if we want this
+      ' to be a number based test)
+      nTotalNumCallsToSend = 0
+      ' How long (if 0, then based on number) do we want to run the timed test?
+      nSendDuration = 30000
+      ' Before starting tests, flood the pipeline with these many NBL's (these are
+      ' the number of NBLs we try to maintain in the pipeline, and are included in
+      ' the total number of NBLs to send)
+      nInitialBurstSize = 50
+
+      ' Write to text file? This would be used to export the results into a text file
+      ' so that we can import those directly into excel. Note that we always overwrite
+      ' the file (which is present in the scripts directory and not the logs directory)
+      bWriteToTextFile = FALSE
+      ' Write just summary, or write detailed values?
+      bWriteAdvancedToTextFile = FALSE
+
+      ' The receive mode (a zero means do not verify data, anything else means verify
+      ' contents of received NBLs)
+      nReceiveMode = 0
+      ' The frequency at which to sample the performance counters. This is actually
+      ' the number of NBLs receive between each sampling
+      nTimeSampleNBLCount = 5
+
+
+      ' The number of NBLs to send per send
+      nNBLPerSendStart = 1
+      nNBLPerSendEnd = 5
+      nNBLPerSendStep = 2
+
+      ' Each NBL should contain these many Net buffers
+      nNBPerNBLStart = 1
+      nNBPerNBLEnd = 16
+      nNBPerNBLStep = 5
+
+      ' What should be the size of each net buffer
+      nNBSizeStart = 100
+      nNBSizeEnd = 1500
+      nNBSizeStep = 700
+
+      ' What's the max size of each MDL (helps break a NB data into multiple MDLs)
+      nMdlSizeStart = 500
+      nMdlSizeEnd = 1500
+      nMdlSizeStep = 500
+      '----------------------------------------
+   End Sub
+
+   Sub SelectDynamicSendConfiguration
+      Dim pAdapterList
+      Dim nCount
+      Dim lFirstSuppAdapterIndex
+      Dim bFoundSupp             ' Found some support adapter (local/remote)
+      Dim nNumRemoteAdapters
+
+      Set pAdapterList = oNDInfo.AdapterList
+
+      ' In this case, the test adapter is the sender
+      m_lSendAdapterIndex = GetTestAdapterIndex (oNDInfo.AdapterList, 0)
+
+      nNumRemoteAdapters = 0
+      lFirstSuppAdapterIndex = 0
+      bFoundSupp = FALSE
+
+      For nCount = 1 To pAdapterList.Count
+         If (pAdapterList(nCount).AdapterType = 2) Then
+
+            If (Not bFoundSupp) Then
+               lFirstSuppAdapterIndex = nCount
+               bFoundSupp = TRUE
+            End If
+
+            If (pAdapterList(nCount).ConnectionId <> 0) Then
+               ' This is a remote support adapter, add it to our remote adapters lists
+               nNumRemoteAdapters = nNumRemoteAdapters + 1
+               ' Note this means, we start indexing from 1
+               ArrRecvAdapterIndex(nNumRemoteAdapters) = nCount
+            End If
+         End If
+      Next
+
+      If (Not bFoundSupp) Then
+         ' This means, we did not find any support adapter
+         Err.Raise 32000, "Internal NDTest failure", _
+               "Cannot find any support adapter in adapter list"
+      Else
+         If (nNumRemoteAdapters <> 0) Then
+            ' We found at least one remote adapter
+
+            ' All support adapters would be receiving
+            nNumReceivers = nNumRemoteAdapters
+
+            ' And, we would have two senders per receiver
+            nNumSenders = nNumSendersPerReceiver * nNumReceivers
+
+            oLog.Write (nNumSenders & " open(s) from test card sending to " & nNumReceivers & " remote support receiver(s)")
+         Else
+
+            ' We did not find any remote support adapter, use the first support
+            ' adapter we found
+            ArrRecvAdapterIndex(1) = lFirstSuppAdapterIndex
+            nNumReceivers = 1
+
+            ' Use as many senders as processors
+            nNumSenders = oNDTSupp.NumProcessors Mod 32
+
+            ' In this case, we have to hack the nNumSendersPerReceiver to be
+            ' the actual number of senders
+            nNumSendersPerReceiver = nNumSenders
+
+            oLog.Write (nNumSenders & " open(s) from test card sending to 1 local support receiver")
+         End If
+      End If
+
+      Set pAdapterList = Nothing
+   End Sub
+
+
+   Sub SelectDynamicReceiveConfiguration
+      ' In this case, the support adapter is the sender
+      m_lSendAdapterIndex = GetSupportAdapterIndex (oNDInfo.AdapterList, 0)
+
+      ' And the test adapter is the receiver
+      ArrRecvAdapterIndex(1) = GetTestAdapterIndex (oNDInfo.AdapterList, 0)
+      nNumReceivers = 1
+
+      ' And, the number of senders is
+      nNumSenders = nNumSendersPerReceiver * nNumReceivers
+
+      oLog.Write (nNumSenders & " open(s) from support card sending to the test card")
+   End Sub
+
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      Dim nCount
+
+      SetupTest = FALSE
+
+      oNDTCore6.DebugLevel = NORMAL_LOGGING_LEVEL
+
+      ' Set the fixed configuration variables
+      SetStaticConfiguration
+
+      ' Set the configuration variables that depend on the user
+      ' selections
+      If (bTestCardReceiver) Then
+         ' We want the test card to be receiving and prefer a remote
+         ' sender
+         SelectDynamicReceiveConfiguration
+      Else
+         ' We want local machine sending to (preferrably) multiple remote receivers
+         SelectDynamicSendConfiguration
+      End If
+
+      Set pAdapterList = oNDInfo.AdapterList
+
+      oLog.Variation ("Setting up Sending Adapter")
+      Set oSendCard = New CLanCard6
+      If (oSendCard is Nothing) Then
+         Exit Function
+      End If
+
+      If (Not oSendCard.vbCreateAdapter(pAdapterList (m_lSendAdapterIndex))) Then
+         Exit Function
+      End If
+
+      ' We create all the send threads
+      For nCount = 1 To nNumSenders
+
+         ' Create the opens
+         Set ArrSendOpen(nCount) = oSendCard.vbOpenAdapter()
+         If (ArrSendOpen(nCount) is Nothing) Then
+            Exit Function
+         End If
+
+         ' Create the endpoints
+         Set ArrSendEndPoint(nCount) = ArrSendOpen(nCount).vbCreateEndPoint(CLENDPOINT)
+         If (ArrSendEndPoint(nCount) is Nothing) Then
+            Exit Function
+         End If
+
+         ' Prepare the endpoints for sending
+         If (ArrSendEndPoint(nCount).vbOpenCommunicationChannel(PERFORMANCE_COMM_MGR, _
+                  IP_PERF_CONSTRUCTOR, NDIS_MEDIUM_802_3_MEDIA_MODULE) <> 0) Then
+            Exit Function
+         End If
+      Next
+
+      oLog.Variation ("Setting up Receiving Adapter(s)")
+
+      For nCount = 1 To nNumReceivers
+         Set ArrRecvCard(nCount) = New CLanCard6
+         If (ArrRecvCard(nCount) is Nothing) Then
+            Exit Function
+         End If
+
+         Set ArrRecvOpen(nCount) = ArrRecvCard(nCount).vbSetupBasicTest(pAdapterList (ArrRecvAdapterIndex(nCount)))
+         If (ArrRecvOpen(nCount) is Nothing) Then
+            Exit Function
+         End If
+
+         ' Create the endpoints
+         Set ArrRecvEndPoint(nCount) = ArrRecvOpen(nCount).vbCreateEndPoint(CLENDPOINT)
+         If (ArrRecvEndPoint(nCount) is Nothing) Then
+            Exit Function
+         End If
+
+         ' Prepare the endpoints for receiving
+         If (ArrRecvEndPoint(nCount).vbOpenCommunicationChannel(PERFORMANCE_COMM_MGR, _
+                  IP_PERF_CONSTRUCTOR, NDIS_MEDIUM_802_3_MEDIA_MODULE) <> 0) Then
+            Exit Function
+         End If
+
+         ' Set packet filter to let the receiver adapter receive packets
+         ArrRecvOpen(nCount).vbSetPacketFilter(DIRECTED)
+      Next
+
+      Set pAdapterList = Nothing
+
+      SetupTest = TRUE
+
+   End Function
+
+   Public Function RunTest
+
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+
+      ExecuteTestCore
+   End Function
+
+   Private Sub ExecuteTestCore
+      Dim oFileSys
+      Dim nNumNetBufferListsPerSend, nNumNetBuffersPerNBL, nNetBufferSize, nMaxMdlSize
+
+
+      '============================================================================
+      ' Setup the send side config objects
+      '============================================================================
+      ' Create the perf comm mgr config
+      Set oSendCommMgrConfig = oCoreFactory.CommMgrSendConfig(PERFORMANCE_COMM_MGR)
+      ' NumNetBufferListsPerSend would be filled later
+      oSendCommMgrConfig.NumSends = nTotalNumCallsToSend
+      '  The processor affinity mask depends on the open and would be filled in later
+      oSendCommMgrConfig.SendDuration = nSendDuration
+      oSendCommMgrConfig.InitialBurstSize = nInitialBurstSize
+      ' Using synchronous start mode for the tests
+      oSendCommMgrConfig.SynchronousStart = TRUE
+      '----------------------------------------------------------------------------
+      ' Create the IP perf netbuffer constructor config
+      Set oSendNBConfig = oCoreFactory.ConstructorSendConfig(IP_PERF_CONSTRUCTOR)
+
+      ' We use random IP addresses and ports, since we do not quite care
+      oSendNBConfig.NumNBLToPreallocate = nInitialBurstSize
+      oSendNBConfig.TransportProtocol = TCP
+      oSendNBConfig.TransportOptionsSize = 0
+      oSendNBConfig.SequenceNumber = 0
+      oSendNBConfig.TasksToOffload = 0
+      '----------------------------------------------------------------------------
+      Set oSendMediaConfig = oCoreFactory.MediaModuleSendConfig(NDIS_MEDIUM_802_3_MEDIA_MODULE)
+
+      ' We are using IP packets
+      oSendMediaConfig.EtherType = ETHERTYPE_IPv4
+      '----------------------------------------------------------------------------
+      ' Create the object in which we would obtain the send statistics
+      Set oSendCommMgrStats = oCoreFactory.CommMgrSendStatistics(PERFORMANCE_COMM_MGR)
+      '============================================================================
+      ' Setup the receive side config objects
+      '============================================================================
+      ' Create the perf comm mgr config
+      Set oRecvCommMgrConfig = oCoreFactory.CommMgrRecvConfig(PERFORMANCE_COMM_MGR)
+
+      oRecvCommMgrConfig.TimeSampleNBLCount = nTimeSampleNBLCount
+      oRecvCommMgrConfig.ReceiveMode = nReceiveMode
+      '----------------------------------------------------------------------------
+      ' Create the IP perf netbuffer constructor config
+      Set oRecvNBConfig = oCoreFactory.ConstructorRecvConfig(IP_PERF_CONSTRUCTOR)
+
+      oRecvNBConfig.TransportProtocol = TCP
+      oRecvNBConfig.TransportOptionsSize = 0
+
+      ' Expected IP addresses and ports would be filled below
+      '----------------------------------------------------------------------------
+      Set oRecvMediaConfig = oCoreFactory.MediaModuleRecvConfig(NDIS_MEDIUM_802_3_MEDIA_MODULE)
+      ' We are expecting IP packets
+      oRecvMediaConfig.EtherType = ETHERTYPE_IPv4
+      '----------------------------------------------------------------------------
+      ' Create the object in which we would obtain the receive statistics
+      Set oRecvCommMgrStats = oCoreFactory.CommMgrRecvStatistics(PERFORMANCE_COMM_MGR)
+      Set oRecvNBStats = oCoreFactory.ConstructorRecvStatistics(IP_PERF_CONSTRUCTOR)
+      '============================================================================
+
+      If (bWriteToTextFile) Then
+         Set oFileSys = CreateObject("Scripting.FileSystemObject")
+         ' We are overwriting the previous file
+         Set oStatsStream = oFileSys.CreateTextFile ("2c_Min6Performance.txt", True)
+      End If
+
+      ' Loop through the various send parameter configurations
+      For nNumNetBufferListsPerSend = nNBLPerSendStart To nNBLPerSendEnd Step nNBLPerSendStep
+         For nNumNetBuffersPerNBL = nNBPerNBLStart To nNBPerNBLEnd Step nNBPerNBLStep
+            For nNetBufferSize = nNBSizeStart To nNBSizeEnd Step nNBSizeStep
+               For nMaxMdlSize = nMdlSizeStart To nMdlSizeEnd Step nMdlSizeStep
+
+                  If (Not ExecuteVariation(nNumNetBufferListsPerSend, nNumNetBuffersPerNBL, nNetBufferSize, nMaxMdlSize)) Then
+                     ' If we failed in attempting to setup/send/receive, get out
+                     Exit For
+                  End If
+
+                  ' Did we have the complete Net buffer in a single MDL. No point in varying
+                  ' the max size of the MDL anymore
+                  If (nMaxMdlSize > nNetBufferSize) Then
+                     Exit For
+                  End If
+
+
+               Next
+            Next
+         Next
+      Next
+
+      ' Close the logging file
+      If (bWriteToTextFile) Then
+         oStatsStream.Close()
+
+         Set oStatsStream = Nothing
+         Set oFileSys = Nothing
+      End If
+
+   End Sub
+
+   Function ExecuteVariation(nNumNetBufferListsPerSend, nNumNetBuffersPerNBL, nNetBufferSize, nMaxMdlSize)
+      Dim strCpuUtilization, nTestID
+      Dim MaxSendTime, CurrentSendTime, MaxCpuUtilization
+      Dim MaxRecvTime, CurrentRecvTime
+      Dim TotalNBLsSent, TotalNBLsReceived, NWThroughput
+      Dim ReceiverAddr
+
+      Dim Status, nSenderCount, nReceiverCount, nTempCount
+
+      oSendCommMgrConfig.NumNetBufferListsPerSend = nNumNetBufferListsPerSend
+      oSendNBConfig.NumNetBuffersPerNetBufferList = nNumNetBuffersPerNBL
+      oSendNBConfig.NetBufferSize = nNetBufferSize
+      oSendNBConfig.MaxMdlSize = nMaxMdlSize
+
+      oLog.Variation ("Performance Sends/Receive: " & nNumNetBufferListsPerSend & " " & nNumNetBuffersPerNBL & " " & nNetBufferSize & " " & nMaxMdlSize)
+
+      ExecuteVariation = FALSE
+      Status = 0
+
+      ' Start receiving on each receivers and also setup the senders to
+      ' start sending (using synchronous sending, so they would not start sending
+      ' just yet)
+      nSenderCount = 1
+      For nReceiverCount = 1 To nNumReceivers
+
+         ' Each receiver has a unique combination or sending/receiving port
+         nTestID = oNDTSupp.Random(4133, 32765)
+
+         ' Fill this as port to expect packets on on the receiver
+         oRecvNBConfig.DestinationPort = nTestID
+         oRecvNBConfig.DestinationAddress = IPAddr(111, 10, 1, nReceiverCount)
+         oRecvNBConfig.SourcePort = nTestID
+         oRecvNBConfig.SourceAddress = IPAddr(111, 10, 2, nReceiverCount)
+
+         ' Need the address of receiver to tell the sender to send to
+         ReceiverAddr = ArrRecvOpen(nReceiverCount).vbGetCardAddress
+         ' Start receiving at this open
+         Status = ArrRecvEndPoint(nReceiverCount).vbStartReceive(oRecvCommMgrConfig, oRecvNBConfig, oRecvMediaConfig)
+         If (Status <> 0) Then
+            Call oLog.Failed("Unable to start receiving on receiver " & nReceiverCount, 88888)
+            Exit For
+         End If
+
+         ' Set the destination MAC addresses to be sending to
+         oSendMediaConfig.DestinationAddress = ReceiverAddr
+
+         ' Setup all the nNumSendersPerReceiver number of senders to do the
+         ' sending to this receiver
+
+         nTempCount = 0
+         Do While (nTempCount < nNumSendersPerReceiver)
+            ' The same information needs to be put into the sender
+            oSendNBConfig.DestinationPort = nTestID
+            oSendNBConfig.DestinationAddress = IPAddr(111, 10, 1, nReceiverCount)
+            oSendNBConfig.SourcePort = nTestID
+            oSendNBConfig.SourceAddress = IPAddr(111, 10, 2, nReceiverCount)
+
+            ' Obtain the affinity mask to be used
+            oSendCommMgrConfig.ProcessorAffinityMask = 0  ' 0x01
+
+            Status = ArrSendEndPoint(nSenderCount).vbSendNetBufferLists(oSendCommMgrConfig, oSendNBConfig, oSendMediaConfig)
+
+            If (Status <> 0) Then
+               Call oLog.Failed ("Unable to start sending on sender " & nSenderCount, 88888)
+               Exit For ' quitting out of external loop
+            End If
+
+            nTempCount = nTempCount + 1
+            nSenderCount = nSenderCount + 1
+         Loop
+      Next
+
+      If (Status <> 0) Then
+         Exit Function
+      End If
+
+      ' Signal one sender to start sending (all would be signalled)
+      Status = ArrSendEndPoint(1).vbStartAllSends()
+      If (Status <> 0) Then
+         Call oLog.Failed ("Unable to start performance sending from all opens", 88888)
+         Exit Function
+      End If
+
+      ' Now, wait for the sending to complete on each sender
+      oLog.Variation ("Wait For Sends")
+      For nSenderCount = 1 To nNumSenders
+         Status = ArrSendEndPoint(nSenderCount).vbWaitForSendsToComplete(0)
+         If (Status <> 0) then
+            Call oLog.Failed ("Unable to wait for send complete on sender " & nSenderCount, 88888)
+         End If
+      Next
+
+      oLog.Variation ("Send results")
+      ' Write the control parameters into the file
+      If (bWriteToTextFile) Then
+         oStatsStream.Write(nNumNetBufferListsPerSend & vbTab & "  ")
+         oStatsStream.Write(nNumNetBuffersPerNBL & vbTab & "  ")
+         oStatsStream.Write(nNetBufferSize & vbTab & "  ")
+         oStatsStream.Write(nMaxMdlSize & vbTab & "  ")
+      End If
+
+      ' We would be collecting max send time and total packets sent
+      ' Using strings since thats what large math functions expect
+      MaxSendTime = 0
+      TotalNBLsSent = 0
+      MaxCpuUtilization = 0
+
+      ' Obtain send statistics from each open
+      For nSenderCount = 1 To nNumSenders
+         Status = ArrSendEndPoint(nSenderCount).vbGetSendResults(oSendCommMgrStats, Nothing)
+         If (Status <> 0) then
+            Call oLog.Failed ("Unable to obtain send results from open " & nSenderCount, 88888)
+            Exit For
+         End If
+
+         oLog.Write ("Total Counts : " & oSendCommMgrStats.TotalCounts)
+         oLog.Write ("Counter Precision: " & oSendCommMgrStats.CounterPrecision)
+
+         If (oLargeMath.LargeCompare(oSendCommMgrStats.TotalNetBufferListsSent, 0) = 0) Then
+            Call oLog.Failed ("Did not send any net buffer lists on open " & nSenderCount, 88888)
+         End If
+
+         If (oLargeMath.LargeCompare(oSendCommMgrStats.TotalNetBufferListsSendCompleted, oSendCommMgrStats.TotalNetBufferListSendsSuccessful) <> 0) Then
+            Call oLog.Failed ("Sends failed on open " & nSenderCount, 88888)
+         End If
+
+         ' We end up logging CPU utilization for each open, this might
+         ' not be the right way to do this, since the utilization in each
+         ' open would mismatch
+         strCpuUtilization = oSendCommMgrStats.CpuUtilization
+         oLog.Write ("Cpu Utilization: " & strCpuUtilization)
+
+         CurrentSendTime = oLargeMath.DivideLargeIntegers(oSendCommMgrStats.TotalCounts, oSendCommMgrStats.CounterPrecision)
+
+         If (bWriteAdvancedToTextFile) Then
+            ' Desire to write stuff to log file
+            oStatsStream.Write(oSendCommMgrStats.TotalNetBufferListsSent & vbTab & "  ")
+            oStatsStream.Write(CurrentSendTime & vbTab & "  ")
+            oStatsStream.Write(oSendCommMgrStats.TotalCounts & vbTab & "  ")
+            oStatsStream.Write(oSendCommMgrStats.StartCount & vbTab & "  ")
+            oStatsStream.Write(oSendCommMgrStats.CounterPrecision & vbTab & "  ")
+            oStatsStream.Write(oSendCommMgrStats.TotalNetBufferListSendsSuccessful & vbTab & "  ")
+            oStatsStream.Write(strCpuUtilization & vbTab & "  ")
+         End If
+
+         ' Now work on the all sent cumulative times, etc
+         ' Total number of NBLs sent?
+         TotalNBLsSent = oLargeMath.LargeAdd(TotalNBLsSent, oSendCommMgrStats.TotalNetBufferListsSent)
+
+         ' We use the largest send time
+         If (CurrentSendTime > MaxSendTime) Then
+            MaxSendTime = CurrentSendTime
+         End If
+
+         ' The cpu utilization numbers should not differ much between
+         ' various opens, we use the max
+         If (strCpuUtilization > MaxCpuUtilization) Then
+            MaxCpuUtilization = strCpuUtilization
+         End If
+      Next
+      ' For network throughput, first get the number of NBs sent
+      NWThroughput = oLargeMath.MultiplyLargeIntegers (TotalNBLsSent, nNumNetBuffersPerNBL)
+
+      ' Now the number of bytes sent
+      NWThroughput = oLargeMath.MultiplyLargeIntegers (NWThroughput, nNetBufferSize)
+
+      ' Convert that to bits
+      NWThroughput = oLargeMath.MultiplyLargeIntegers (NWThroughput, 8)
+
+      ' Finally, compute the bps
+      NWThroughput = oLargeMath.DivideIntegerFloat (NWThroughput, MaxSendTime)
+
+      ' Write summary
+      oLog.Write (vblf & "Sender Summary " & vblf)
+      oLog.Write ("Total Net Buffer Lists Sent : " & TotalNBLsSent)
+      oLog.Write ("Sender Time (seconds) : " & MaxSendTime)
+      oLog.Write ("NW Throughput (bps): " & NWThroughput)
+      oLog.Write ("Overall CPU utilization: " & MaxCpuUtilization)
+
+      If (bWriteToTextFile) Then
+         oStatsStream.Write(TotalNBLsSent & vbTab & "  ")
+         oStatsStream.Write(MaxSendTime & vbTab & "  ")
+         oStatsStream.Write(NWThroughput & vbTab & "  ")
+         oStatsStream.Write(MaxCpuUtilization & vbTab & "  ")
+      End If
+
+      ' Now, stop the receivers
+      oLog.Variation ("Stop Receives")
+      For nReceiverCount = 1 To nNumReceivers
+         Status = ArrRecvEndPoint(nReceiverCount).vbStopReceive()
+         If (Status <> 0) then
+            Call oLog.Failed ("Unable to stop receiving from receiver " & nReceiverCount, 88888)
+         End If
+      Next
+
+      oLog.Variation ("Receive results")
+
+      ' We would be collecting max receiver time and total packets received
+      ' Using strings since thats what large math functions expect
+      MaxRecvTime = 0
+      TotalNBLsReceived = 0
+      MaxCpuUtilization = 0
+
+      ' Obtain receive statistics from each open
+      For nReceiverCount = 1 To nNumReceivers
+         Status = ArrRecvEndPoint(nReceiverCount).vbGetReceiveResults(oRecvCommMgrStats, oRecvNBStats)
+         If (Status <> 0) then
+            Call oLog.Failed ("Unable to obtain receive results from open " & nReceiverCount, 88888)
+            Exit For
+         End If
+
+         If (nReceiveMode <> 0) Then
+            If (oRecvNBStats.TotalNetBufferListsReceived = 0) Then
+               Call oLog.Failed ("Received 0 net buffer lists on open " & nReceiverCount, 88888)
+            End If
+         Else
+            If (oRecvCommMgrStats.TotalRawNetBufferListsReceived = 0) Then
+               Call oLog.Failed ("Received 0 net buffer lists on open " & nReceiverCount, 88888)
+            End If
+         End If
+
+         oLog.Write ("Total Counts : " & oRecvCommMgrStats.TotalCounts)
+         oLog.Write ("Counter Precision: " & oRecvCommMgrStats.CounterPrecision)
+
+         ' We end up logging CPU utilization for each open, this might
+         ' not be the right way to do this, since the utilization in each
+         ' open would mismatch
+         strCpuUtilization = oRecvCommMgrStats.CpuUtilization
+         oLog.Write ("Cpu Utilization: " & strCpuUtilization)
+
+         CurrentRecvTime = oLargeMath.DivideLargeIntegers(oRecvCommMgrStats.TotalCounts, oRecvCommMgrStats.CounterPrecision)
+
+         If (bWriteAdvancedToTextFile) Then
+            ' Desire to write stuff to log file
+            If (nReceiveMode <> 0) Then
+               oStatsStream.Write(oRecvNBStats.TotalNetBufferListsReceived & vbTab & "  ")
+            Else
+               oStatsStream.Write(oRecvCommMgrStats.TotalRawNetBufferListsReceived & vbTab & "  ")
+            End If
+            oStatsStream.Write(CurrentSendTime & vbTab & "  ")
+            oStatsStream.Write(oRecvCommMgrStats.TotalCounts & vbTab & "  ")
+            oStatsStream.Write(oRecvCommMgrStats.StartCount & vbTab & "  ")
+            oStatsStream.Write(oRecvCommMgrStats.CounterPrecision & vbTab & "  ")
+            oStatsStream.Write(oRecvNBStats.TotalNetBuffersAccepted & vbTab & "  ")
+            oStatsStream.Write(strCpuUtilization & vbTab & "  ")
+         End If
+
+         ' Now work on the all receives cumulative times, etc
+         If (nReceiveMode <> 0) Then
+            TotalNBLsReceived = oLargeMath.LargeAdd(TotalNBLsReceived, oRecvNBStats.TotalNetBuffersAccepted)
+         Else
+            TotalNBLsReceived = oLargeMath.LargeAdd(TotalNBLsReceived, oRecvCommMgrStats.TotalRawNetBufferListsReceived)
+         End If
+
+         ' We use the largest receiver time
+         If (CurrentRecvTime > MaxRecvTime) Then
+            MaxRecvTime = CurrentRecvTime
+         End If
+
+         ' The cpu utilization numbers should not differ much between
+         ' various opens, we use the max
+         If (strCpuUtilization > MaxCpuUtilization) Then
+            MaxCpuUtilization = strCpuUtilization
+         End If
+      Next
+      ' Now the number of bytes received (here, we assume that we only received the NBLs
+      ' we created, irrespective of receive mode)
+      NWThroughput = oLargeMath.MultiplyLargeIntegers (TotalNBLsReceived, nNetBufferSize)
+
+      ' Convert that to bits
+      NWThroughput = oLargeMath.MultiplyLargeIntegers (NWThroughput, 8)
+
+      ' Finally, compute the bps (note, we are using the senders time)
+      NWThroughput = oLargeMath.DivideIntegerFloat (NWThroughput, MaxSendTime)
+
+      ' Write summary
+      oLog.Write (vblf & "Receiver Summary " & vblf)
+      oLog.Write ("Total Net Buffer Lists(=Net Buffers) Received : " & TotalNBLsReceived)
+      oLog.Write ("Receiver Time (seconds) : " & MaxRecvTime)
+      oLog.Write ("NW Throughput (bps): " & NWThroughput & " (using senders time)")
+      oLog.Write ("Overall CPU utilization: " & MaxCpuUtilization)
+
+      If (bWriteToTextFile) Then
+         oStatsStream.Write(TotalNBLsReceived & vbTab & "  ")
+         oStatsStream.Write(MaxRecvTime & vbTab & "  ")
+         oStatsStream.Write(NWThroughput & vbTab & "  ")
+         oStatsStream.Write(MaxCpuUtilization & vbTab & "  ")
+         oStatsStream.WriteLine(" ")
+      End If
+
+      ExecuteVariation = TRUE
+   End Function
+
+End Class
+</script>
+</job>
+</package>
+
+<!--- CRC = 0x17b6798c --->

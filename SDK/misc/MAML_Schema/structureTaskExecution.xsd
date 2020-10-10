@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<schema targetNamespace="http://schemas.microsoft.com/maml/2003/5" xmlns="http://www.w3.org/2001/XMLSchema"
+	xmlns:maml="http://schemas.microsoft.com/maml/2003/5" elementFormDefault="qualified"
+	attributeFormDefault="unqualified">
+	<complexType name="taskAutomationType">
+		<annotation>
+			<documentation>Holds Windows UI Automation information.  Gets referred to by ActionRef and ElementRef tags.</documentation>
+		</annotation>
+		<sequence>
+			<element name="uiAction" type="maml:uiActionType" maxOccurs="unbounded" />
+		</sequence>
+	</complexType>
+	<complexType name="uiActionType">
+		<sequence>
+			<element name="uiActionDescription" minOccurs="0">
+				<complexType mixed="true">
+					<sequence minOccurs="0" maxOccurs="unbounded">
+						<element name="ui" type="string" />
+					</sequence>
+				</complexType>
+			</element>
+			<element name="executionMethods" type="maml:executionMethodType" />
+			<element name="uiElement" type="maml:uiElementType" />
+			<element name="windowsAffected" type="maml:windowsAffectedType" minOccurs="0" />
+		</sequence>
+		<attribute name="id" type="string" />
+		<attribute name="hasNoSideEffects" type="boolean" default="false" />
+	</complexType>
+	<complexType name="executionMethodType">
+		<sequence maxOccurs="unbounded">
+			<choice>
+				<element name="controlPatternAction">
+					<complexType>
+						<sequence>
+							<element name="controlPattern" type="maml:controlPatternMethodType" />
+							<element name="methodParameter" type="base64Binary" minOccurs="0" maxOccurs="unbounded" />
+						</sequence>
+					</complexType>
+				</element>
+				<element name="userAction" />
+				<element name="mouseAction" type="maml:mouseActionType" />
+				<element name="keyboardAction" type="maml:keyboardActionType" />
+			</choice>
+		</sequence>
+	</complexType>
+	<complexType name="mouseActionType">
+		<sequence>
+			<element name="clickType">
+				<simpleType>
+					<restriction base="string">
+						<enumeration value="Click" />
+						<enumeration value="DoubleClick" />
+					</restriction>
+				</simpleType>
+			</element>
+			<element name="mouseButton">
+				<simpleType>
+					<restriction base="string">
+						<enumeration value="Left" />
+						<enumeration value="Right" />
+						<enumeration value="Middle" />
+						<enumeration value="X1" />
+						<enumeration value="X2" />
+					</restriction>
+				</simpleType>
+			</element>
+			<element name="mouseKey" maxOccurs="unbounded">
+				<simpleType>
+					<restriction base="string">
+						<enumeration value="Ctrl" />
+						<enumeration value="Alt" />
+						<enumeration value="Shft" />
+						<enumeration value="None" />
+					</restriction>
+				</simpleType>
+			</element>
+		</sequence>
+	</complexType>
+	<complexType name="keyboardActionType">
+		<sequence>
+			<element name="keyboardKey" type="string" maxOccurs="unbounded" />
+		</sequence>
+	</complexType>
+	<simpleType name="controlPatternMethodType">
+		<restriction base="string">
+			<enumeration value="Expand" />
+			<enumeration value="Collapse" />
+			<enumeration value="Invoke" />
+			<enumeration value="SetValue" />
+			<enumeration value="AddToSelection" />
+			<enumeration value="RemoveFromSelection" />
+			<enumeration value="ContextMenu" />
+		</restriction>
+	</simpleType>
+	<complexType name="uiElementPropertiesType">
+		<sequence>
+			<element name="persistentId">
+				<complexType>
+					<simpleContent>
+						<extension base="string">
+							<attribute name="isLocaleIndependent" type="boolean" use="required" />
+						</extension>
+					</simpleContent>
+				</complexType>
+			</element>
+			<element name="name" type="string" />
+			<element name="className" type="string" />
+			<element name="controlType" type="string" />
+			<element name="numChildren" type="integer" />
+			<element name="moduleName" type="string" />
+		</sequence>
+	</complexType>
+	<complexType name="uiElementType">
+		<sequence>
+			<element name="properties" type="maml:uiElementPropertiesType" />
+			<element name="window" type="maml:windowType" />
+			<element name="pathToWindow">
+				<complexType>
+					<sequence>
+						<element name="ancestor" type="maml:uiElementPropertiesType" minOccurs="0" maxOccurs="unbounded" />
+					</sequence>
+				</complexType>
+			</element>
+			<element name="image" minOccurs="0">
+				<complexType>
+					<simpleContent>
+						<extension base="base64Binary">
+							<attribute name="type" default="image/jpeg" />
+						</extension>
+					</simpleContent>
+				</complexType>
+			</element>
+		</sequence>
+	</complexType>
+	<complexType name="windowType">
+		<sequence>
+			<element name="properties" type="maml:uiElementPropertiesType" />
+			<element name="isModal">
+				<simpleType>
+					<restriction base="string">
+						<enumeration value="True" />
+						<enumeration value="False" />
+						<enumeration value="true" />
+						<enumeration value="false" />
+					</restriction>
+				</simpleType>
+			</element>
+			<element name="moduleName" type="string" />
+			<element name="processName" type="string" />
+			<element name="isApplicationWindow">
+				<simpleType>
+					<restriction base="string">
+						<enumeration value="True" />
+						<enumeration value="False" />
+						<enumeration value="true" />
+						<enumeration value="false" />
+					</restriction>
+				</simpleType>
+			</element>
+			<element name="image" minOccurs="0">
+				<complexType>
+					<simpleContent>
+						<extension base="base64Binary">
+							<attribute name="type" default="image/jpeg" />
+						</extension>
+					</simpleContent>
+				</complexType>
+			</element>
+		</sequence>
+	</complexType>
+	<complexType name="windowsAffectedType">
+		<choice minOccurs="0" maxOccurs="unbounded">
+			<element name="opensWindowWithId" type="string" />
+			<element name="closesWindowWithId" type="string" />
+		</choice>
+	</complexType>
+</schema>

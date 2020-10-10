@@ -1,0 +1,187 @@
+[Version]
+signature="$CHICAGO$"
+Class=MEDIA
+ClassGUID={4d36e96c-e325-11ce-bfc1-08002be10318}
+Provider=%Msft%
+LayoutFile=layout.inf,layout1.inf
+DriverVer=11/10/1999
+
+[ControlFlags]
+;ExcludeFromSelect=*
+
+;---------------------------------------------------------------------------
+; PnP Installation
+;---------------------------------------------------------------------------
+
+[DestinationDirs]
+bdacap.CopyFilesKM=10,system32\drivers
+bdacap.CopyFilesUM=10,system
+;bdacap.inf.CopyFiles=17
+
+[Manufacturer]
+%Msft%=Microsoft
+
+[Microsoft]
+%BdaSWCapture.DeviceDesc%=bdacap,BDACAP
+
+[bdacap]
+; The Include and Needs lines cause the installation support devices
+; and registration of required DShow categories.
+;
+; NOTE!  If there is not a separate capture filter then the tuner
+;        INF should contain these lines.
+;
+Include     = ks.inf, kscaptur.inf, bda.inf
+Needs       = KS.Registration, KSCAPTUR.Registration, BDA.Installation
+AddReg=bdacap.AddReg
+CopyFiles=bdacap.CopyFilesKM
+
+[bdacap.NT]
+; The Include and Needs lines cause the installation support devices
+; and registration of required DShow categories.
+;
+; NOTE!  If there is not a separate capture filter then the tuner
+;        INF should contain these lines.
+;
+Include     = ks.inf, kscaptur.inf, bda.inf
+Needs       = KS.Registration, KSCAPTUR.Registration.NT, BDA.Installation.NT
+CopyFiles=bdacap.CopyFilesKM
+
+[bdacap.AddReg]
+HKR,,DevLoader,,*NTKERN
+HKR,,NTMPDriver,,bdacap.sys
+
+[bdacap.Services]
+AddService=bdacap, 0x00000002, bdacap.ServiceInstall
+
+
+[bdacap.NT.Services]
+AddService=bdacap, 0x00000002, bdacap.ServiceInstall
+
+
+[bdacap.ServiceInstall]
+DisplayName=%BdaSWCapture.DeviceDesc%
+ServiceType=%SERVICE_KERNEL_DRIVER%
+StartType=%SERVICE_DEMAND_START%
+ErrorControl=%SERVICE_ERROR_NORMAL%
+ServiceBinary=%10%\system32\drivers\bdacap.sys
+LoadOrderGroup=ExtendedBase
+
+[bdacap.CopyFilesKM]
+bdacap.sys
+
+
+[bdacap.Interfaces]
+; Add an interface for each type of filter exposed by this device driver.
+; The format of each line is as follows
+;
+; AddInterface = DSHOW_CATEGORY, FILTER_REFERENCE_GUID, INSTALLATION_SECTION
+;
+; DSHOW_CATEGORY is the GUID for the Direct Show category in which the
+; filter should appear.  A filter that appears in multiple categories should
+; have a line for each category.
+;
+; FILTER_REFERENC_GUID should be the same as the ReferenceGuid in the
+; the KSFILTER_DESCRIPTOR for the filter.
+;
+; INSTALLATION_SECTION specifies the section that the installer should call
+; to add the ring 3 filter class to the registry.  Except for legacy analog
+; tuner and crossbar, all BDA filters should specify KSProxy as the ring 3
+; filter class.
+;
+AddInterface = %KSCATEGORY_BDARECEIVER%, %KSSTRING_BdaSWCaptureFilter%, bdacapf.Filter
+AddInterface = %KSCATEGORY_CAFILTER%, %KSSTRING_BdaCAFilter%, bdaca.Filter
+
+[bdacap.NT.Interfaces]
+; Add an interface for each type of filter exposed by this device driver.
+; The format of each line is as follows
+;
+; AddInterface = DSHOW_CATEGORY, FILTER_REFERENCE_GUID, INSTALLATION_SECTION
+;
+; DSHOW_CATEGORY is the GUID for the Direct Show category in which the
+; filter should appear.  A filter that appears in multiple categories should
+; have a line for each category.
+;
+; FILTER_REFERENC_GUID should be the same as the ReferenceGuid in the
+; the KSFILTER_DESCRIPTOR for the filter.
+;
+; INSTALLATION_SECTION specifies the section that the installer should call
+; to add the ring 3 filter class to the registry.  Except for legacy analog
+; tuner and crossbar, all BDA filters should specify KSProxy as the ring 3
+; filter class.
+;
+AddInterface = %KSCATEGORY_BDARECEIVER%, %KSSTRING_BdaSWCaptureFilter%, bdacapf.Filter
+AddInterface = %KSCATEGORY_CAFILTER%, %KSSTRING_BdaCAFilter%, bdaca.Filter
+
+[bdacapf.Filter]
+; This is the install section for the sample BDA capture filter.
+;
+AddReg = bdacapf.Filter.AddReg
+
+[bdacapf.Filter.AddReg]
+; The sample BDA digital capture driver uses KSProxy for its ring 3 filter class.
+;
+HKR,,CLSID,,%Proxy.CLSID%
+HKR,,FriendlyName,,%BdaSWCapture.FilterDesc%
+
+
+[bdaca.Filter]
+AddReg=Category.Addreg, bdaca.Filter.AddReg
+
+[Category.Addreg]
+HKCR,%ActiveMovieCategories%\%GUID.CA%,CLSID,,%GUID.CA%
+HKCR,%ActiveMovieCategories%\%GUID.CA%,FriendlyName,,%Category_CA%
+
+[bdaca.Filter.AddReg]
+HKR,,CLSID,,%Proxy.CLSID%
+HKR,,FriendlyName,,%bdaca.FilterDesc%
+
+[bdaca.Services]
+AddService=bdacap, 0x00000002, bdacap.ServiceInstall
+
+
+
+[Strings]
+
+SERVICE_KERNEL_DRIVER=1
+SERVICE_DEMAND_START=3
+SERVICE_ERROR_NORMAL=1
+REG_EXPAND_SZ=0x00020000
+REG_DWORD=0x00010001
+
+; Specify the GUID for the Ksproxy plugin..
+;
+Proxy.CLSID="{17CCA71B-ECD7-11D0-B908-00A0C9223196}"
+
+; Specify the GUID for the BDA Receiver Filters category in GraphEdit.
+;
+KSCATEGORY_BDARECEIVER="{FD0A5AF4-B41D-11d2-9C95-00C04F7971E0}"
+
+; Specify the GUID for the digital capture Filter.
+;
+; NOTE!  This must match the reference guid specified in the driver's filter
+;        descriptor.
+;
+KSSTRING_BdaSWCaptureFilter="{074649FE-2DD8-4c12-8A23-BD828BADFFFA}"
+KSSTRING_BdaCAFilter="{61C615EC-2579-46d6-AD33-558841EEC1AE}"
+
+; Specify the GUID for WDM capture devices.
+; A legacy analog capture filter would belong to this category.
+;
+KSCATEGORY_CAPTURE="{65E8773D-8F56-11D0-A3B9-00A0C9223196}"
+KSCATEGORY_CAFILTER="{C4C4C4FC-0049-4E2B-98FB-9537F6CE516D}"
+
+;----------------
+; localizeable
+;----------------
+
+Msft="Microsoft"
+BdaSWCapture.FilterDesc="Sample BDA Capture Filter"
+bdaca.FilterDesc="Sample BDA CA Filter"
+BdaSWCapture.DeviceDesc="Sample BDA Capture Device"
+
+
+ActiveMovieCategories="CLSID\{da4e3da0-d07d-11d0-bd50-00a0c911ce86}\Instance"
+GUID.CA="{C4C4C4FC-0049-4E2B-98FB-9537F6CE516D}"
+Category_CA="BDA CP/CA Filters"
+

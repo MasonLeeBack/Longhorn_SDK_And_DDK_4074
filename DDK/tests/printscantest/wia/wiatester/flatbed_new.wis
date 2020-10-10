@@ -1,0 +1,11 @@
+.\Scripts\NewTree\Flatbed\TestDPSHorizontalBedRegistration.wia
+.\Scripts\NewTree\Flatbed\TestDPSHorizontalBedSize.wia
+.\Scripts\NewTree\Flatbed\TestDPSVerticalBedRegistration.wia
+.\Scripts\NewTree\Flatbed\TestDPSVerticalBedSize.wia
+.\Scripts\NewTree\Flatbed\TestDPSPages.wia
+
+.\Scripts\NewTree\Interdep\TestInterdepIPSYPOS.wia
+.\Scripts\NewTree\Interdep\TestInterdepIPSXEXTENT.wia
+.\Scripts\NewTree\Interdep\TestInterdepIPSYEXTENT.wia
+.\Scripts\NewTree\Interdep\TestInterdepIPSXRES.wia
+.\Scripts\NewTree\Interdep\TestInterdepIPSYRES.wia

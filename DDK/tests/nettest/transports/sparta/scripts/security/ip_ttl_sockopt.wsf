@@ -1,0 +1,226 @@
+'
+' File          : IP_TTL_SockOpt.wsf
+' Author        : Sandeep Prabhu
+'
+' A script to test the TTL settings thru socket option
+'
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\common\Common.Lib"/>
+      <script language="VBScript" src="..\common\TCPHelper.Lib"/>
+      <script id="IP_TTL_SockOpt" language="VBScript">
+
+
+option explicit
+
+dim Core, Sparta, Autosrv, pController, MediaType, IFace, ExceptionStatus
+
+'
+' Start the script
+'
+StartScript "IP_TTL_SockOpt", g_szLogDirectory, "Configure TTL thru socket option (~1 min)"
+
+sub Main
+   Core.SetAssertionTracking "30600"
+   '/**
+   ' @area name="Offload Compliance Test Assertions"
+   ' @group name="TCP Miscellaneous Test Assertions"
+   ' @group name="Time To Live (IPv4) and Hop Limit (IPv6) Assertions"
+   ' @define name="Offload" Offload Compliance Test Assertions
+   ' @define name="TCPMisc" TCP Miscellaneous Test Assertions
+   ' @define name="TTL" Time To Live (IPv4) and Hop Limit (IPv6) Assertions
+   ' @hierarchy Offload TCPMisc TTL
+   ' @key Reference="WLP# - x.x.x.x; RFC-791; RFC-2460"
+   ' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+   ' @key TestName="IPv4 and IPv6 TTL/HopLimit Socket Option Tests"
+   ' @key TestParam="-v6: uses IPv6 [Default: IPv4]"   
+   ' @key TestLog="IP_TTL_SockOpt.log"
+   '*/
+   dim ValueArray, ulStatus
+   ValueArray = Array(false)
+   ParseArguments array("-v6"), array(vbBoolean), ValueArray
+
+   '/**
+   ' @test name="The stack must accept settings for TimeToLive/HopLimit through socket options and use them in outgoing packets."
+   '    A stream socket is created and bound. Different values
+   '    (null, 0, 50, 240, and 255) are passed as the value for the
+   '    IP_TTL/IPV6_UNICAST_HOPS socket option. The socket is then
+   '    connected. The test verifies the outgoing SYN packet uses the
+   '    value of TimeToLive/HopLimit that was set for the socket.
+   '*/
+   StartTest "Configure TTL thru socket option"
+   ConfigureThruSocketOption ValueArray(0)
+   EndTest
+
+end sub
+
+'
+' Configure the TTL thru the socket option and validate it in the packets
+' - Bind to a port
+' - Set the TTL using socket option IPPROTO_IPV6-IPV6_UNICAST_HOPS/IPPROTO_IP-IP_TTL
+' - Make the stack send a SYN and validate the TTL/HopLimit in the SYN
+'
+sub ConfigureThruSocketOption(fVersion6)
+   dim szSrcAddress, szDestAddress, usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulTTL
+   dim ulSessionId, ulBytesRcvd, pPacket, ulStatus, pIFace, pAutoDisc, ulCounter, ulTID
+   dim ulCounter1, TTL
+
+   randomize
+   usSrcPort = clng(60534*rnd)+5000
+   TTL = array(null, 0, 50, 240, 255)
+
+   '
+   ' Start off auto discovery and create the interfaces
+   '
+   if (fVersion6) then
+      szSrcAddress = g_szLocalSpoofIp6Address
+      szDestAddress = g_szRemoteIp6Address
+      set pAutoDisc = sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, szSrcAddress, FALSE)
+   else
+      szSrcAddress = g_szLocalSpoofIp
+      szDestAddress = g_szRemoteIpAddress
+      set pAutoDisc = sparta.AutoArp(g_szLocalMacAddress, g_szLocalMacAddress, szSrcAddress)
+   end if
+   set pIFace = CreateInterface(fVersion6, TRUE, g_szRemoteMacAddress, g_szLocalMacAddress, szDestAddress, szSrcAddress)
+   pIFace.StartListening
+
+   '
+   ' Try out the different values of TTL
+   '
+   for ulCounter = lBound(TTL) to uBound(TTL)
+      '
+      ' Find a port which is not in use
+      '
+      StartVariation
+      set pPacket = nothing
+      for ulCounter1 = 1 to MAX_PORT_RETRIES
+         '
+         ' Use a different random source port
+         '
+         usDestPort = clng(60534*rnd)+5000
+         Shout "ConfigureThruSocketOption: Trying destination port - " & usDestPort
+
+         '
+         ' Issue a create and bind
+         '
+         ulStatus = pController.CreateAndBind(SOCK_STREAM, szDestAddress, usDestPort, ulSessionId)
+         if ((ulStatus <> WsaEAddrInUse) and (ulStatus <> 0)) then
+            Block "ConfigureThruSocketOption: CreateAndBind - " & ulStatus
+            exit sub
+         elseif (ulStatus = 0) then
+            '
+            ' Set the socket option to alter the TTL
+            '
+            if IsNull(TTL(ulCounter)) then
+               TTL(ulCounter) = DefaultTTL(fVersion6)
+            elseif (fVersion6) then
+               ulStatus = pController.SetSocketOption(ulSessionId, IPPROTO_IPV6, IPV6_UNICAST_HOPS, TTL(ulCounter))
+            else
+               ulStatus = pController.SetSocketOption(ulSessionId, IPPROTO_IP, IP_TTL, TTL(ulCounter))
+            end if
+            if (ulStatus <> 0) then
+               Block "ConfigureThruSocketOption: SetSocketOption - " & ulStatus
+               ulStatus = pController.Close(ulSessionId, ulTID)
+               exit for
+            end if
+
+            '
+            ' Issue a connect
+            '
+            ulStatus = pController.Connect(ulSessionId, szSrcAddress, usSrcPort, ulTID)
+            if (ulStatus <> 0) then
+               Block "ConfigureThruSocketOption: Connect - " & ulStatus
+               ulStatus = pController.Close(ulSessionId, ulTID)
+               exit for
+            end if
+
+            '
+            ' Grab the SYN
+            '
+            set pPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_SYN, 3000, pIFace)
+            if not(pPacket is Nothing) then
+               exit for
+            end if
+
+            Shout "ConfigureThruSocketOption : Failed to receive SYN"
+            ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+            if (ulCounter1 = MAX_PORT_RETRIES) then
+               Block "ConfigureThruSocketOption: Unable to find a port"
+            end if
+         end if
+      next
+
+      '
+      ' If we were successful, validate the TTL in the SYN
+      '
+      if not(pPacket is nothing) then
+         if (fVersion6) then
+            ulTTL = pPacket.IPHeader.HopLimit
+         else
+            ulTTL = pPacket.IPHeader.TTL
+         end if
+         if (ulTTL <> TTL(ulCounter)) then
+            Sev1 "ConfigureThruSocketOption: Incorrect TTL in SYN - " & ulTTL & " <> " & TTL(ulCounter)
+         else
+            '
+            ' Establish the connection
+            '
+            '
+            ' Send a SYN-ACK
+            '
+            ulSeqNumber = clng(&H7FFFFFF*rnd)
+            set pPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_SYN or TCP_ACK, 0)
+            pPacket.TcpHeader.TcpOption(0).AddMSS(EthernetMss(fVersion6))
+            pIFace.Send(pPacket)
+
+            '
+            ' Receive the ACK
+            '
+            set pPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 500, pIFace)
+            if (pPacket is nothing) then
+              Sev1 "ConfigureThruSocketOption : Failed to receive ACK"
+            end if
+
+            '
+            ' Check if connection is offloaded
+            '
+            If Not IsConnectionOffloaded(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSessionId) and g_fTestOffload And g_fTOENic Then
+              Sev1 "ConfigureThruSocketOption : Failed to offload the connection"
+            End If
+
+            '
+            ' Send data
+            '
+            ulStatus = pController.Send(ulSessionId, 1, 0, 100, ulTID)
+            if (ulStatus <> 0) then
+               Sev1 "ConfigureThruSocketOption: Send data failed - " & ulStatus
+            else
+               set pPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 500, pIFace)
+               if pPacket is nothing then
+                  Sev1 "ConfigureThruSocketOption : Did not receive data"
+               else
+                  if (fVersion6) then
+                     ulTTL = pPacket.IPHeader.HopLimit
+                  else
+                     ulTTL = pPacket.IPHeader.TTL
+                  end if
+                  if (ulTTL <> TTL(ulCounter)) then
+                     Sev1 "ConfigureThruSocketOption: Incorrect TTL in data - " & ulTTL & " <> " & TTL(ulCounter)
+                  end if
+               end if
+            end if
+         end if
+         ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+      end if
+   next
+
+end sub
+
+      </script>
+   </job>
+</package>

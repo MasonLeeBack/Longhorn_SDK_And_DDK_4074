@@ -1,0 +1,72 @@
+Test Assertion_A13444
+
+Var p:Property, root:Item
+{
+    PrintDescriptionFromXML('13.4.4.4')
+    StartWia()
+    GetRoot(root)
+
+    #Check For New Item Tree 
+    If(!IsNewTree(root))
+    Then
+    {
+        Writeln '\tThe device does not support New Item Tree'
+        Exit Failed 
+    }
+
+    GetNextItem(root)
+
+    While ( root ) Do
+    {
+         If ( !CheckItemType(root, WiaItemTypeImage) ) 
+        Then Goto label
+
+        If ( !GetProperty(root, p, WIA_IPA_ITEM_TIME) )
+        Then Goto label
+
+        If (!CheckPropertyAccessFromXML(p) )
+        Then 
+        {
+            Writeln '\tIncorrect access'
+            Exit Failed
+        }
+
+        If (!CheckPropertyTypeFromXML(p) )
+        Then
+        {
+           Writeln '\tIncorrect vartype'
+           Exit Failed
+        }
+
+        If( IsPropertyReadWrite(p) )
+        Then
+        {
+            If ( SetPropertySYSTEMTIME(root, WIA_IPA_ITEM_TIME) )
+            Then 
+            {
+                Writeln '\tSetting invalid property value succeeded'
+                Exit Failed
+            }
+            If ( !CheckValueSYSTEMTIME(p) )
+            Then 
+            {
+                Writeln '\tInvalid SYSTEMTIME value'
+                Exit Failed
+            }
+        }
+        Else
+        {
+           If ( SetPropertySYSTEMTIME(root, WIA_IPA_ITEM_TIME))
+           Then 
+           {
+                Writeln '\tSetting a read-only property value succeeded'
+                Exit Failed
+           }
+        }
+
+:label:
+        GetNextItem(root)
+    }
+
+    StopWia()
+}

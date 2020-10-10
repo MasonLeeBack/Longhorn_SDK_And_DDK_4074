@@ -1,0 +1,159 @@
+<?xml version="1.0"?>
+<component>
+	<registration progid="Enum.WSC" classid="{ecec1b59-329e-4ba5-a3ca-4cdabb22bb16}" description="Enum" version="1.00">
+	</registration>
+	<public>
+		<method name="DeviceID">
+			<parameter name="nLine"/>
+		</method>
+		<method name="LineName">
+			<parameter name="nLine"/>
+		</method>
+		<method name="ProviderName">
+			<parameter name="nLine"/>
+		</method>
+		<method name="AddLine">
+			<parameter name="DeviceID, Name, Provider"/>
+		</method>
+		<property name="ConnectionID">
+			<get/>
+			<put/>
+		</property>
+		<property name="PhoneNumber">
+			<get/>
+			<put/>
+		</property>
+		<property name="AdapterType">
+			<get/>
+			<put/>
+		</property>
+		<property name="GUID">
+			<get/>
+			<put/>
+		</property>
+		<property name="NdisMedium">
+			<get/>
+			<put/>
+		</property>
+		<property name="DeviceName">
+			<get/>
+			<put/>
+		</property>
+		<property name="NumLines">
+			<get/>
+			<put/>
+		</property>
+	</public>
+	<script language="VBScript">
+<![CDATA[
+Class clsLINE
+	
+	Public DeviceID
+    Public LineName
+   	Public ProviderName
+   	Public PhoneNumber
+   	   	
+End Class
+
+Dim ConnectionID
+Dim AdapterType
+Dim GUID
+Dim NdisMedium
+Dim DeviceName
+Dim PhoneNumber
+
+function get_ConnectionID()
+	get_ConnectionID = ConnectionID
+end function
+
+function put_ConnectionID(newValue)
+	ConnectionID = newValue
+end function
+
+function DeviceID(nLine)
+	DeviceID = Lines(nLine).DeviceID
+end function
+
+function LineName(nLine)
+	LineName = Lines(nLine).LineName
+end function
+
+function ProviderName(nLine)
+	ProviderName = Lines(nLine).ProviderName
+end function
+
+function get_PhoneNumber()
+	get_PhoneNumber = PhoneNumber
+end function
+
+function put_PhoneNumber(newValue)
+	PhoneNumber = newValue
+end function
+
+function get_AdapterType()
+	get_AdapterType = AdapterType
+end function
+
+function put_AdapterType(newValue)
+	AdapterType = newValue
+end function
+
+function get_GUID()
+	get_GUID = GUID
+end function
+
+function put_GUID(newValue)
+	GUID = newValue
+end function
+
+function get_NdisMedium()
+	get_NdisMedium = NdisMedium
+end function
+
+function put_NdisMedium(newValue)
+	NdisMedium = newValue
+end function
+
+function get_DeviceName()
+	get_Description = DeviceName
+end function
+
+function put_DeviceName(newValue)
+	DeviceName = newValue
+end function
+
+Dim Lines()
+Private CurrentLine
+CurrentLine = 0
+
+function AddLine(DeviceID, Name, Provider)
+	
+	If(CurrentLine > NumLines) Then
+		MsgBox "All available lines are filled"
+		Exit Function
+	End If
+	
+	Set Lines(CurrentLine) = new clsLINE
+	Lines(CurrentLine).DeviceID = DeviceID
+	Lines(CurrentLine).LineName = Name
+	Lines(CurrentLine).ProviderName = Provider
+	
+	CurrentLine = CurrentLine + 1
+
+end function
+
+Dim NumLines
+NumLines = 0
+
+function get_NumLines()
+	get_NumLines = NumLines
+end function
+
+function put_NumLines(newValue)
+	NumLines = newValue
+	ReDim Lines(NumLines)
+end function
+
+]]>
+	</script>
+</component>

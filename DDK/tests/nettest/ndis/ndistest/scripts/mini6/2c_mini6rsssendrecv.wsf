@@ -1,0 +1,2408 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3
+</MEDIA>
+<CARDMACH>
+2C,1M
+</CARDMACH>
+<RUNORDER>
+3090
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[
+This scripts tests the receive side scaling miniport's receive path. It tests that
+when RSS is enabled, the miniport does not drop packets, indicates them in order,
+when appropriate on the correct processor
+
+There are two main iterations in this test:
+1. A single support adapter instance sending packets to the RSS miniport
+2. Multiple senders sending packets to the RSS miniport.
+
+The test sends different packet types:
+1. IPv4 + TCP packet and no options
+2. IPv4 packets containing non TCP transport protocol and no IP options
+3. IPv4 + TCP packets containing fixed size IP options
+4. IPv4 packets containing non TCP transport and fixed size IP options
+5. IPv4 + TCP packets containing variable sized IP options field
+6. IPv4 packets containing non TCP transport and variable sized IP options
+7. Non IP packets
+
+This script only tests NdisHashFunctionToeplitz hash and only
+IPv4 packets.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="2c_Mini6RSSSendRecv" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore6" progid="NDTCore6.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      <object id="oCoreFactory" progid="NDTCore6.Factory.1" events="true"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\inc\Constants6.vbs"/>
+      <script language="VBScript" src="..\inc\RSS.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard6.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen6.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanEndPoint6.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script id="2c_Mini6RSSSendRecv" language="VBScript">
+'==========================================================================
+' Script Name:    2c_Mini6RSSSendRecv
+'==========================================================================
+Option Explicit
+
+' These are the various types of sends that we would perform
+Const RSS_SEND_IPv4_TCP                = 1
+Const RSS_SEND_IPv4_NDT                = 2
+Const RSS_SEND_IPv4_OPTIONS_TCP        = 3
+Const RSS_SEND_IPv4_OPTIONS_NDT        = 4
+Const RSS_SEND_IPv4_OPTIONS_RESIZE_TCP = 5
+Const RSS_SEND_IPv4_OPTIONS_RESIZE_NDT = 6
+Const RSS_SEND_IPv4_TCP_FIRST_FRAGMENT = 7
+Const RSS_SEND_IPv4_TCP_MID_FRAGMENT   = 8
+Const RSS_SEND_IPv4_TCP_LAST_FRAGMENT  = 9
+Const RSS_SEND_IPv4_TCP_CHANGE_ALL     = 10
+Const RSS_SEND_RAW_NDT                 = 11
+Const RSS_SEND_IPv6_TCP                = 12
+Const RSS_SEND_IPv6_NDT                = 13
+Const RSS_SEND_IPv6_PAD_TCP            = 14
+Const RSS_SEND_IPV6_PAD_NDT            = 15
+Const RSS_SEND_IPv6_TCP_FIRST_FRAGMENT = 16
+Const RSS_SEND_IPv6_TCP_MID_FRAGMENT   = 17
+Const RSS_SEND_IPv6_TCP_LAST_FRAGMENT  = 18
+Const RSS_SEND_IPv6_ROUTE0_TCP         = 19
+Const RSS_SEND_IPv6_ROUTE2_TCP         = 20
+Const RSS_SEND_IPv6_ROUTE2_NDT         = 21
+Const RSS_SEND_IPv6_HOME_TCP           = 22
+Const RSS_SEND_IPv6_HOME_NDT           = 23
+Const RSS_SEND_IPv6_ROUTE2_HOME_TCP    = 24
+Const RSS_SEND_IPv6_ROUTE2_HOME_NDT    = 25
+
+' The constants control our the hashing that can happen
+Const RSS_HASHING_NOT_EXPECTED         = &H00 ' Do not hash
+Const RSS_HASHING_REQUIRED             = &H01 ' Do hash
+Const RSS_HASHING_POSSIBLE             = &H02 ' Can hash okay if dont
+Const RSS_HASHING_IGNORE               = &H04 ' Can/Neednot hash, we dont care
+
+' The various types of combination tests (8 is a special case
+' where we send combination of IPv4 and IPv6 packets)
+Const RSS_IPv4_SIMULTANEOUS_START      = 1
+Const RSS_IPv4_SIMULTANEOUS_END        = 8
+Const RSS_IPv6_SIMULTANEOUS_START      = 8
+Const RSS_IPv6_SIMULTANEOUS_END        = 11
+
+' The minimum number of senders for the simultaneuous tests
+Const RSS_MINIMUM_TEST_STREAMS         = 8
+
+' Number of parameters that we can loop through
+Const RSS_MAXIMUM_VARIABLE_PARAMETERS  = 6
+
+Dim oTestObj
+
+' We are going to be using ndis 6 protocol
+g_UseNdis6Protocol = TRUE
+
+' We would also be using the trick to point oNDTCore to oNDTCore6, so that anyone who
+' uses oNDTCore would automatically get oNDTCore6. Only problem is we might be masking
+' some errors, so this would not be done just yet
+
+Call Initialize ()
+
+Set oTestObj = New CRSSSendRecvTest
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0), GetSupportAdapterIndex (oNDInfo.AdapterList, 0))
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class CRSSSendRecvTest
+   Dim oRSSHelper
+   Dim oTestCard, ArrRecvOpen, ArrRecvEndPoint
+   Dim oSuppCard, ArrSendOpen, ArrSendEndPoint
+   Dim m_lTestAdapterIndex, m_lSuppAdapterIndex
+   Dim nNumProcessors, nNumSenders, nHashTableSizeLimit, nNumberOfLsbs
+   Dim m_oCapabilities, m_oParameters
+   Dim nPreTestV4State, nPreTestV6State
+   Dim nTestID
+   Dim nInitialBurstSize, nSendDuration
+   Dim m_oIPv6ExtensionHeaders
+   Dim DummyIPv6Address1
+   Dim DummyIPv6Address2
+
+   Private Sub Class_Initialize
+      nNumSenders = 0   ' For safety
+      ' Get the number of processors, so that we do not try to distribute to too many
+      ' processors
+      nNumProcessors = oNDTSupp.NumProcessors
+
+      ' We would start with 2 opens more than the number of processors on the local
+      ' machine, so that atleast one time, we would have two connections mapping
+      ' to same processor
+      nNumSenders = nNumProcessors + 2
+      ' We also want some simulatenous tests, lets increase the number of senders if they
+      ' are too few
+      If (nNumSenders < RSS_MINIMUM_TEST_STREAMS) Then
+         nNumSenders = RSS_MINIMUM_TEST_STREAMS
+      End If
+
+      ReDim ArrRecvOpen(nNumSenders)
+      ReDim ArrRecvEndPoint(nNumSenders)
+
+      ReDim ArrSendOpen(nNumSenders)
+      ReDim ArrSendEndPoint(nNumSenders)
+
+      ' The hash table we would like to use depends on the number of processors. However,
+      ' we might not actually use this value if the miniport does not support it
+      nHashTableSizeLimit = 16
+      nNumberOfLsbs = 4
+
+      Do While (nHashTableSizeLimit < nNumProcessors)
+         nHashTableSizeLimit = 2 * nHashTableSizeLimit
+         nNumberOfLsbs = 2 * nNumberOfLsbs
+      Loop
+
+      ' This is the amount of space we want to preallocate for NBs & NBLs we
+      ' would be sending
+      nInitialBurstSize = 10
+      nSendDuration = 20000         ' Each send run is 20 seconds
+
+      nTestID = oNDTSupp.Random(1, 32000)
+      Set m_oIPv6ExtensionHeaders = Nothing
+
+      DummyIPv6Address1 = IPv6Addr(40, 40, 40, 40)
+      DummyIPv6Address2 = IPv6Addr(50, 50, 50, 50)
+
+   End Sub
+
+   Private Sub Class_Terminate
+      Dim nCount
+      Set m_oParameters = Nothing
+      Set m_oCapabilities = Nothing
+      Set oRSSHelper = Nothing
+
+      For nCount = 1 To nNumSenders
+         Set ArrRecvOpen(nCount) = Nothing
+      Next
+      Set oTestCard = Nothing
+
+      For nCount = 1 To nNumSenders
+         Set ArrSendOpen(nCount) = Nothing
+      Next
+      Set oSuppCard = Nothing
+   End Sub
+
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim ErrorStatus, arrData()
+      Dim nBytesWritten, nBytesNeeded, NdisStatus
+      Dim pAdapterList
+
+      SetupTest = FALSE
+
+      oNDTCore6.DebugLevel = NORMAL_LOGGING_LEVEL Or LEVEL2_BREAK
+
+      Set pAdapterList = oNDInfo.AdapterList
+
+      ' Create the structures for the RSS work
+      Set oRSSHelper = New CRSSLib
+      If (oRSSHelper is Nothing) Then
+         Call oLog.Failed ("Unable to create RSS helper library", 88888)
+         Exit Function
+      End If
+
+      Set m_oCapabilities = oStructRep.CreateNdisObject(NDIS_OBJECT_TYPE_RSS_CAPABILITIES, 1)
+      If (m_oCapabilities is Nothing) Then
+         Call oLog.Failed ("Unable to create RSS capabilities structure", 88888)
+         Exit Function
+      End If
+
+      Set m_oParameters = oStructRep.CreateNdisObject(NDIS_OBJECT_TYPE_RSS_PARAMETERS, 1)
+      If (m_oParameters is Nothing) Then
+         Call oLog.Failed ("Unable to create RSS parameters set structure", 88888)
+         Exit Function
+      End If
+
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard6
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+
+      ' The open we would use for all the regular work
+      Set ArrRecvOpen(1) = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (ArrRecvOpen(1) is Nothing) Then
+         Exit Function
+      End If
+
+      Set ArrRecvEndPoint(1) = ArrRecvOpen(1).vbCreateEndPoint(CLENDPOINT)
+      If (ArrRecvEndPoint(1) is Nothing) Then
+         Exit Function
+      End If
+
+      oLog.Variation ("Querying Test adapters RSS capabilities")
+
+      ' Query the RSS capabilities and store
+      ReDim arrData(256)
+      ErrorStatus = ArrRecvOpen(1).vbNdisRequest (OID_GEN_RECEIVE_SCALE_CAPABILITIES, _
+                     arrData, _
+                     256, _
+                     REQUEST_QUERY_INFO, _
+                     nBytesWritten, _
+                     nBytesNeeded, _
+                     NdisStatus, _
+                     TRUE _
+                     )
+      If (ErrorStatus <> 0) Then
+         Call oLog.Failed ("Unable to query RSS capabilities", 88888)
+         Exit Function
+      End If
+
+      If (NdisStatus <> NDIS_STATUS_SUCCESS) Then
+         oLog.Write ("Miniport does not support receive side scaling. Test will not run")
+         Exit Function
+      End If
+
+      ' The miniport claimed to support some RSS capabilities, lets store that information
+      ErrorStatus = m_oCapabilities.QueryInitialize(arrData, nBytesWritten)
+      If (ErrorStatus <> 0) Then
+         Call oLog.Failed ("Unable to format RSS capabilities response from miniport", 88888)
+         Exit Function
+      End If
+      
+      '
+      ' Create an empty IPv6 extensions object
+      '
+      Set m_oIPv6ExtensionHeaders = CreateObject("NDTCore6.IPv6RawExtensionHeaders")
+
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+
+   Private Function ChangeTCPIPBinding(ChangeOperation, OldV4BindStatus, OldV6BindStatus)
+      Dim oProtoBinder
+
+      ChangeTCPIPBinding = False
+
+      oProtoBinder = oNDTSession ("ProtocolBinders")
+      If (IsEmpty (oProtoBinder)) Then
+         call oLog.Write ("Protocol Binding info not found in the session")
+         Exit Function
+      End If
+
+      ' Change TCP/IP binding status for test card
+      If (Not oProtoBinder(0).ChangeBinding ("Internet Protocol (TCP/IP)", ChangeOperation, OldV4BindStatus)) Then
+         Exit Function
+      End If
+
+      ' Change TCP/IP binding status for test card
+      If (Not oProtoBinder(0).ChangeBinding ("Microsoft TCP/IP version 6", ChangeOperation, OldV6BindStatus)) Then
+         Exit Function
+      End If
+
+      ChangeTCPIPBinding = True
+   End Function
+
+   Private Function CreateSupportEndPoints
+      Dim pAdapterList
+      Dim nCount
+
+      Set pAdapterList = oNDInfo.AdapterList
+      CreateSupportEndPoints = False
+
+      oLog.Variation ("Setting up Support Adapter EndPoints")
+      Set oSuppCard = New CLanCard6
+      If (oSuppCard is Nothing) Then
+         Exit Function
+      End If
+
+      If (Not oSuppCard.vbCreateAdapter(pAdapterList (m_lSuppAdapterIndex))) Then
+         Exit Function
+      End If
+
+      ' We create all the send threads
+      For nCount = 1 To nNumSenders
+
+         ' Create the opens
+         Set ArrSendOpen(nCount) = oSuppCard.vbOpenAdapter()
+         If (ArrSendOpen(nCount) is Nothing) Then
+            Exit Function
+         End If
+
+         ' Create the endpoints
+         Set ArrSendEndPoint(nCount) = ArrSendOpen(nCount).vbCreateEndPoint(CLENDPOINT)
+         If (ArrSendEndPoint(nCount) is Nothing) Then
+            Exit Function
+         End If
+      Next
+
+      CreateSupportEndPoints = True
+      Set pAdapterList = Nothing
+   End Function
+
+   Private Function CreateAdditionalTestEndPoints
+      Dim nCount
+
+      CreateAdditionalTestEndPoints = False
+
+      oLog.Variation ("Setting up additional Test EndPoint")
+
+      ' Create extra EndPoints for all the extra senders we would be using
+      For nCount = 2 To nNumSenders
+
+         ' Create the opens
+         Set ArrRecvOpen(nCount) = oTestCard.vbOpenAdapter()
+         If (ArrRecvOpen(nCount) is Nothing) Then
+            Exit Function
+         End If
+
+         ' Create the endpoints
+         Set ArrRecvEndPoint(nCount) = ArrRecvOpen(nCount).vbCreateEndPoint(CLENDPOINT)
+         If (ArrRecvEndPoint(nCount) is Nothing) Then
+            Exit Function
+         End If
+      Next
+
+      CreateAdditionalTestEndPoints = True
+   End Function
+
+   Private Function CleanupExtraTestEndPoints
+      Dim nCount, ErrorStatus
+
+      CleanupExtraTestEndPoints = False
+
+      oLog.Variation ("Cleaning up additional Test EndPoint")
+      For nCount = 2 To nNumSenders
+
+         ' Destroy the endpoint
+         ErrorStatus = ArrRecvOpen(nCount).vbDestroyEndPoint(ArrRecvEndPoint(nCount))
+
+         ' Close the opens
+         ErrorStatus = ArrRecvOpen(nCount).vbNdisClose
+
+         Set ArrRecvOpen(nCount) = Nothing
+      Next
+
+      CleanupExtraTestEndPoints = True
+   End Function
+
+
+   Private Function SetTestRunConfiguration
+      Dim ErrorStatus, arrData()
+      Dim nBytesRead, nBytesNeeded, NdisStatus
+      Dim nCount
+
+      SetTestRunConfiguration = False
+
+      oLog.Variation ("Collecting testing parameters")
+      ' Output the capabilities into the log file
+      oLog.Write ("Miniport's RSS Capabilities")
+      m_oCapabilities.Print
+
+      ' If we are running on a single processor, this test is not of much
+      ' use, but we would still run it
+      If (nNumProcessors = 1) Then
+         Call oLog.Warned("Receive Side Scaling tests should be run on multiprocessor machines")
+      End If
+
+      ' Since we are going to run the test, let us unbind TCPIP
+      Call oLog.Variation ("Unbinding TCP/IP")
+      If (Not ChangeTCPIPBinding(UNBIND_PROTOCOL, nPreTestV4State, nPreTestV6State)) Then
+         Call oLog.Warned ("Unable to unbind TCPIP from test adapter.")
+      End If
+
+      ' Find the hash table size that the miniport finds acceptable. This
+      ' we do by starting with our desired hash table size and dropping down until
+      ' the miniport accepts a hash table of the size I want
+      oLog.Write("Determining maximum hash table size")
+      Do
+         ErrorStatus = oRSSHelper.GenerateValidParameters(m_oParameters, m_oCapabilities.CapabilitiesFlags, nHashTableSizeLimit, nNumProcessors)
+         If (ErrorStatus <> 0) Then
+            Call oLog.Failed("Unable to create valid RSS parameters structure", 88888)
+            Exit Function
+         End If
+
+         ' Resize the array
+         ReDim arrData(m_oParameters.SizeOf)
+
+         ' Convert the COM structure to a byte stream
+         ErrorStatus = m_oParameters.ConvertToByteStream(arrData, m_oParameters.SizeOf)
+         If (ErrorStatus <> 0) Then
+            Call oLog.Failed ("Unable to stream RSS parameters structure", 88888)
+            Exit Function
+         End If
+
+         ' Now, attempt to set the parameters
+         ErrorStatus = ArrRecvOpen(1).vbNdisRequest (OID_GEN_RECEIVE_SCALE_PARAMETERS, _
+                        arrData, _
+                        m_oParameters.SizeOf, _
+                        REQUEST_SET_INFO, _
+                        nBytesRead, _
+                        nBytesNeeded, _
+                        NdisStatus, _
+                        FALSE _
+                        )
+         If (ErrorStatus <> 0 Or NdisStatus <> 0) then
+            Call oLog.Write ("Hash table size " & nHashTableSizeLimit & " not accepted. Reducing our limit")
+
+            ' Reduce it and we would try again
+            nHashTableSizeLimit = nHashTableSizeLimit / 2
+            nNumberOfLsbs = nNumberOfLsbs / 2
+            NdisStatus = NDIS_STATUS_FAILURE
+         Else
+            ' We found our size, lets use it
+            Exit Do
+         End If
+
+      Loop While (nHashTableSizeLimit > 2)
+
+      If (NdisStatus <> NDIS_STATUS_SUCCESS) Then
+         oLog.Warned ("Unable to determine maximum hash table size supported by miniport")
+         oLog.Write ("Using a default value of 2")
+         nHashTableSizeLimit = 2
+         nNumberOfLsbs = 2
+      Else
+         oLog.Write ("The hash table size used for testing = " & nHashTableSizeLimit)
+      End If
+
+      ' Prepare the instance we would use for the tests
+      If (Not CreateSupportEndPoints) Then
+         ' Unable to prepare test objects, quit
+         oLog.Write ("Unable to create additional endpoints needed for the test")
+         Exit Function
+      End If
+
+      SetTestRunConfiguration = True
+   End Function
+
+   Private Function SetRSSParameters(oOpen, oEndPoint, oSetParameters)
+      Dim arrData()
+      Dim ErrorStatus
+      Dim NdisStatus, nBytesRW, nBytesNeeded
+
+      SetRSSParameters = False
+
+      ' Resize the array
+      ReDim arrData(oSetParameters.SizeOf)
+
+      ' Convert the COM structure to a byte stream
+      ErrorStatus = oSetParameters.ConvertToByteStream(arrData, oSetParameters.SizeOf)
+      If (ErrorStatus <> 0) Then
+         Call oLog.Failed ("Unable to stream RSS parameters structure", 88888)
+         Exit Function
+      End If
+
+      ' Should we be sending the request to the miniport?
+      If (Not (oOpen is Nothing)) Then
+         ' If the miniport already has the same RSS configuration set on it, ndis
+         ' may not forward this request to the miniport
+         ErrorStatus = oOpen.vbNdisRequest (OID_GEN_RECEIVE_SCALE_PARAMETERS, _
+                        arrData, _
+                        oSetParameters.SizeOf, _
+                        REQUEST_SET_INFO, _
+                        nBytesRW, _
+                        nBytesNeeded, _
+                        NdisStatus, _
+                        FALSE _
+                        )
+         If (ErrorStatus <> 0) then
+            Call oLog.Failed ("NDISTest unable to process RSS parameters request", 88888)
+            Exit Function
+         End If
+
+         If (NdisStatus <> 0) Then
+            Call oLog.Failed("The miniport should have accepted this set request", 88888)
+            oSetParameters.Print
+            Exit Function
+         End If
+      End If
+
+      ' Should we send the request to the endpoint?
+      If (Not (oEndPoint is Nothing)) Then
+         ' Send the RSS parameters to the endpoint too
+
+         ErrorStatus = oEndPoint.vbSetRSSParameters(m_oCapabilities.CapabilitiesFlags, arrData, oSetParameters.SizeOf)
+         If (ErrorStatus <> 0) Then
+            Call oLog.Failed ("Unable to send RSS test parameters to NDISTest protocol", 88888)
+            oSetParameters.Print
+            Exit Function
+         End If
+      End If
+
+      ' We have successfully configured both the NIC and the endpoint with
+      ' our RSS parameters
+      SetRSSParameters = True
+   End Function
+
+   Private Function ClearRSSParameters(oRecvOpen)
+      Dim ErrorStatus
+
+      oLog.Variation("Clearing all RSS parameters")
+      ClearRSSParameters = True
+      ErrorStatus = m_oParameters.SetInitialize(RSS_PARAMETERS_STRUCT_SIZE)
+      If (ErrorStatus <> 0) Then
+         Call oLog.Failed ("Unable to create RSS parameters structure", 88888)
+         Exit Function
+      End If
+
+      m_oParameters.HashInformation = 0
+      m_oParameters.NumberOfLsbs = 0
+      m_oParameters.IndirectionTableSize = 0
+
+      ClearRSSParameters = SetRSSParameters(oRecvOpen, _
+         Nothing, _
+         m_oParameters _
+         )
+   End Function
+
+   Public Function RunTest (lTestAdapterIndex, lSuppAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      m_lSuppAdapterIndex = lSuppAdapterIndex
+
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+
+      If (Not SetTestRunConfiguration) Then
+         ' If we cannot determine the test run configuration, we would not continue
+         Call oLog.Write ("The RSS test is not runnable. Quitting")
+      Else
+         If (oRSSHelper.TestFlag(m_oCapabilities.CapabilitiesFlags, NDIS_RSS_HASH_TYPE_TCP_IPV4)) Then
+            ' Test all the TCP & IPv4 cases
+            Call TestTCPIPv4ToeplitzRSSSupport
+         End If
+
+         If (oRSSHelper.TestFlag(m_oCapabilities.CapabilitiesFlags, NDIS_RSS_HASH_TYPE_TCP_IPV6) Or _
+             oRSSHelper.TestFlag(m_oCapabilities.CapabilitiesFlags, NDIS_RSS_HASH_TYPE_TCP_IPV6_EX)) Then
+            ' Test the TCP & IPv6 cases
+            Call TestTCPIPv6ToeplitzRSSSupport
+         End If
+      End If
+
+      If (Not ClearRSSParameters(ArrRecvOpen(1))) Then
+         Call oLog.Warned ("Unable to clear RSS parameters at end of script")
+      End If
+
+      If ((nPreTestV4State = PROTOCOL_WAS_BOUND) Or (nPreTestV6State = PROTOCOL_WAS_BOUND)) Then
+         ' TCPIP was originally bound, rebind it
+         Call oLog.Variation ("Rebinding TCP/IP")
+         If (Not ChangeTCPIPBinding(BIND_PROTOCOL, nPreTestV4State, nPreTestV6State)) Then
+            Call oLog.Warned ("Unable to rebind TCPIP to test adapter at end of test.")
+         End If
+      End If
+
+   End Function
+
+   Private Function CreateRSSParameters(ByRef oSetParameters, HashType, HashFunction)
+      Dim ErrorStatus
+      CreateRSSParameters = False
+      ErrorStatus = oRSSHelper.GenerateValidParameters(oSetParameters, m_oCapabilities.CapabilitiesFlags, nHashTableSizeLimit, nNumProcessors)
+      If (ErrorStatus <> 0) Then
+         Call oLog.Failed("Unable to create valid RSS parameters structure", 88888)
+         Exit Function
+      End If
+
+      ' Change the hash information to use the specified hash information
+      oSetParameters.HashInformation = oRSSHelper.HashInfoFromHashTypeAndFunction( _
+                        HashType, HashFunction)
+
+      CreateRSSParameters = True
+   End Function
+
+   Private Function TestTCPIPv4ToeplitzRSSSupport
+      Dim nHashTypeCount, HashType
+      Dim PacketTypeStart, PacketTypeEnd
+      TestTCPIPv4ToeplitzRSSSupport = False
+
+      ' This function tests the two IPv4 hash settings
+      For nHashTypeCount = 0 To 1
+         If (nHashTypeCount = 0) Then
+            ' Parse the received data to identify an IPv4 packet that contains
+            ' a TCP segment
+            HashType = NDIS_HASH_TCP_IPV4
+            oLog.Variation ("Testing Hash Function 1 with TCP_IPv4")
+         Else
+            ' Attempt TCP_IPV4 type, and if unable to do that, compute hash over
+            ' the IPv4 header fields
+            HashType = NDIS_HASH_TCP_IPV4 Or NDIS_HASH_IPV4
+            oLog.Variation ("Testing Hash Function 1 with TCP_IPv4 Or IPv4")
+         End If
+
+         If (Not CreateRSSParameters(m_oParameters, HashType, NdisHashFunctionToeplitz)) Then
+            Call oLog.Failed ("Unable to create parameters structure for hash 0x" & Hex(HashType), 88888)
+            Exit Function
+         End If
+
+         ' First, we execute the simple test cases with a single open
+         Call ExecuteSingleConnectionTestCases(m_oParameters, RSS_SEND_IPv4_TCP, RSS_SEND_RAW_NDT)
+
+         ' Now, run simultaneous send with different connections and opens
+         ' Create the extra opens that we would need
+         If (Not CreateAdditionalTestEndPoints) Then
+            Call oLog.Failed ("Unable to create additional receiving opens", 88888)
+            Exit Function
+         End If
+         Call ExecuteMultipleConnectionsTestCases(m_oParameters, RSS_IPv4_SIMULTANEOUS_START, RSS_IPv4_SIMULTANEOUS_END, FALSE)
+
+         ' Now run a simultaneous test while changing parameters
+         Call ExecuteMultipleConnectionsTestCases(m_oParameters, RSS_IPv4_SIMULTANEOUS_END, RSS_IPv4_SIMULTANEOUS_END, TRUE)
+
+         ' Destroy all the extra endpoints, etc we created on the test adapter
+         CleanupExtraTestEndPoints
+      Next
+
+      TestTCPIPv4ToeplitzRSSSupport = True
+   End Function
+
+   Private Function TestTCPIPv6ToeplitzRSSSupport
+      Dim nHashTypeCount, HashType
+      Dim PacketTypeStart, PacketTypeEnd
+      TestTCPIPv6ToeplitzRSSSupport = False
+
+
+      ' This function tests the three IPv6 hash settings
+      For nHashTypeCount = 0 To 2
+         If (nHashTypeCount = 0) Then
+            ' Parse the received data to identify an IPv6 packet that contains
+            ' a TCP segment
+            HashType = NDIS_HASH_TCP_IPV6
+            oLog.Variation ("Testing Hash Function 1 with TCP_IPv6")
+         ElseIf (nHashTypeCount = 1) Then
+            ' Attempt hash over the IPv6 header fields (first with extensions), then without
+            HashType = NDIS_HASH_IPV6_EX Or NDIS_HASH_IPV6
+            oLog.Variation ("Testing Hash Function 1 with IPv6_EX Or IPv6")
+         Else
+            ' Attempt TCP_IPV6 type, and if unable to do that, compute hash over
+            ' the IPv6 header fields (first with extensions), then without
+            HashType = NDIS_HASH_TCP_IPV6 Or NDIS_HASH_IPV6_EX Or NDIS_HASH_IPV6
+            oLog.Variation ("Testing Hash Function 1 with TCP_IPv6 Or IPv6_EX Or IPv6")
+         End If
+
+         If (Not CreateRSSParameters(m_oParameters, HashType, NdisHashFunctionToeplitz)) Then
+            Call oLog.Failed ("Unable to create parameters structure for hash 0x" & Hex(HashType), 88888)
+            Exit Function
+         End If
+
+         ' First, we execute the simple test cases with a single open
+         Call ExecuteSingleConnectionTestCases(m_oParameters, RSS_SEND_RAW_NDT, RSS_SEND_IPv6_ROUTE2_HOME_NDT)
+
+         ' Now, run simultaneous send with different connections and opens
+         ' Create the extra opens that we would need
+         If (Not CreateAdditionalTestEndPoints) Then
+            Call oLog.Failed ("Unable to create additional receiving opens", 88888)
+            Exit Function
+         End If
+         Call ExecuteMultipleConnectionsTestCases(m_oParameters, RSS_IPv6_SIMULTANEOUS_START, RSS_IPv6_SIMULTANEOUS_END, FALSE)
+
+         ' Now run a simultaneous test while changing parameters
+         Call ExecuteMultipleConnectionsTestCases(m_oParameters, RSS_IPv6_SIMULTANEOUS_END, RSS_IPv6_SIMULTANEOUS_END, TRUE)
+
+         ' Destroy all the extra endpoints, etc we created on the test adapter
+         CleanupExtraTestEndPoints
+      Next
+
+      Set m_oIPv6ExtensionHeaders = Nothing
+      TestTCPIPv6ToeplitzRSSSupport = True
+   End Function
+
+   Private Sub HashTCPIPv4Packet (HashType, ByRef VerificationLevel, ByRef RSSHashingFlags)
+      ' If (NDIS_HASH_TCP_IPV4 Or NDIS_HASH_IPV4) is enabled, RSS should kick in
+      If (oRSSHelper.TestFlag(HashType, (NDIS_HASH_TCP_IPV4 Or NDIS_HASH_IPV4))) Then
+         ' Check for everything
+         VerificationLevel = NDT_RSS_DEFAULT_VERIFICATION
+         RSSHashingFlags = RSS_HASHING_REQUIRED
+      Else
+         ' Only check IP packets are not corrupted and in order
+         VerificationLevel = NDT_RSS_MINIMAL_VERIFICATION
+         RSSHashingFlags = RSS_HASHING_NOT_EXPECTED
+      End If
+   End Sub
+
+   Private Sub HashIPv4Packet (HashType, ByRef VerificationLevel, ByRef RSSHashingFlags)
+      ' If (NDIS_HASH_IPV4) is enabled, RSS should kick in
+      If (oRSSHelper.TestFlag(HashType, NDIS_HASH_IPV4)) Then
+         ' Check for everything
+         VerificationLevel = NDT_RSS_DEFAULT_VERIFICATION
+         RSSHashingFlags = RSS_HASHING_REQUIRED
+      Else
+         ' Only check IP packets are not corrupted and in order
+         VerificationLevel = NDT_RSS_MINIMAL_VERIFICATION
+         RSSHashingFlags = RSS_HASHING_NOT_EXPECTED
+      End If
+   End Sub
+
+   Private Sub HashTCPIPv6Packet (HashType, ByRef VerificationLevel, ByRef RSSHashingFlags)
+      ' If TCPv6 or IPv6 hashing is enabled, RSS should kick in
+      If (oRSSHelper.TestFlag(HashType, (NDIS_HASH_TCP_IPV6 Or NDIS_HASH_IPv6_EX Or NDIS_HASH_IPV6))) Then
+         ' Check for everything
+         VerificationLevel = NDT_RSS_DEFAULT_VERIFICATION
+         RSSHashingFlags = RSS_HASHING_REQUIRED
+      Else
+         ' Only check IP packets are not corrupted and in order
+         VerificationLevel = NDT_RSS_MINIMAL_VERIFICATION
+         RSSHashingFlags = RSS_HASHING_NOT_EXPECTED
+      End If
+   End Sub
+
+   Private Sub HashIPv6Packet (HashType, ByRef VerificationLevel, ByRef RSSHashingFlags)
+      ' If IPv6 hashing is enabled, RSS should kick in
+      If (oRSSHelper.TestFlag(HashType, NDIS_HASH_IPv6_EX Or NDIS_HASH_IPV6)) Then
+         ' Check for everything
+         VerificationLevel = NDT_RSS_DEFAULT_VERIFICATION
+         RSSHashingFlags = RSS_HASHING_REQUIRED
+      Else
+         ' Only check IP packets are not corrupted and in order
+         VerificationLevel = NDT_RSS_MINIMAL_VERIFICATION
+         RSSHashingFlags = RSS_HASHING_NOT_EXPECTED
+      End If
+   End Sub
+
+   Private Sub HashTCPIPv6ExPacket (HashType, ByRef VerificationLevel, ByRef RSSHashingFlags)
+      If (oRSSHelper.TestFlag(HashType, NDIS_HASH_IPv6_EX Or NDIS_HASH_IPV6)) Then
+         ' If IPv6 is enabled, RSS should kick in
+         ' Check for everything
+         VerificationLevel = NDT_RSS_DEFAULT_VERIFICATION
+         RSSHashingFlags = RSS_HASHING_REQUIRED
+      ElseIf (oRSSHelper.TestFlag(HashType, NDIS_HASH_TCP_IPV6)) Then
+         ' In this case, RSS should kick in. However, if the miniport
+         ' cannot handle extension, we let it not use hashing
+         If (oRSSHelper.TestFlag(m_oCapabilities.CapabilitiesFlags, NDIS_RSS_HASH_TYPE_TCP_IPV6_EX)) Then
+            ' It claims it can handle extensions
+            ' Check for everything
+            VerificationLevel = NDT_RSS_DEFAULT_VERIFICATION
+            RSSHashingFlags = RSS_HASHING_REQUIRED
+         Else
+            ' Check for everything, but allow no hashing (and if miniport
+            ' does not hash, we wouldnt worry about processor jumps, etc)
+            VerificationLevel = NDT_RSS_DEFAULT_VERIFICATION Or fNDT_RSS_CONSTRUCTOR_ALLOW_NO_HASH
+            ' RSS options
+            RSSHashingFlags = RSS_HASHING_POSSIBLE
+         End If
+      Else
+         ' Only check IP packets are not corrupted and in order
+         VerificationLevel = NDT_RSS_MINIMAL_VERIFICATION
+         RSSHashingFlags = RSS_HASHING_NOT_EXPECTED
+      End If
+   End Sub
+
+   Private Function CreateConstructorConfigObjects(PacketType, ByRef ConstructorType, ByRef oSendNBConfig, ByRef oRecvNBConfig)
+      If (PacketType = RSS_SEND_RAW_NDT) Then
+         ConstructorType = NDISTEST_CONSTRUCTOR
+      Else
+         ConstructorType = IP_RSS_CONSTRUCTOR
+      End If
+      Set oSendNBConfig = oCoreFactory.ConstructorSendConfig(ConstructorType)
+
+      Set oRecvNBConfig = oCoreFactory.ConstructorRecvConfig(ConstructorType)
+
+      CreateConstructorConfigObjects = True
+   End Function
+
+   Private Function SetupSendEndPoint(nSendInstance, PacketType, oSetParameters, ByRef oSendNBConfig)
+      Dim ErrorStatus
+      Dim ConstructorType
+      Dim bOpenIPv6Helper
+
+      SetupSendEndPoint = False
+      bOpenIPv6Helper = False
+
+      ' Populate the send config objects (would return this to the caller)
+      oSendNBConfig.NetBufferSize = 1000
+      oSendNBConfig.NumNetBuffersPerNetBufferList = 1
+      oSendNBConfig.MaxMdlSize = 1500
+      oSendNBConfig.NumNBLToPreallocate = nInitialBurstSize
+      oSendNBConfig.TestId = nTestID + nSendInstance     ' This open receives only from this sender
+
+      If (PacketType = RSS_SEND_RAW_NDT) Then
+         ConstructorType = NDISTEST_CONSTRUCTOR
+      Else
+         ConstructorType = IP_RSS_CONSTRUCTOR
+
+         oSendNBConfig.ConstructionFlags = 0
+         If (PacketType < RSS_SEND_RAW_NDT) Then
+            ' IPv4
+            oSendNBConfig.IPVersion = IP_VERSION_4
+            oSendNBConfig.TransportOptionsSize = 0
+            oSendNBConfig.ConnectionId = nSendInstance
+            oSendNBConfig.IPv4OptionsSize = 0
+            oSendNBConfig.FragmentInfo = 0
+
+            ' Fill the port and address fields of the configuration such that we map to
+            ' a particular index (may be offset from the original index, but that
+            ' does not matter)
+            Call oRSSHelper.FillMappingToUniqueIndexIPv4(nSendInstance, oSetParameters.HashInformation, oSendNBConfig)
+         Else
+            ' IPv6
+            oSendNBConfig.IPVersion = IP_VERSION_6
+            oSendNBConfig.TransportOptionsSize = 0
+            oSendNBConfig.ConnectionId = nSendInstance
+            oSendNBConfig.IPv6ExtensionsLength = 0
+
+            ' Fill the port and address fields of the configuration such that we map to
+            ' a particular index (may be offset from the original index, but that
+            ' does not matter)
+            Call oRSSHelper.FillMappingToUniqueIndexIPv6(nSendInstance, oSetParameters.HashInformation, oSendNBConfig)
+         End If
+      End If
+
+      Select Case PacketType
+         Case RSS_SEND_IPv4_TCP:
+            oLog.Write ("Conn ID = " & nSendInstance & " sending IPv4 + TCP packets with no options")
+
+            oSendNBConfig.TransportProtocol = TCP              ' Send IP + TCP + NDT packets
+
+         Case RSS_SEND_IPv4_NDT:
+            oLog.Write ("Conn ID = " & nSendInstance & " sending IPv4 packets with no options & no TCP header")
+
+            oSendNBConfig.TransportProtocol = RAW_NDISTEST     ' Send IP + NDT packets
+
+         Case RSS_SEND_IPv4_OPTIONS_TCP:
+            oLog.Write ("Conn ID = " & nSendInstance & " sending IPv4 + TCP packets with fixed length IP options")
+
+            oSendNBConfig.TransportProtocol = TCP              ' Send IP + TCP + NDT packets
+            oSendNBConfig.IPv4OptionsSize = 8                    ' Use 8 bytes IP options
+
+         Case RSS_SEND_IPv4_OPTIONS_NDT:
+            oLog.Write ("Conn ID = " & nSendInstance & " sending IPv4 packets with fixed length IP options and no TCP header")
+
+            oSendNBConfig.TransportProtocol = RAW_NDISTEST     ' Send IP + NDT packets
+            oSendNBConfig.IPv4OptionsSize = 8                    ' Use 8 bytes IP options
+
+         Case RSS_SEND_IPv4_OPTIONS_RESIZE_TCP:
+            oLog.Write ("Conn ID = " & nSendInstance & " sending IPv4 + TCP packets with variable length IP options")
+
+            oSendNBConfig.TransportProtocol = TCP              ' Send IP + TCP + NDT packets
+            oSendNBConfig.IPv4OptionsSize = 8                    ' Use 8 bytes IP options
+            oSendNBConfig.ConstructionFlags = 1
+
+         Case RSS_SEND_IPv4_OPTIONS_RESIZE_NDT:
+            oLog.Write ("Conn ID = " & nSendInstance & " sending IPv4 packets with variable length IP options and no TCP header")
+
+            oSendNBConfig.TransportProtocol = RAW_NDISTEST     ' Send IP + NDT packets
+            oSendNBConfig.IPv4OptionsSize = 8                  ' Use 8 bytes IP options
+            oSendNBConfig.ConstructionFlags = 1
+         Case RSS_SEND_IPv4_TCP_FIRST_FRAGMENT:
+            oLog.Write ("Conn ID = " & nSendInstance & " sending first fragment of IPv4 + TCP packets with no options")
+
+            oSendNBConfig.TransportProtocol = TCP              ' Send IP + TCP + NDT packets
+            oSendNBConfig.FragmentInfo = &H2000                ' No DF, MF, no frag offset
+
+         Case RSS_SEND_IPv4_TCP_MID_FRAGMENT:
+            oLog.Write ("Conn ID = " & nSendInstance & " sending middle fragment of IPv4 + TCP packets with no options")
+
+            oSendNBConfig.TransportProtocol = TCP              ' Send IPv4 + TCP + NDT packets
+            oSendNBConfig.FragmentInfo = &H2054                ' No DF, MF, and fragment offset
+
+         Case RSS_SEND_IPv4_TCP_LAST_FRAGMENT:
+            oLog.Write ("Conn ID = " & nSendInstance & " sending last fragment of IPv4 + TCP packets with no options")
+
+            oSendNBConfig.TransportProtocol = TCP              ' Send IP + TCP + NDT packets
+            oSendNBConfig.FragmentInfo = &H0054                ' No DF, no MF, only frag offset
+
+
+         Case RSS_SEND_IPv4_TCP_CHANGE_ALL:
+            oLog.Write ("Conn ID = " & nSendInstance & " sending IPv4 + TCP packets changing ports/addresses")
+
+            oSendNBConfig.TransportProtocol = TCP              ' Send IP + TCP + NDT packets
+            oSendNBConfig.ConstructionFlags = 6                ' Change values and reconstruct
+
+         Case RSS_SEND_RAW_NDT:
+            oLog.Write ("Conn ID = " & nSendInstance & " sending raw NDISTEST packets (no IP or TCP)")
+
+            ' Its all configured
+
+         Case RSS_SEND_IPv6_TCP:
+            oLog.Write ("Conn ID = " & nSendInstance & " sending IPv6 + TCP packets")
+
+            oSendNBConfig.TransportProtocol = TCP              ' Send IP + TCP + NDT packets
+
+         Case RSS_SEND_IPv6_NDT:
+            oLog.Write ("Conn ID = " & nSendInstance & " sending IPv6 packets with no options & no TCP header")
+
+            oSendNBConfig.TransportProtocol = RAW_NDISTEST     ' Send IP + NDT packets
+
+         Case RSS_SEND_IPv6_PAD_TCP:
+            oLog.Write ("Conn ID = " & nSendInstance & " sending IPv6 + TCP packets with fixed length IP padding")
+
+            oSendNBConfig.TransportProtocol = TCP              ' Send IP + TCP + NDT packets
+
+            ' Set the various IPv6 extensions we want to use
+            m_oIPv6ExtensionHeaders.Open
+            m_oIPv6ExtensionHeaders.AddHeader(IPv6_HOP_BY_HOP_OPTION_HEADER)
+            m_oIPv6ExtensionHeaders.AddOption IPv6_OPTION_PADN, 14
+
+            m_oIPv6ExtensionHeaders.Close
+
+            bOpenIPv6Helper = True
+
+         Case RSS_SEND_IPv6_PAD_NDT:
+            oLog.Write ("Conn ID = " & nSendInstance & " sending IPv6 packets with fixed length IP padding and no TCP header")
+
+            oSendNBConfig.TransportProtocol = RAW_NDISTEST     ' Send IP + NDT packets
+
+            ' Set the various IPv6 extensions we want to use
+            m_oIPv6ExtensionHeaders.Open
+            m_oIPv6ExtensionHeaders.AddHeader(IPv6_HOP_BY_HOP_OPTION_HEADER)
+            m_oIPv6ExtensionHeaders.AddOption IPv6_OPTION_PADN, 14
+            m_oIPv6ExtensionHeaders.Close
+
+            bOpenIPv6Helper = True
+
+         Case RSS_SEND_IPv6_TCP_FIRST_FRAGMENT:
+            oLog.Write ("Conn ID = " & nSendInstance & " sending first fragment of IPv6 + TCP packets with no options")
+
+            oSendNBConfig.TransportProtocol = TCP              ' Send IP + TCP + NDT packets
+            oSendNBConfig.FragmentInfo = &H00001               ' MF, no frag offset
+
+            ' Set the various IPv6 extensions we want to use
+            m_oIPv6ExtensionHeaders.Open
+            m_oIPv6ExtensionHeaders.AddHeader(IPv6_FRAGMENT_HEADER)
+            m_oIPv6ExtensionHeaders.FragmentInfo = &H0001               ' MF, no frag offset
+            m_oIPv6ExtensionHeaders.Close
+
+            bOpenIPv6Helper = True
+
+         Case RSS_SEND_IPv6_TCP_MID_FRAGMENT:
+            oLog.Write ("Conn ID = " & nSendInstance & " sending middle fragment of IPv6 + TCP packets with no options")
+
+            oSendNBConfig.TransportProtocol = TCP              ' Send IPv4 + TCP + NDT packets
+            ' Set the various IPv6 extensions we want to use
+            m_oIPv6ExtensionHeaders.Open
+            m_oIPv6ExtensionHeaders.AddHeader(IPv6_FRAGMENT_HEADER)
+            m_oIPv6ExtensionHeaders.FragmentInfo = &H5401               ' MF, and fragment offset
+            m_oIPv6ExtensionHeaders.Close
+
+            bOpenIPv6Helper = True
+
+         Case RSS_SEND_IPv6_TCP_LAST_FRAGMENT:
+            oLog.Write ("Conn ID = " & nSendInstance & " sending last fragment of IPv6 + TCP packets with no options")
+
+            oSendNBConfig.TransportProtocol = TCP              ' Send IP + TCP + NDT packets
+            ' Set the various IPv6 extensions we want to use
+            m_oIPv6ExtensionHeaders.Open
+            m_oIPv6ExtensionHeaders.AddHeader(IPv6_FRAGMENT_HEADER)
+            m_oIPv6ExtensionHeaders.FragmentInfo = &H5400                ' no MF, only frag offset
+            m_oIPv6ExtensionHeaders.Close
+
+            bOpenIPv6Helper = True
+
+         Case RSS_SEND_IPv6_ROUTE0_TCP:
+            oLog.Write ("Conn ID = " & nSendInstance & " sending IPv6 packets with route type 0 header and TCP header")
+
+            oSendNBConfig.TransportProtocol = TCP               ' Send IP + TCP packets
+            ' Set the various IPv6 extensions we want to use
+            m_oIPv6ExtensionHeaders.Open
+            m_oIPv6ExtensionHeaders.AddHeader(IPv6_ROUTING_HEADER)
+            m_oIPv6ExtensionHeaders.RoutingType = 0
+            m_oIPv6ExtensionHeaders.RoutingAddress(0) = DummyIPv6Address1
+            m_oIPv6ExtensionHeaders.RoutingAddress(1) = DummyIPv6Address2
+            m_oIPv6ExtensionHeaders.Close
+
+            bOpenIPv6Helper = True
+
+         Case RSS_SEND_IPv6_ROUTE2_TCP:
+            oLog.Write ("Conn ID = " & nSendInstance & " sending IPv6 packets with route type 2 header and TCP header")
+
+            oSendNBConfig.TransportProtocol = TCP               ' Send IP + TCP packets
+            ' Set the various IPv6 extensions we want to use
+            m_oIPv6ExtensionHeaders.Open
+            m_oIPv6ExtensionHeaders.AddHeader(IPv6_ROUTING_HEADER)
+            m_oIPv6ExtensionHeaders.RoutingType = 2
+            ' Store the destination address into the routing address
+            m_oIPv6ExtensionHeaders.RoutingAddress(0) = oSendNBConfig.DestinationAddress
+            ' And swap out the destination address
+            oSendNBConfig.RouteType2Address = oSendNBConfig.DestinationAddress
+            oSendNBConfig.DestinationAddress = DummyIPv6Address1
+            m_oIPv6ExtensionHeaders.Close
+
+            bOpenIPv6Helper = True
+
+         Case RSS_SEND_IPv6_ROUTE2_NDT:
+            oLog.Write ("Conn ID = " & nSendInstance & " sending IPv6 packets with route type 2 header and no TCP header")
+
+            oSendNBConfig.TransportProtocol = RAW_NDISTEST      ' Send IP + NDT packets
+            ' Set the various IPv6 extensions we want to use
+            m_oIPv6ExtensionHeaders.Open
+            m_oIPv6ExtensionHeaders.AddHeader(IPv6_ROUTING_HEADER)
+            m_oIPv6ExtensionHeaders.RoutingType = 2
+            ' Store the destination address into the routing address
+            m_oIPv6ExtensionHeaders.RoutingAddress(0) = oSendNBConfig.DestinationAddress
+            ' And swap out the destination address
+            oSendNBConfig.RouteType2Address = oSendNBConfig.DestinationAddress
+            oSendNBConfig.DestinationAddress = DummyIPv6Address1
+            m_oIPv6ExtensionHeaders.Close
+
+            bOpenIPv6Helper = True
+
+         Case RSS_SEND_IPv6_HOME_TCP:
+            oLog.Write ("Conn ID = " & nSendInstance & " sending IPv6 packets with home address header and TCP header")
+
+            oSendNBConfig.TransportProtocol = TCP               ' Send IP + TCP packets
+
+            ' Set the various IPv6 extensions we want to use
+            m_oIPv6ExtensionHeaders.Open
+            m_oIPv6ExtensionHeaders.AddHeader(IPv6_DESTINATION_OPTION_HEADER)
+            m_oIPv6ExtensionHeaders.AddOption(IPv6_OPTION_HOME_ADDR)
+            ' Store the source address into the home address
+            m_oIPv6ExtensionHeaders.HomeAddress = oSendNBConfig.SourceAddress
+            ' And swap out the source address
+            oSendNBConfig.HomeAddress = oSendNBConfig.SourceAddress
+            oSendNBConfig.SourceAddress = DummyIPv6Address1
+            m_oIPv6ExtensionHeaders.Close
+
+            bOpenIPv6Helper = True
+
+         Case RSS_SEND_IPv6_HOME_NDT:
+            oLog.Write ("Conn ID = " & nSendInstance & " sending IPv6 packets with home address header and no TCP header")
+
+            oSendNBConfig.TransportProtocol = RAW_NDISTEST      ' Send IP + NDT packets
+            ' Set the various IPv6 extensions we want to use
+            m_oIPv6ExtensionHeaders.Open
+            m_oIPv6ExtensionHeaders.AddHeader(IPv6_DESTINATION_OPTION_HEADER)
+            m_oIPv6ExtensionHeaders.AddOption(IPv6_OPTION_HOME_ADDR)
+            ' Store the source address into the home address
+            m_oIPv6ExtensionHeaders.HomeAddress = oSendNBConfig.SourceAddress
+            ' And swap out the source address
+            oSendNBConfig.HomeAddress = oSendNBConfig.SourceAddress
+            oSendNBConfig.SourceAddress = DummyIPv6Address1
+            m_oIPv6ExtensionHeaders.Close
+
+            bOpenIPv6Helper = True
+
+         Case RSS_SEND_IPv6_ROUTE2_HOME_TCP:
+            oLog.Write ("Conn ID = " & nSendInstance & " sending IPv6 packets with home address and route type 2 header and TCP header")
+
+            oSendNBConfig.TransportProtocol = TCP               ' Send IP + TCP packets
+            m_oIPv6ExtensionHeaders.Open
+            m_oIPv6ExtensionHeaders.AddHeader(IPv6_DESTINATION_OPTION_HEADER)
+            m_oIPv6ExtensionHeaders.AddOption(IPv6_OPTION_HOME_ADDR)
+            ' Store the source address into the home address
+            m_oIPv6ExtensionHeaders.HomeAddress = oSendNBConfig.SourceAddress
+            ' And swap out the source address
+            oSendNBConfig.HomeAddress = oSendNBConfig.SourceAddress
+            oSendNBConfig.SourceAddress = DummyIPv6Address1
+            ' Add a routing header
+            m_oIPv6ExtensionHeaders.AddHeader(IPv6_ROUTING_HEADER)
+            m_oIPv6ExtensionHeaders.RoutingType = 2
+            ' Store the destination address into the routing address
+            m_oIPv6ExtensionHeaders.RoutingAddress(0) = oSendNBConfig.DestinationAddress
+            ' And swap out the destination address
+            oSendNBConfig.RouteType2Address = oSendNBConfig.DestinationAddress
+            oSendNBConfig.DestinationAddress = DummyIPv6Address2
+            m_oIPv6ExtensionHeaders.Close
+
+            bOpenIPv6Helper = True
+
+         Case RSS_SEND_IPv6_ROUTE2_HOME_NDT:
+            oLog.Write ("Conn ID = " & nSendInstance & " sending IPv6 packets with home address and route type 2 header and no TCP header")
+
+            oSendNBConfig.TransportProtocol = RAW_NDISTEST      ' Send IP + NDT packets
+            m_oIPv6ExtensionHeaders.Open
+            m_oIPv6ExtensionHeaders.AddHeader(IPv6_DESTINATION_OPTION_HEADER)
+            m_oIPv6ExtensionHeaders.AddOption(IPv6_OPTION_HOME_ADDR)
+            ' Store the source address into the home address
+            m_oIPv6ExtensionHeaders.HomeAddress = oSendNBConfig.SourceAddress
+            ' And swap out the source address
+            oSendNBConfig.HomeAddress = oSendNBConfig.SourceAddress
+            oSendNBConfig.SourceAddress = DummyIPv6Address1
+            ' Add a routing header
+            m_oIPv6ExtensionHeaders.AddHeader(IPv6_ROUTING_HEADER)
+            m_oIPv6ExtensionHeaders.RoutingType = 2
+            ' Store the destination address into the routing address
+            m_oIPv6ExtensionHeaders.RoutingAddress(0) = oSendNBConfig.DestinationAddress
+            ' And swap out the destination address
+            oSendNBConfig.RouteType2Address = oSendNBConfig.DestinationAddress
+            oSendNBConfig.DestinationAddress = DummyIPv6Address2
+            m_oIPv6ExtensionHeaders.Close
+
+            bOpenIPv6Helper = True
+
+         Case Else
+            Call oLog.Failed ("Invalid PacketType " & PacketType & " specified", 88888)
+            Exit Function
+      End Select
+
+      ' Create the appropriate comm manager
+      ErrorStatus = ArrSendEndPoint(nSendInstance).vbOpenCommunicationChannel( _
+         SIMPLE_SEND_COMM_MGR, _
+         ConstructorType, _
+         NDIS_MEDIUM_802_3_MEDIA_MODULE _
+         )
+      If (ErrorStatus <> 0) Then
+         Call oLog.Failed("Unable to setup sending communication manager", 88888)
+         Exit Function
+      End If
+
+      If (bOpenIPv6Helper) Then
+         ' Set the extension headers length in the config object too
+         oSendNBConfig.IPv6ExtensionsLength = m_oIPv6ExtensionHeaders.ExtensionHeaderLength
+
+         ErrorStatus = ArrSendEndPoint(nSendInstance).vbOpenIPHelper( _
+            RAW_IPV6_EXTENSION_HELPER, _
+            m_oIPv6ExtensionHeaders)
+         If (ErrorStatus <> NDIS_STATUS_SUCCESS) Then
+            Call oLog.Failed("Unable to set IPv6 helper in NDISTest", 88888)
+            Exit Function
+         End If
+      End If
+
+      If (PacketType <> RSS_SEND_RAW_NDT) Then
+         ' Send the RSS parameters info to the sending endpoint, so that it can fill
+         ' the packet appropriately
+         If (Not SetRSSParameters(Nothing, ArrSendEndPoint(nSendInstance), oSetParameters)) Then
+            Exit Function
+         End If
+      End If
+
+      SetupSendEndPoint = True
+   End Function
+
+   Private Function SetupReceiveEndPoint(nReceiveInstance, PacketType, oSetParameters, ByRef oRecvNBConfig, oSendNBConfig, ByRef RSSHashingFlags)
+      Dim ErrorStatus
+      Dim ConstructorType, HashType
+      Dim VerificationLevel
+      Dim bOpenIPv6Helper
+
+      SetupReceiveEndPoint = False
+      bOpenIPv6Helper = False
+      HashType = oRSSHelper.HashTypeFromHashInfo(oSetParameters.HashInformation)
+
+      ' Copy the appropriate parametersfrom the send config to the receive config
+      If (PacketType = RSS_SEND_RAW_NDT) Then
+         ' Raw NDISTEST packets
+         ConstructorType = NDISTEST_CONSTRUCTOR
+         oRecvNBConfig.TestId = oSendNBConfig.TestId
+      Else
+         ConstructorType = IP_RSS_CONSTRUCTOR
+         oRecvNBConfig.IPVersion = oSendNBConfig.IPVersion
+         oRecvNBConfig.TransportProtocol = oSendNBConfig.TransportProtocol
+         oRecvNBConfig.TransportOptionsSize = oSendNBConfig.TransportOptionsSize
+         oRecvNBConfig.TestId = oSendNBConfig.TestId
+
+         If (PacketType < RSS_SEND_RAW_NDT) Then
+            ' IPv4 packets
+
+            oRecvNBConfig.IPv4OptionsSize = oSendNBConfig.IPv4OptionsSize
+
+            If (PacketType <> RSS_SEND_IPv4_TCP_CHANGE_ALL) Then
+               ' Since we are having one receiver per sender, we can setup the receiver
+               ' to only accept one particular type of header
+               oRecvNBConfig.DestinationAddress = oSendNBConfig.DestinationAddress
+               oRecvNBConfig.SourceAddress = oSendNBConfig.SourceAddress
+               oRecvNBConfig.DestinationPort = oSendNBConfig.DestinationPort
+               oRecvNBConfig.SourcePort = oSendNBConfig.SourcePort
+            End If
+         Else
+            ' IPv6 packets
+            oRecvNBConfig.IPv6ExtensionsLength = oSendNBConfig.IPv6ExtensionsLength
+            oRecvNBConfig.DestinationAddress = oSendNBConfig.DestinationAddress
+            oRecvNBConfig.SourceAddress = oSendNBConfig.SourceAddress
+            oRecvNBConfig.DestinationPort = oSendNBConfig.DestinationPort
+            oRecvNBConfig.SourcePort = oSendNBConfig.SourcePort
+         End If
+      End If
+
+      ' Based on the packet and hash type, we decide on the receive verification level
+      Select Case PacketType
+         Case RSS_SEND_IPv4_TCP:
+            '-------------------------------------------------------------------------
+            ' Send IP + TCP + NDT packets with no options
+            '-------------------------------------------------------------------------
+            HashTCPIPv4Packet HashType, VerificationLevel, RSSHashingFlags
+            oRecvNBConfig.VerificationLevel = VerificationLevel
+
+         Case RSS_SEND_IPv4_NDT:
+            '-------------------------------------------------------------------------
+            ' Send IP + NDT packets with no options
+            '-------------------------------------------------------------------------
+            HashIPv4Packet HashType, VerificationLevel, RSSHashingFlags
+            oRecvNBConfig.VerificationLevel = VerificationLevel
+
+         Case RSS_SEND_IPv4_OPTIONS_TCP:
+            '-------------------------------------------------------------------------
+            ' Send IP + TCP packets with IP options
+            '-------------------------------------------------------------------------
+            HashTCPIPv4Packet HashType, VerificationLevel, RSSHashingFlags
+            oRecvNBConfig.VerificationLevel = VerificationLevel
+
+         Case RSS_SEND_IPv4_OPTIONS_NDT:
+            '-------------------------------------------------------------------------
+            ' Send IP + NDT packets with fixed length IP options
+            '-------------------------------------------------------------------------
+            HashIPv4Packet HashType, VerificationLevel, RSSHashingFlags
+            oRecvNBConfig.VerificationLevel = VerificationLevel
+
+         Case RSS_SEND_IPv4_OPTIONS_RESIZE_TCP:
+            '-------------------------------------------------------------------------
+            ' Send IP + TCP packets with variable length IP options
+            '-------------------------------------------------------------------------
+            HashTCPIPv4Packet HashType, VerificationLevel, RSSHashingFlags
+            oRecvNBConfig.VerificationLevel = VerificationLevel
+
+         Case RSS_SEND_IPv4_OPTIONS_RESIZE_NDT:
+            '-------------------------------------------------------------------------
+            ' Send IP + NDT packets with variable length IP options
+            '-------------------------------------------------------------------------
+            HashIPv4Packet HashType, VerificationLevel, RSSHashingFlags
+            oRecvNBConfig.VerificationLevel = VerificationLevel
+
+         Case RSS_SEND_IPv4_TCP_FIRST_FRAGMENT:
+            '-------------------------------------------------------------------------
+            ' Send IP + TCP + NDT packets with no options and fragmentation enabled
+            '-------------------------------------------------------------------------
+            ' no IP+TCP RSS for fragmented IP packets
+            HashIPv4Packet HashType, VerificationLevel, RSSHashingFlags
+            oRecvNBConfig.VerificationLevel = VerificationLevel
+
+         Case RSS_SEND_IPv4_TCP_MID_FRAGMENT:
+            '-------------------------------------------------------------------------
+            ' Send IP + TCP + NDT packets with no options and fragmentation enabled
+            '-------------------------------------------------------------------------
+            ' no IP+TCP RSS for fragmented IP packets
+            HashIPv4Packet HashType, VerificationLevel, RSSHashingFlags
+            oRecvNBConfig.VerificationLevel = VerificationLevel
+
+         Case RSS_SEND_IPv4_TCP_LAST_FRAGMENT:
+            '-------------------------------------------------------------------------
+            ' Send IP + TCP + NDT packets with no options and fragmentation enabled
+            '-------------------------------------------------------------------------
+            ' no IP+TCP RSS for fragmented IP packets
+            HashIPv4Packet HashType, VerificationLevel, RSSHashingFlags
+            oRecvNBConfig.VerificationLevel = VerificationLevel
+
+         Case RSS_SEND_IPv4_TCP_CHANGE_ALL:
+            '-------------------------------------------------------------------------
+            ' Send IP + TCP packets, changing the IP address and PORTs continuously
+            '-------------------------------------------------------------------------
+            ' If (NDIS_HASH_TCP_IPV4 Or NDIS_HASH_IPV4) is enabled, RSS should kick in
+            If (oRSSHelper.TestFlag(HashType, (NDIS_HASH_TCP_IPV4 Or NDIS_HASH_IPV4))) Then
+               ' The IP and ports are changing, so diff port/address pairs may show up
+               ' on diff processors out of order
+               ' Basic ndistest checking (no sequence number)
+               VerificationLevel = &H00000037&
+               ' Check that the hash type used is correct
+               VerificationLevel = VerificationLevel Or fNDT_RSS_CONSTRUCTOR_CHECK_HASH_USED
+               ' Check that the hash value used is correct
+               VerificationLevel = VerificationLevel Or fNDT_RSS_CONSTRUCTOR_CHECK_HASH_VALUE
+               ' Check that the processor indicated on is correct
+               VerificationLevel = VerificationLevel Or fNDT_RSS_CONSTRUCTOR_CHECK_PROCESSOR_ON
+
+               oRecvNBConfig.VerificationLevel = VerificationLevel
+
+               RSSHashingFlags = RSS_HASHING_REQUIRED
+            Else
+               ' Only check IP packets are not corrupted and in order (no RSS, so not worries
+               ' about diff connections showing up out of order on diff processors)
+               oRecvNBConfig.VerificationLevel = NDT_RSS_MINIMAL_VERIFICATION
+               RSSHashingFlags = RSS_HASHING_NOT_EXPECTED
+            End If
+
+         Case RSS_SEND_RAW_NDT:
+            '-------------------------------------------------------------------------
+            ' Send RAW NDT packets (ie no IP or TCP headers)
+            '-------------------------------------------------------------------------
+            ' We would be performing regular NDISTest content verification
+            RSSHashingFlags = RSS_HASHING_NOT_EXPECTED
+            VerificationLevel = NDT_NDISTEST_DEFAULT_VERIFICATION Or fNDT_NDISTEST_VERIFY_NO_RSS_HASH_INFO
+            oRecvNBConfig.VerificationLevel = VerificationLevel
+
+         Case RSS_SEND_IPv6_TCP:
+            '-------------------------------------------------------------------------
+            ' Send IP + TCP + NDT packets with no extension headers
+            '-------------------------------------------------------------------------
+            HashTCPIPv6Packet HashType, VerificationLevel, RSSHashingFlags
+            oRecvNBConfig.VerificationLevel = VerificationLevel
+
+         Case RSS_SEND_IPv6_NDT:
+            '-------------------------------------------------------------------------
+            ' Send IP + NDT packets with no options
+            '-------------------------------------------------------------------------
+            HashIPv6Packet HashType, VerificationLevel, RSSHashingFlags
+            oRecvNBConfig.VerificationLevel = VerificationLevel
+
+         Case RSS_SEND_IPv6_PAD_TCP:
+            '-------------------------------------------------------------------------
+            ' Send IP + TCP packets with IP padding extension
+            '-------------------------------------------------------------------------
+            HashTCPIPv6ExPacket HashType, VerificationLevel, RSSHashingFlags
+            oRecvNBConfig.VerificationLevel = VerificationLevel
+            bOpenIPv6Helper = True
+
+         Case RSS_SEND_IPv6_PAD_NDT:
+            '-------------------------------------------------------------------------
+            ' Send IP + NDT packets with IP padding extension
+            '-------------------------------------------------------------------------
+            HashIPv6Packet HashType, VerificationLevel, RSSHashingFlags
+            oRecvNBConfig.VerificationLevel = VerificationLevel
+            bOpenIPv6Helper = True
+
+         Case RSS_SEND_IPv6_TCP_FIRST_FRAGMENT:
+            '-------------------------------------------------------------------------
+            ' Send IP + TCP + NDT packets with no options and fragmentation enabled
+            '-------------------------------------------------------------------------
+            ' no IP+TCP RSS for fragmented IP packets
+            HashIPv6Packet HashType, VerificationLevel, RSSHashingFlags
+            oRecvNBConfig.VerificationLevel = VerificationLevel
+            bOpenIPv6Helper = True
+
+         Case RSS_SEND_IPv6_TCP_MID_FRAGMENT:
+            '-------------------------------------------------------------------------
+            ' Send IP + TCP + NDT packets with no options and fragmentation enabled
+            '-------------------------------------------------------------------------
+            ' no IP+TCP RSS for fragmented IP packets
+            HashIPv6Packet HashType, VerificationLevel, RSSHashingFlags
+            oRecvNBConfig.VerificationLevel = VerificationLevel
+            bOpenIPv6Helper = True
+
+         Case RSS_SEND_IPv6_TCP_LAST_FRAGMENT:
+            '-------------------------------------------------------------------------
+            ' Send IP + TCP + NDT packets with no options and fragmentation enabled
+            '-------------------------------------------------------------------------
+            ' no IP+TCP RSS for fragmented IP packets
+            HashIPv6Packet HashType, VerificationLevel, RSSHashingFlags
+            oRecvNBConfig.VerificationLevel = VerificationLevel
+            bOpenIPv6Helper = True
+
+         Case RSS_SEND_IPv6_ROUTE0_TCP:
+            '-------------------------------------------------------------------------
+            ' Send IP + TCP + NDT packets with routing header type 0
+            '-------------------------------------------------------------------------
+            HashTCPIPv6ExPacket HashType, VerificationLevel, RSSHashingFlags
+            oRecvNBConfig.VerificationLevel = VerificationLevel
+            bOpenIPv6Helper = True
+
+         Case RSS_SEND_IPv6_ROUTE2_TCP:
+            '-------------------------------------------------------------------------
+            ' Send IP + TCP + NDT packets with routing header type 2
+            '-------------------------------------------------------------------------
+            HashTCPIPv6ExPacket HashType, VerificationLevel, RSSHashingFlags
+            oRecvNBConfig.VerificationLevel = VerificationLevel
+            bOpenIPv6Helper = True
+
+         Case RSS_SEND_IPv6_ROUTE2_NDT:
+            '-------------------------------------------------------------------------
+            ' Send IP + NDT packets with routing header type 2
+            '-------------------------------------------------------------------------
+            HashIPv6Packet HashType, VerificationLevel, RSSHashingFlags
+            oRecvNBConfig.VerificationLevel = VerificationLevel
+            bOpenIPv6Helper = True
+
+         Case RSS_SEND_IPv6_HOME_TCP:
+            '-------------------------------------------------------------------------
+            ' Send IP + TCP + NDT packets with home address header
+            '-------------------------------------------------------------------------
+            HashTCPIPv6ExPacket HashType, VerificationLevel, RSSHashingFlags
+            oRecvNBConfig.VerificationLevel = VerificationLevel
+            bOpenIPv6Helper = True
+
+         Case RSS_SEND_IPv6_HOME_NDT:
+            '-------------------------------------------------------------------------
+            ' Send IP + NDT packets with home address header
+            '-------------------------------------------------------------------------
+            HashIPv6Packet HashType, VerificationLevel, RSSHashingFlags
+            oRecvNBConfig.VerificationLevel = VerificationLevel
+            bOpenIPv6Helper = True
+
+         Case RSS_SEND_IPv6_ROUTE2_HOME_TCP:
+            '-------------------------------------------------------------------------
+            ' Send IP + TCP + NDT packets with type 2 routing header and home address header
+            '-------------------------------------------------------------------------
+            HashTCPIPv6ExPacket HashType, VerificationLevel, RSSHashingFlags
+            oRecvNBConfig.VerificationLevel = VerificationLevel
+            bOpenIPv6Helper = True
+
+         Case RSS_SEND_IPv6_ROUTE2_HOME_NDT:
+            '-------------------------------------------------------------------------
+            ' Send IP + TCP + NDT packets with type 2 routing header and home address header
+            '-------------------------------------------------------------------------
+            HashIPv6Packet HashType, VerificationLevel, RSSHashingFlags
+            oRecvNBConfig.VerificationLevel = VerificationLevel
+            bOpenIPv6Helper = True
+
+         Case Else
+            Call oLog.Failed ("Invalid PacketType " & PacketType & " specified", 88888)
+            RSSHashingFlags = RSS_HASHING_NOT_EXPECTED
+            Exit Function
+      End Select
+
+      ' Create the appropriate comm manager
+      ErrorStatus = ArrRecvEndPoint(nReceiveInstance).vbOpenCommunicationChannel( _
+         SIMPLE_SEND_COMM_MGR, _
+         ConstructorType, _
+         NDIS_MEDIUM_802_3_MEDIA_MODULE _
+         )
+      If (ErrorStatus <> 0) Then
+         Call oLog.Failed("Unable to setup receiving communication manager", 88888)
+         Exit Function
+      End If
+
+      If (bOpenIPv6Helper) Then
+         ' Set the extension headers length in the config object too
+         oSendNBConfig.IPv6ExtensionsLength = m_oIPv6ExtensionHeaders.ExtensionHeaderLength
+
+         ' The send has already configured the extension headers
+         ErrorStatus = ArrRecvEndPoint(nReceiveInstance).vbOpenIPHelper( _
+            RAW_IPV6_EXTENSION_HELPER, _
+            m_oIPv6ExtensionHeaders)
+         If (ErrorStatus <> NDIS_STATUS_SUCCESS) Then
+            Call oLog.Failed("Unable to set IPv6 helper in NDISTest", 88888)
+            Exit Function
+         End If
+      End If
+
+      If (PacketType <> RSS_SEND_RAW_NDT) Then
+         ' Send the RSS parameters info to the receiving endpoint, so that it can process
+         ' the packet appropriately
+         If (Not SetRSSParameters(Nothing, ArrRecvEndPoint(nReceiveInstance), oSetParameters)) Then
+            Exit Function
+         End If
+      End If
+
+      SetupReceiveEndPoint = True
+   End Function
+
+   Private Function VerifyStatistics(RSSHashingFlags, nConnectionID, nConstructorType, oSendCommStats, oSendNBStats, oRecvCommStats, oRecvNBStats)
+      Dim nMinimumPass
+      VerifyStatistics = True
+
+      ' First, verify the generic send statistics
+      If (oSendCommStats.TotalNetBufferListsSendCompleted > oSendCommStats.TotalNetBufferListSendsSuccessful) Then
+         oLog.Warned("Not all the Net Buffer Lists were sent successfully")
+      End If
+
+      ' Next verify the generic send/recv statistics
+      If (oRecvNBStats.TotalNetBufferListsReceived = 0) Then
+         Call oLog.Failed ("Did not receive any packets sent from the remote side", 88888)
+         VerifyStatistics = False
+      ElseIf (oRecvNBStats.TotalNetBufferListsReceived < oSendCommStats.TotalNetBufferListSendsSuccessful) Then
+         ' Was this an acceptable number?
+
+         nMinimumPass = (glPercentToPass * oSendCommStats.TotalNetBufferListSendsSuccessful) / 100
+         nMinimumPass = CLng(nMinimumPass)
+
+         If (oRecvNBStats.TotalNetBufferListsReceived < nMinimumPass) Then
+            Call oLog.Failed ("Received fewer net buffer than the required minimum of " & nMinimumPass, 88888)
+            VerifyStatistics = False
+         Else
+            oLog.Warned("Received acceptable but less than expected number of net buffer")
+         End If
+         oLog.Write("Received = " & oRecvNBStats.TotalNetBufferListsReceived & ". Sent = " & _
+            oSendCommStats.TotalNetBufferListSendsSuccessful)
+      ElseIf (oRecvNBStats.TotalNetBuffersAccepted < oSendCommStats.TotalNetBufferListSendsSuccessful) Then
+         ' Was this an acceptable number?
+
+         nMinimumPass = (glPercentToPass * oSendCommStats.TotalNetBufferListSendsSuccessful) / 100
+         nMinimumPass = CLng(nMinimumPass)
+
+         If (oRecvNBStats.TotalNetBuffersAccepted < nMinimumPass) Then
+            Call oLog.Failed ("Some of the sent net buffers were corrupted or lost during communication", 88888)
+            VerifyStatistics = False
+         Else
+            oLog.Warned("Some of the sent net buffers were corrupted or lost during communication")
+         End If
+         oLog.Write("Accepted = " & oRecvNBStats.TotalNetBuffersAccepted & _
+            ". Sent = " & oSendCommStats.TotalNetBufferListSendsSuccessful)         
+      End If
+
+      Do
+         ' Now the RSS related statistics
+         If ((RSSHashingFlags = RSS_HASHING_REQUIRED) Or (RSSHashingFlags = RSS_HASHING_POSSIBLE)) Then
+            ' Did we receive any net buffers out of order
+            If (oRecvNBStats.OutOfOrderNetBuffersReceived > 0) Then
+               Call oLog.Failed ("Received some net buffer lists out of order", 88888)
+               oLog.Write ("These packets should have been hashed according to RSS and")
+               oLog.Write ("hence should be indicated in sequence on the mapped processor")
+               VerifyStatistics = False
+            End If
+
+            ' Did the miniport compute two different hash values for same headers?
+            If (oRecvNBStats.ChangedHashInformation > 0) Then
+               Call oLog.Failed ("Miniport computed different hash values for similar header fields contents", 88888)
+               oLog.Write ("This is based on the Hash Type and Hash Function fields set in the Net Buffer List")
+               oLog.Write ("indicated.")
+               VerifyStatistics = False
+            End If
+
+            ' Did the miniport use an incorrect hash function+type
+            If (oRecvNBStats.IncorrectHashInformation > 0) Then
+               Call oLog.Failed ("Miniport did not use the correct hash type or function", 88888)
+               oLog.Write ("This is based on the contents of the Net Buffer List and the hash type and hash function")
+               oLog.Write ("fields set inside the indicated NBL. Check that the field gets updated correctly for")
+               oLog.Write ("each NBL indicated")
+               VerifyStatistics = False
+            End If
+
+            ' Check if the miniport was using RSS
+            If (oRecvNBStats.HashInformationUsed(nConnectionID) = 0) Then
+               ' We think RSS is possible, but miniport doesnt use it. This is
+               ' only acceptable in IPv6 case when TCP IPv6 packets have some
+               ' extension headers and miniport doesnt claim to recognize
+               ' extensions (and we only use standard extensions)
+               If (oRSSHelper.TestFlag(RSSHashingFlags, RSS_HASHING_REQUIRED)) Then
+                  Call oLog.Failed ("Miniport did not use RSS when it was expected to", 88888)
+                  oLog.Write ("This is mostly because it could not process IPv6 extensions correctly")
+                  ' Do not modify verifyStatistics
+               Else
+                  ' RSS possible, but miniport didnt do it
+                  Call oLog.Write ("Miniport did not use RSS. It is okay")
+                  ' In this case, do not continue forward (the processor would be jumping)
+                  Exit Do
+               End If
+            End If
+
+            ' Did the miniport indicate on different processors for same headers?
+            If (oRecvNBStats.ProcessorJumps > 0) Then
+               Call oLog.Failed ("Miniport indicated packets with similar header fields on different processors", 88888)
+               VerifyStatistics = False
+            End If
+
+            ' Was the hash value computed by the miniport correct?
+            If (oRecvNBStats.InvalidHashValue > 0) Then
+               Call oLog.Failed ("Miniport computed incorrect hash value for some net buffers", 88888)
+               oLog.Write ("This is based on the Hash Value fields set in the Net Buffer List indicated")
+               VerifyStatistics = False
+            End If
+
+            ' Was the processor that the miniport indicated the packets on correct?
+            If (oRecvNBStats.IncorrectProcessor > 0) Then
+               Call oLog.Failed ("Miniport did not indicate all received net buffers on the expected processor", 88888)
+               VerifyStatistics = False
+            End If
+
+         ElseIf (RSSHashingFlags = RSS_HASHING_NOT_EXPECTED) Then
+            ' Check that even if RSS is not to be applied here, the packets are making it up in order
+            If (oRecvNBStats.OutOfOrderNetBuffersReceived > 0) Then
+               Call oLog.Failed ("Received some net buffer lists out of order", 88888)
+               oLog.Write ("These packets should not have been hashed according to current RSS settings")
+               oLog.Write ("hence should be indicated in sequence on a choosen default processor")
+               VerifyStatistics = False
+            End If
+
+            ' Did not expect miniport to use hash information
+            If (oRecvNBStats.IncorrectHashInformation > 0) Then
+               Call oLog.Failed ("Miniport used RSS hashing when not expected", 88888)
+               oLog.Write ("This is based on the contents of the hash type and hash function fields")
+               oLog.Write ("set inside the indicated NBL. Check that the field is cleared appropriately")
+               oLog.Write ("for each NBL indicated")
+               VerifyStatistics = False
+            End If
+         End If
+      Loop While (FALSE)
+   End Function
+
+   Private Function ExecuteSingleConnectionTestCases(oSetParameters, PacketTypeStart, PacketTypeEnd)
+      Dim nPacketType, ErrorStatus, bResult, nConstructorType
+      Dim DestAddr, nReceiveDelay, RSSHashingFlags
+      Dim oRecvCommMgrConfig, oRecvMediaConfig, oRecvNBConfig
+      Dim oSendCommMgrConfig, oSendMediaConfig, oSendNBConfig
+      Dim oRecvCommMgrStats, oRecvNBStats
+      Dim oSendCommMgrStats, oSendNBStats
+
+      ExecuteSingleConnectionTestCases = False
+      oLog.Variation ("Setting RSS Parameters")
+      oSetParameters.Print
+
+      ' Since RSS configuration would not be changing, lets set up the RSS
+      ' receiving miniport with the appropriate options
+      If (Not SetRSSParameters(ArrRecvOpen(1), Nothing, oSetParameters)) Then
+         Call oLog.Failed ("Unable to test single sender test case", 88888)
+         Exit Function
+      End If
+
+      ' These two values would not change irrespective of the open/endpoint we use
+      DestAddr = ArrRecvOpen(1).vbGetCardAddress
+      nReceiveDelay = ArrRecvOpen(1).vbGetReceiveDelay
+
+      ' Create the various objects we need for IP related packet receiving
+      Set oRecvCommMgrConfig = oCoreFactory.CommMgrRecvConfig(SIMPLE_SEND_COMM_MGR)
+      Set oRecvMediaConfig = oCoreFactory.MediaModuleRecvConfig(NDIS_MEDIUM_802_3_MEDIA_MODULE)
+
+      Set oSendCommMgrConfig = oCoreFactory.CommMgrSendConfig(SIMPLE_SEND_COMM_MGR)
+      Set oSendMediaConfig = oCoreFactory.MediaModuleSendConfig(NDIS_MEDIUM_802_3_MEDIA_MODULE)
+
+      Set oSendCommMgrStats = oCoreFactory.CommMgrSendStatistics(SIMPLE_SEND_COMM_MGR)
+      Set oRecvCommMgrStats = oCoreFactory.CommMgrRecvStatistics(SIMPLE_SEND_COMM_MGR)
+
+      ' Setup the sending communication manager configuration
+      oSendCommMgrConfig.NumSends = 0
+      oSendCommMgrConfig.SendDuration = nSendDuration
+      oSendCommMgrConfig.InitialBurstSize = nInitialBurstSize
+      oSendCommMgrConfig.NumNetBufferListsPerSend = nInitialBurstSize
+      ' This controls the gap (mS) between each call to NdisSendNetBufferLists
+      oSendCommMgrConfig.InterSendDelay = 20
+
+      ' Setup the sending media modules address field
+      oSendMediaConfig.DestinationAddress = DestAddr
+
+      ' Now, go through each of the packet types
+      For nPacketType = PacketTypeStart To PacketTypeEnd
+         oLog.Variation ("Single send " & nPacketType)
+         oLog.Write ("Hash Information = " & oRSSHelper.GetHashInformationString(oSetParameters.HashInformation))
+
+         ' Create the config objects we would be using for this test case
+         bResult = CreateConstructorConfigObjects(nPacketType, _
+            nConstructorType, _
+            oSendNBConfig, _
+            oRecvNBConfig)
+         If (Not bResult) Then
+            Exit Function
+         End If
+
+         ' Now, setup the send endpoint and its config object
+         bResult = SetupSendEndPoint(1, _
+               nPacketType, _
+               oSetParameters, _
+               oSendNBConfig)
+         If (Not bResult) Then
+            ' Unable to setup sending endpoint, quit
+            Exit Function
+         End If
+
+         ' Setup the receiving side
+         bResult = SetupReceiveEndPoint(1, _
+            nPacketType, _
+            oSetParameters, _
+            oRecvNBConfig, _
+            oSendNBConfig, _
+            RSSHashingFlags)
+         If (Not bResult) Then
+            ' Unable to setup receiving endpoint, quit
+            Exit Function
+         End If
+
+         Do
+            ' Setup the receiving open to start receiving
+            ArrRecvOpen(1).vbSetPacketFilter(DIRECTED)
+
+            ' Depending on the type of packet, the ethertype would switch
+            If (nPacketType = RSS_SEND_RAW_NDT) Then
+               ' 0 clears the ether type field
+               oSendMediaConfig.EtherType = ETHERTYPE_LENGTH
+               oRecvMediaConfig.EtherType = ETHERTYPE_LENGTH
+            ElseIf (nPacketType < RSS_SEND_RAW_NDT) Then
+               ' All IPv4 packets types are < RAW_NDT
+               oSendMediaConfig.EtherType = ETHERTYPE_IPv4
+               oRecvMediaConfig.EtherType = ETHERTYPE_IPv4
+            Else
+               ' IPv6 Packets are > RAW_NDT
+               oSendMediaConfig.EtherType = ETHERTYPE_IPv6
+               oRecvMediaConfig.EtherType = ETHERTYPE_IPv6
+            End If
+
+            ' Get the stats objects that we want to use
+            Set oSendNBStats = oCoreFactory.ConstructorSendStatistics(nConstructorType)
+            Set oRecvNBStats = oCoreFactory.ConstructorRecvStatistics(nConstructorType)
+
+            ' Start receiving at the receiving open
+            ErrorStatus = ArrRecvEndPoint(1).vbStartReceive(oRecvCommMgrConfig, oRecvNBConfig, oRecvMediaConfig)
+
+            ' Start sending from the sending open
+            ErrorStatus = ArrSendEndPoint(1).vbSendNetBufferLists(oSendCommMgrConfig, oSendNBConfig, oSendMediaConfig)
+            If (ErrorStatus = 0) Then
+               ErrorStatus = ArrSendEndPoint(1).vbWaitForSendsToComplete(0)
+
+               ' Obtain send results from the sending adapter
+               ErrorStatus = ArrSendEndPoint(1).vbGetSendResults(oSendCommMgrStats, oSendNBStats)
+
+            End If
+
+            WScript.Sleep nReceiveDelay
+
+            ' Stop receiving
+            ErrorStatus = ArrRecvEndPoint(1).vbStopReceive()
+            If (ErrorStatus <> 0) Then
+               Call oLog.Failed ("Failed to stop receive.", 88888)
+               oLog.Write ("Will attempt to continue with next test instance")
+               Exit Do
+            End If
+
+            ' Obtain receive results from the test card
+            ErrorStatus = ArrRecvEndPoint(1).vbGetReceiveResults(oRecvCommMgrStats, oRecvNBStats)
+            If (ErrorStatus <> 0) Then
+               Call oLog.Failed ("Failed to get receive results.", 88888)
+               oLog.Write ("Will attempt to continue with next test instance")
+               Exit Do
+            End If
+
+            ' Now, verify the RSS related values
+            Call VerifyStatistics(RSSHashingFlags, _
+               1, _
+               nConstructorType, _
+               oSendCommMgrStats, _
+               oSendNBStats, _
+               oRecvCommMgrStats, _
+               oRecvNBStats)
+
+
+         Loop While (FALSE)
+
+         ' Clear packet filter
+         ArrRecvOpen(1).vbSetPacketFilter(CLng(0))
+
+         ' Close the communication channel we just used
+         ArrSendEndPoint(1).vbCloseCommunicationChannel()
+         ArrRecvEndPoint(1).vbCloseCommunicationChannel()
+
+         Set oSendNBConfig = Nothing
+         Set oSendNBStats = Nothing
+
+         Set oRecvNBConfig = Nothing
+         Set oRecvNBStats = Nothing
+      Next
+
+      ExecuteSingleConnectionTestCases = True
+   End Function
+
+   Private Function DeterminePacketTypesForTest(TestInstance, MaxSendInstances, ByRef PacketTypesArray, ByRef NumPacketTypes)
+      Dim nCount, CurrentPacketType, NextPacketType
+      Select Case TestInstance
+         Case 1:
+            ' Sending bunch of simultaneous IP + TCP packets
+            NumPacketTypes = MaxSendInstances
+            For nCount = 1 To NumPacketTypes
+               PacketTypesArray(nCount) = RSS_SEND_IPv4_TCP
+            Next
+         Case 2:
+            ' Send a bunch of simultaneous IP + NDT packets
+            NumPacketTypes = MaxSendInstances
+            For nCount = 1 To NumPacketTypes
+               PacketTypesArray(nCount) = RSS_SEND_IPv4_NDT
+            Next
+         Case 3:
+            ' Send combination of IP + TCP & IP + NDT packets
+            NumPacketTypes = MaxSendInstances
+            NextPacketType = RSS_SEND_IPv4_TCP
+            For nCount = 1 To NumPacketTypes
+               PacketTypesArray(nCount) = NextPacketType
+               ' Switch the packet type we would use next
+               If (NextPacketType = RSS_SEND_IPv4_TCP) Then
+                  NextPacketType = RSS_SEND_IPv4_NDT
+               Else
+                  NextPacketType = RSS_SEND_IPv4_TCP
+               End If
+            Next
+
+         Case 4:
+            ' Send combination of various IP packets with both options and no options
+            NumPacketTypes = MaxSendInstances
+            NextPacketType = RSS_SEND_IPv4_TCP
+            For nCount = 1 To NumPacketTypes
+               PacketTypesArray(nCount) = NextPacketType
+               ' Switch the packet type we would use next
+               Select Case NextPacketType
+                  Case RSS_SEND_IPv4_TCP:
+                     NextPacketType = RSS_SEND_IPv4_NDT
+                  Case RSS_SEND_IPv4_NDT:
+                     NextPacketType = RSS_SEND_IPv4_OPTIONS_TCP
+                  Case RSS_SEND_IPv4_OPTIONS_TCP:
+                     NextPacketType = RSS_SEND_IPv4_OPTIONS_NDT
+                  Case RSS_SEND_IPv4_OPTIONS_NDT:
+                     NextPacketType = RSS_SEND_IPv4_OPTIONS_RESIZE_TCP
+                  Case RSS_SEND_IPv4_OPTIONS_RESIZE_TCP:
+                     NextPacketType = RSS_SEND_IPv4_OPTIONS_RESIZE_NDT
+                  Case Else
+                     NextPacketType = RSS_SEND_IPv4_TCP
+               End Select
+            Next
+         Case 5:
+            ' Send combination of various IP packets with options only
+            NumPacketTypes = MaxSendInstances
+            NextPacketType = RSS_SEND_IPv4_OPTIONS_TCP
+            For nCount = 1 To NumPacketTypes
+               PacketTypesArray(nCount) = NextPacketType
+               ' Switch the packet type we would use next
+               Select Case NextPacketType
+                  Case RSS_SEND_IPv4_OPTIONS_TCP:
+                     NextPacketType = RSS_SEND_IPv4_OPTIONS_NDT
+                  Case RSS_SEND_IPv4_OPTIONS_NDT:
+                     NextPacketType = RSS_SEND_IPv4_OPTIONS_RESIZE_TCP
+                  Case RSS_SEND_IPv4_OPTIONS_RESIZE_TCP:
+                     NextPacketType = RSS_SEND_IPv4_OPTIONS_RESIZE_NDT
+                  Case Else
+                     NextPacketType = RSS_SEND_IPv4_OPTIONS_TCP
+               End Select
+            Next
+         Case 6:
+            ' Send combination of IP + * & RAW_NDT packets
+            NumPacketTypes = MaxSendInstances
+            NextPacketType = RSS_SEND_RAW_NDT
+            For nCount = 1 To NumPacketTypes
+               PacketTypesArray(nCount) = NextPacketType
+               ' Switch the packet type we would use next
+               Select Case NextPacketType
+                  Case RSS_SEND_RAW_NDT:
+                     NextPacketType = RSS_SEND_IPv4_TCP
+                  Case RSS_SEND_IPv4_TCP:
+                     NextPacketType = RSS_SEND_IPv4_NDT
+                  Case RSS_SEND_IPv4_NDT:
+                     NextPacketType = RSS_SEND_IPv4_OPTIONS_TCP
+                  Case RSS_SEND_IPv4_OPTIONS_TCP:
+                     NextPacketType = RSS_SEND_IPv4_OPTIONS_NDT
+                  Case RSS_SEND_IPv4_OPTIONS_NDT:
+                     NextPacketType = RSS_SEND_IPv4_OPTIONS_RESIZE_TCP
+                  Case RSS_SEND_IPv4_OPTIONS_RESIZE_TCP:
+                     NextPacketType = RSS_SEND_IPv4_OPTIONS_RESIZE_NDT
+                  Case RSS_SEND_IPv4_OPTIONS_RESIZE_NDT:
+                     NextPacketType = RSS_SEND_RAW_NDT
+                  Case Else
+                     NextPacketType = RSS_SEND_RAW_NDT
+               End Select
+            Next
+         Case 7:
+            ' Send combination of IP packets with options and fragments
+            NumPacketTypes = MaxSendInstances
+            NextPacketType = RSS_SEND_IPv4_TCP
+            For nCount = 1 To NumPacketTypes
+               PacketTypesArray(nCount) = NextPacketType
+               ' Switch the packet type we would use next
+               Select Case NextPacketType
+                  Case RSS_SEND_IPv4_TCP:
+                     NextPacketType = RSS_SEND_IPv4_OPTIONS_TCP
+                  Case RSS_SEND_IPv4_OPTIONS_TCP:
+                     NextPacketType = RSS_SEND_IPv4_OPTIONS_NDT
+                  Case RSS_SEND_IPv4_OPTIONS_NDT:
+                     NextPacketType = RSS_SEND_IPv4_TCP_FIRST_FRAGMENT
+                  Case RSS_SEND_IPv4_TCP_FIRST_FRAGMENT:
+                     NextPacketType = RSS_SEND_IPv4_TCP_MID_FRAGMENT
+                  Case RSS_SEND_IPv4_TCP_MID_FRAGMENT:
+                     NextPacketType = RSS_SEND_IPv4_TCP_LAST_FRAGMENT
+                  Case RSS_SEND_IPv4_TCP_LAST_FRAGMENT:
+                     NextPacketType = RSS_SEND_IPv4_TCP
+                  Case Else
+                     NextPacketType = RSS_SEND_IPv4_TCP
+               End Select
+            Next
+         Case 8:
+            ' Combination of simple IPv4/IPv6/NDT packets
+            NumPacketTypes = MaxSendInstances
+            NextPacketType = RSS_SEND_RAW_NDT
+            For nCount = 1 To NumPacketTypes
+               PacketTypesArray(nCount) = NextPacketType
+               ' Switch the packet type we would use next
+               Select Case NextPacketType
+                  Case RSS_SEND_RAW_NDT:
+                     NextPacketType = RSS_SEND_IPv4_TCP
+                  Case RSS_SEND_IPv4_TCP:
+                     NextPacketType = RSS_SEND_IPv4_OPTIONS_NDT
+                  Case RSS_SEND_IPv4_OPTIONS_NDT:
+                     NextPacketType = RSS_SEND_IPv4_TCP_LAST_FRAGMENT
+                  Case RSS_SEND_IPv4_TCP_LAST_FRAGMENT:
+                     NextPacketType = RSS_SEND_IPv6_TCP
+                  Case RSS_SEND_IPv6_TCP:
+                     NextPacketType = RSS_SEND_IPV6_PAD_NDT
+                  Case Else
+                     NextPacketType = RSS_SEND_RAW_NDT
+               End Select
+            Next
+         Case 9:
+            ' Send combination of RAW/IPv6/IPv6 packets with options
+            NumPacketTypes = MaxSendInstances
+            NextPacketType = RSS_SEND_RAW_NDT
+            For nCount = 1 To NumPacketTypes
+               PacketTypesArray(nCount) = NextPacketType
+               ' Switch the packet type we would use next
+               Select Case NextPacketType
+                  Case RSS_SEND_RAW_NDT:
+                     NextPacketType = RSS_SEND_IPv6_TCP
+                  Case RSS_SEND_IPv6_TCP:
+                     NextPacketType = RSS_SEND_IPv6_NDT
+                  Case RSS_SEND_IPv6_NDT:
+                     NextPacketType = RSS_SEND_IPv4_OPTIONS_RESIZE_TCP
+                  Case RSS_SEND_IPv4_OPTIONS_RESIZE_TCP:
+                     NextPacketType = RSS_SEND_IPv6_PAD_TCP
+                  Case RSS_SEND_IPv6_PAD_TCP:
+                     NextPacketType = RSS_SEND_IPV6_PAD_NDT
+                  Case RSS_SEND_IPV6_PAD_NDT:
+                     NextPacketType = RSS_SEND_IPv6_ROUTE2_TCP
+                  Case RSS_SEND_IPv6_ROUTE2_TCP:
+                     NextPacketType = RSS_SEND_IPv6_HOME_NDT
+                  Case RSS_SEND_IPv6_HOME_NDT
+                     NextPacketType = RSS_SEND_IPv6_ROUTE2_HOME_TCP
+                  Case Else
+                     NextPacketType = RSS_SEND_RAW_NDT
+               End Select
+            Next
+         Case 10:
+            ' Send combination of TCP fragment/routing/home header
+            NumPacketTypes = MaxSendInstances
+            NextPacketType = RSS_SEND_IPv6_TCP_FIRST_FRAGMENT
+            For nCount = 1 To NumPacketTypes
+               PacketTypesArray(nCount) = NextPacketType
+               ' Switch the packet type we would use next
+               Select Case NextPacketType
+                  Case RSS_SEND_IPv6_TCP_FIRST_FRAGMENT:
+                     NextPacketType = RSS_SEND_IPv6_TCP_MID_FRAGMENT
+                  Case RSS_SEND_IPv6_TCP_MID_FRAGMENT:
+                     NextPacketType = RSS_SEND_IPv6_TCP_LAST_FRAGMENT
+                  Case RSS_SEND_IPv6_TCP_LAST_FRAGMENT:
+                     NextPacketType = RSS_SEND_IPv6_ROUTE2_TCP
+                  Case RSS_SEND_IPv6_ROUTE2_TCP:
+                     NextPacketType = RSS_SEND_IPv6_HOME_TCP
+                  Case RSS_SEND_IPv6_HOME_TCP:
+                     NextPacketType = RSS_SEND_IPv6_ROUTE2_HOME_TCP
+                  Case Else
+                     NextPacketType = RSS_SEND_IPv6_TCP_FIRST_FRAGMENT
+               End Select
+            Next
+         Case 11:
+            ' Send combination of bunch of IPv6 packets
+            NumPacketTypes = MaxSendInstances
+            NextPacketType = RSS_SEND_IPv6_PAD_TCP
+            For nCount = 1 To NumPacketTypes
+               PacketTypesArray(nCount) = NextPacketType
+               ' Switch the packet type we would use next
+               Select Case NextPacketType
+                  Case RSS_SEND_IPv6_PAD_TCP:
+                     NextPacketType = RSS_SEND_IPv6_ROUTE0_TCP
+                  Case RSS_SEND_IPv6_ROUTE0_TCP:
+                     NextPacketType = RSS_SEND_IPv6_ROUTE2_NDT
+                  Case RSS_SEND_IPv6_ROUTE2_NDT:
+                     NextPacketType = RSS_SEND_IPv6_ROUTE2_TCP
+                  Case RSS_SEND_IPv6_ROUTE2_TCP:
+                     NextPacketType = RSS_SEND_IPv6_HOME_NDT
+                  Case RSS_SEND_IPv6_HOME_NDT:
+                     NextPacketType = RSS_SEND_IPv6_ROUTE2_HOME_NDT
+                  Case Else
+                     NextPacketType = RSS_SEND_IPv6_PAD_TCP
+               End Select
+            Next
+
+      End Select
+
+   End Function
+
+   Private Function DetermineNewRSSParameters(oSetParameters, nLoopCount)
+      Dim nParameterCase
+      Dim Status
+
+      Status = 0
+      ' Conver the loopcount into a parameter case we can use
+      nParameterCase = oNDTSupp.Random(0, nLoopCount) Mod RSS_MAXIMUM_VARIABLE_PARAMETERS
+     
+      Select Case nParameterCase
+         Case 0:
+            oLog.Write ("Setting a 64 element RSS parameter")
+            ' Generate a 64 element structure
+            Call oRSSHelper.GenerateValidParameters(oSetParameters, m_oCapabilities.CapabilitiesFlags, _
+               64, nNumProcessors)
+               
+         Case 1:
+            oLog.Write ("Setting a 8 element RSS parameter")
+            ' Generate a 8 element structure
+            Call oRSSHelper.GenerateValidParameters(oSetParameters, m_oCapabilities.CapabilitiesFlags, _
+               8, nNumProcessors)
+            ' Change the hash type
+            oSetParameters.HashInformation = oRSSHelper.HashInfoFromHashTypeAndFunction( _
+               NDIS_HASH_TCP_IPV4, NdisHashFunctionToeplitz)
+               
+         Case 2:
+            oLog.Write ("Setting a 32 element RSS parameter")
+            ' Generate a 32 element structure
+            Call oRSSHelper.GenerateValidParameters(oSetParameters, m_oCapabilities.CapabilitiesFlags, _
+               32, nNumProcessors)
+            ' Change the hash type (dont matter if its not supported)
+            oSetParameters.HashInformation = oRSSHelper.HashInfoFromHashTypeAndFunction( _
+               NDIS_HASH_IPV6, NdisHashFunctionToeplitz)
+               
+         Case 3:
+            If (nNumProcessors > 2) Then
+               oLog.Write ("Setting a 16 element RSS parameter, reducing processors spanned")
+               ' Generate a 16 element structure, all mapping to first 2 processors.
+               ' Dont care if NDIS_RSS_HASH_TYPE_TCP_IPV6_EX is not supported
+               Call oRSSHelper.GenerateValidParameters(oSetParameters, NDIS_RSS_HASH_TYPE_TCP_IPV6_EX, _
+                  16, 2)
+            Else
+               oLog.Write ("Setting a 16 element RSS parameter, all mapping to same processor")
+               ' Generate a 16 element structure, all mapping to same processor
+               ' Dont care if NDIS_RSS_HASH_TYPE_TCP_IPV6_EX is not supported               
+               Call oRSSHelper.GenerateValidParameters(oSetParameters, NDIS_RSS_HASH_TYPE_TCP_IPV6_EX, _
+                  16, 1)
+            End If
+
+         Case 4:
+            Dim HashKey()
+
+            ReDim HashKey(RSS_HASH_FUNCTION_0_KEY_SIZE)
+
+            oLog.Write ("Using new hash secret key")
+            Call oRSSHelper.GenerateValidParameters(oSetParameters, m_oCapabilities.CapabilitiesFlags, _
+               16, nNumProcessors)
+            Status = oSetParameters.GenerateHashSecretKey(HashKey, RSS_HASH_FUNCTION_0_KEY_SIZE)
+            If (Status = 0) Then
+               ' We managed to create a new hash key, lets use this instead
+               Call oSetParameters.SetHashSecretKey(HashKey, RSS_HASH_FUNCTION_0_KEY_SIZE)
+            Else
+               Status = 0           ' Else, try with the default
+            End If
+         Case 5:
+            Dim nCount, IndirectionTable()
+            Dim nCurrHashValue, nIndirectionTableSize
+
+            nIndirectionTableSize = 32
+            Status = oSetParameters.SetInitialize(RSS_PARAMETERS_STRUCT_SIZE + _
+               RSS_HASH_FUNCTION_0_KEY_SIZE + _
+               nIndirectionTableSize)
+            If (Status <> 0) Then
+               Call oLog.Write ("Unable to create RSS parameters structure")               
+            End If
+
+            ' Fill a really rudimentary hash table
+
+            oSetParameters.HashInformation = oRSSHelper.HashInfoFromHashTypeAndFunction( _
+               oRSSHelper.HashTypesFromCapabilitiesFlags(NDIS_RSS_HASH_TYPE_TCP_IPV4), NdisHashFunctionToeplitz)
+
+            ' The indirection table comes before the secret key
+            oSetParameters.IndirectionTableOffset = RSS_PARAMETERS_STRUCT_SIZE
+            oSetParameters.IndirectionTableSize = nIndirectionTableSize
+            oSetParameters.HashSecretKeyOffset = oSetParameters.IndirectionTableOffset + oSetParameters.IndirectionTableSize
+            oSetParameters.HashSecretKeySize = RSS_HASH_FUNCTION_0_KEY_SIZE
+            oSetParameters.NumberOfLsbs = Log(nIndirectionTableSize) / Log(2)
+
+            ' Set the hash secret key
+            Status = oSetParameters.SetDefaultHashSecretKey(oSetParameters.HashSecretKeySize)
+            If (Status <> 0) Then
+               Call oLog.Write ("Unable to populate RSS parameters structure with hash secret key")
+               Exit Function
+            End If
+
+            ReDim IndirectionTable(nIndirectionTableSize)
+            nCurrHashValue = 0
+            For nCount = 0 To nIndirectionTableSize - 1
+               IndirectionTable(nCount) = CByte(nCurrHashValue)
+               nCurrHashValue = nCurrHashValue + 1
+               If (nCurrHashValue = nNumProcessors) Then
+                  nCurrHashValue = 0
+               End If
+            Next
+
+            Status = oSetParameters.SetIndirectionTable(IndirectionTable, oSetParameters.IndirectionTableSize)
+            If (Status <> 0) Then
+               Call oLog.Write ("Unable to populate RSS parameters structure with hash table")
+               Exit Function
+            End If
+
+      End Select
+
+   End Function
+   
+   Private Function ModifyRSSParameters(oOpen)
+      Dim oSetParameters
+      Dim arrData()
+      Dim ErrorStatus
+      Dim NdisStatus, nBytesRW, nBytesNeeded
+      Dim nCount
+      Dim nOriginalMask
+      nOriginalMask = oNDInfo.ScriptOutputControl
+
+      ModifyRSSParameters = False
+
+      Set oSetParameters = oStructRep.CreateNdisObject(NDIS_OBJECT_TYPE_RSS_PARAMETERS, 1)
+      If (oSetParameters is Nothing) Then
+         Call oLog.Failed ("Unable to create RSS parameters set structure", 88888)
+         Exit Function
+      End If
+
+      ' Loop through all the various parameter change combinations that we are
+      ' interested in
+      For nCount = 1 To 60
+
+         ' Get the next RSS parameters structure to use
+         ErrorStatus = DetermineNewRSSParameters(oSetParameters, nCount)
+
+         If (ErrorStatus = 0) Then
+            ' Resize the array
+            ReDim arrData(oSetParameters.SizeOf)
+
+            ' Convert the COM structure to a byte stream
+            ErrorStatus = oSetParameters.ConvertToByteStream(arrData, oSetParameters.SizeOf)
+            If (ErrorStatus <> 0) Then
+               Call oLog.Failed ("Unable to stream RSS parameters structure", 88888)
+               Exit Function
+            End If
+
+            '
+            ' Setup the log object so writes from dll are ignored!
+            ' This is necessary to stop the log file from becoming huge
+            '
+            oNDInfo.ScriptOutputControl = DEBUGWRITE
+
+            ' If the miniport already has the same RSS configuration set on it, ndis
+            ' may not forward this request to the miniport
+            ErrorStatus = oOpen.vbNdisRequest (OID_GEN_RECEIVE_SCALE_PARAMETERS, _
+                           arrData, _
+                           oSetParameters.SizeOf, _
+                           REQUEST_SET_INFO, _
+                           nBytesRW, _
+                           nBytesNeeded, _
+                           NdisStatus, _
+                           FALSE _
+                           )
+            ' Restore the log output level
+            oNDInfo.ScriptOutputControl = nOriginalMask
+
+            If (ErrorStatus <> 0) then
+               Call oLog.Failed ("NDISTest unable to process RSS parameters request", 88888)
+               Exit Function
+            End If
+         End If
+      Next
+
+   End Function
+
+   ' This function is very much the same as for single connection, but we separate it
+   ' out for simplicity
+   Private Function ExecuteMultipleConnectionsTestCases(oSetParameters, SimultaneousCaseStart, SimultaneousCaseEnd, bParametersTest)
+      Dim ErrorStatus, bResult
+      Dim DestAddr, nReceiveDelay, ArrRSSEnabled()
+      Dim oRecvCommMgrConfig, oRecvMediaConfig, ArrRecvNBConfig()
+      Dim oSendCommMgrConfig, oSendMediaConfig, ArrSendNBConfig()
+      Dim oRecvCommMgrStats, oRecvNBStats
+      Dim oSendCommMgrStats, oSendNBStats
+      Dim nTestCase, nSenderIndex, NumPacketTypes, ArrPacketTypes()
+      Dim ArrConstructorType()
+
+      ExecuteMultipleConnectionsTestCases = False
+      oLog.Variation ("Setting RSS Parameters")
+      oSetParameters.Print
+
+      ' Since RSS configuration would not be changing, lets set up the RSS
+      ' receiving miniport with the appropriate options
+      If (Not SetRSSParameters(ArrRecvOpen(1), Nothing, oSetParameters)) Then
+         Call oLog.Failed ("Unable to test simultaneous sender test case", 88888)
+         Exit Function
+      End If
+
+      ' For each sender, we hold the constructor and RSS setting so that we
+      ' can check it later
+      ReDim ArrConstructorType(nNumSenders)
+      ReDim ArrRSSEnabled(nNumSenders)
+      ' And the actual config structures
+      ReDim ArrRecvNBConfig(nNumSenders)
+      ReDim ArrSendNBConfig(nNumSenders)
+      ReDim ArrPacketTypes(nNumSenders)
+
+      ' These two values would not change irrespective of the open/endpoint we use
+      DestAddr = ArrRecvOpen(1).vbGetCardAddress
+      nReceiveDelay = ArrRecvOpen(1).vbGetReceiveDelay
+
+      ' Create the various objects we need for IP related packet receiving
+      Set oRecvCommMgrConfig = oCoreFactory.CommMgrRecvConfig(SIMPLE_SEND_COMM_MGR)
+      Set oRecvMediaConfig = oCoreFactory.MediaModuleRecvConfig(NDIS_MEDIUM_802_3_MEDIA_MODULE)
+
+      Set oSendCommMgrConfig = oCoreFactory.CommMgrSendConfig(SIMPLE_SEND_COMM_MGR)
+      Set oSendMediaConfig = oCoreFactory.MediaModuleSendConfig(NDIS_MEDIUM_802_3_MEDIA_MODULE)
+
+      Set oSendCommMgrStats = oCoreFactory.CommMgrSendStatistics(SIMPLE_SEND_COMM_MGR)
+      Set oRecvCommMgrStats = oCoreFactory.CommMgrRecvStatistics(SIMPLE_SEND_COMM_MGR)
+
+      ' Setup the sending communication manager configuration
+      oSendCommMgrConfig.NumSends = 0
+      oSendCommMgrConfig.SendDuration = nSendDuration
+      oSendCommMgrConfig.InitialBurstSize = nInitialBurstSize
+      oSendCommMgrConfig.NumNetBufferListsPerSend = nInitialBurstSize
+      ' This controls the gap (mS) between each call to NdisSendNetBufferLists
+      oSendCommMgrConfig.InterSendDelay = 20
+      ' Start all the sends simultaneously
+      oSendCommMgrConfig.SynchronousStart = TRUE
+
+      ' Setup the sending media modules address field
+      oSendMediaConfig.DestinationAddress = DestAddr
+
+      ' Now, go through each of the packet types
+      For nTestCase = SimultaneousCaseStart To SimultaneousCaseEnd
+         If (bParametersTest) Then
+            oLog.Variation ("Parameter change simultaneous send")
+         Else
+            oLog.Variation ("Simultaneous send " & nTestCase)
+            oLog.Write ("Hash Information = " & oRSSHelper.GetHashInformationString(oSetParameters.HashInformation))
+         End If
+         
+         Call DeterminePacketTypesForTest(nTestCase, nNumSenders, ArrPacketTypes, NumPacketTypes)
+
+         ' Now, create and populate all the objects we need for sending/receiving
+         For nSenderIndex = 1 To NumPacketTypes
+            ' Create the objects we would be using for this test case
+            bResult = CreateConstructorConfigObjects(ArrPacketTypes(nSenderIndex), _
+               ArrConstructorType(nSenderIndex), _
+               ArrSendNBConfig(nSenderIndex), _
+               ArrRecvNBConfig(nSenderIndex))
+             If (Not bResult) Then
+               Exit Function
+            End If
+
+            ' Now, setup the send endpoint and its config object
+            bResult = SetupSendEndPoint(nSenderIndex, _
+                  ArrPacketTypes(nSenderIndex), _
+                  oSetParameters, _
+                  ArrSendNBConfig(nSenderIndex))
+            If (Not bResult) Then
+               ' Unable to setup sending endpoint, quit
+               Exit Function
+            End If
+
+            ' Setup the receiving side
+            bResult = SetupReceiveEndPoint(nSenderIndex, _
+               ArrPacketTypes(nSenderIndex), _
+               oSetParameters, _
+               ArrRecvNBConfig(nSenderIndex), _
+               ArrSendNBConfig(nSenderIndex), _
+               ArrRSSEnabled(nSenderIndex))
+            If (Not bResult) Then
+               ' Unable to setup receiving endpoint, quit
+               Exit Function
+            End If
+
+            If (bParametersTest) Then
+               ' If this is a parameters test, we mess with the verification levels selected
+               If (ArrPacketTypes(nSenderIndex) = RSS_SEND_RAW_NDT) Then
+                  ' Must not be hashed
+                  ArrRecvNBConfig(nSenderIndex).VerificationLevel = fNDT_NB_MODULE_CHECK_MEDIA_HEADER Or _
+                           fNDT_NB_MODULE_CHECK_NDISTEST_HEADER Or _
+                           fNDT_NB_MODULE_CHECK_NDISTEST_DATA   Or _
+                           fNDT_NDISTEST_VERIFY_NO_RSS_HASH_INFO
+
+                  ArrRSSEnabled(nSenderIndex) = RSS_HASHING_NOT_EXPECTED
+               Else
+                  ' We only want to check for corruption         
+                  ArrRecvNBConfig(nSenderIndex).VerificationLevel = fNDT_NB_MODULE_CHECK_MEDIA_HEADER Or _
+                           fNDT_NB_MODULE_CHECK_NDISTEST_HEADER Or _
+                           fNDT_NB_MODULE_CHECK_NDISTEST_DATA   Or _
+                           fNDT_NB_MODULE_CHECK_IP_HEADER       Or _
+                           fNDT_NB_MODULE_CHECK_IP_PROT_HEADER
+                           
+                  ArrRSSEnabled(nSenderIndex) = RSS_HASHING_IGNORE
+               End If
+            End If
+         Next
+
+         ' Prepare each sender and receiver
+         For nSenderIndex = 1 To NumPacketTypes
+            ' Setup the receiving open to start receiving
+            ArrRecvOpen(nSenderIndex).vbSetPacketFilter(DIRECTED)
+
+            ' Depending on the type of packet, the ethertype would switch
+            If (ArrPacketTypes(nSenderIndex) = RSS_SEND_RAW_NDT) Then
+               ' 0 clears the ether type field
+               oSendMediaConfig.EtherType = ETHERTYPE_LENGTH
+               oRecvMediaConfig.EtherType = ETHERTYPE_LENGTH
+            ElseIf (ArrPacketTypes(nSenderIndex) < RSS_SEND_RAW_NDT) Then
+               ' All IPv4 packets types are < RAW_NDT
+               oSendMediaConfig.EtherType = ETHERTYPE_IPv4
+               oRecvMediaConfig.EtherType = ETHERTYPE_IPv4
+            Else
+               ' IPv6 Packets are > RAW_NDT
+               oSendMediaConfig.EtherType = ETHERTYPE_IPv6
+               oRecvMediaConfig.EtherType = ETHERTYPE_IPv6
+            End If
+
+            ' Start receiving at the receiving open
+            ErrorStatus = ArrRecvEndPoint(nSenderIndex).vbStartReceive(oRecvCommMgrConfig, ArrRecvNBConfig(nSenderIndex), oRecvMediaConfig)
+
+            ' Setup for sending from the sending open (note that because of the Synchronous starting,
+            ' these would not start sending just yet)
+            ErrorStatus = ArrSendEndPoint(nSenderIndex).vbSendNetBufferLists(oSendCommMgrConfig, ArrSendNBConfig(nSenderIndex), oSendMediaConfig)
+         Next
+
+         ' Now, start the sending by
+         ErrorStatus = ArrSendEndPoint(1).vbStartAllSends()
+
+         ' If this is a parameter changing test, start changing parameters
+         If (bParametersTest) Then
+            Call ModifyRSSParameters(ArrRecvOpen(1))
+         End If
+
+         ' Now, wait for all the senders to stop sending
+         For nSenderIndex = 1 To NumPacketTypes
+            ErrorStatus = ArrSendEndPoint(nSenderIndex).vbWaitForSendsToComplete(0)
+         Next
+
+         ' Pause
+         WScript.Sleep nReceiveDelay
+
+         ' Wait for the receivers to stop
+         For nSenderIndex = 1 To NumPacketTypes
+            ErrorStatus = ArrRecvEndPoint(NumPacketTypes).vbStopReceive()
+         Next
+
+         ' Now, we obtain and verify the results from each senders/receiver
+         For nSenderIndex = 1 To NumPacketTypes
+            ' Get the stats objects that we want to use
+            Set oSendNBStats = oCoreFactory.ConstructorSendStatistics(ArrConstructorType(nSenderIndex))
+            Set oRecvNBStats = oCoreFactory.ConstructorRecvStatistics(ArrConstructorType(nSenderIndex))
+
+            ' Obtain send results from the sending adapter
+            oLog.Write("Obtaining results from Connection Id " & nSenderIndex)
+            ErrorStatus = ArrSendEndPoint(nSenderIndex).vbGetSendResults(oSendCommMgrStats, oSendNBStats)
+            If (ErrorStatus <> 0) Then
+               Call oLog.Failed ("Failed to get send results.", 88888)
+               oLog.Write ("Will attempt to continue with next test instance")
+               Exit For
+            End If
+
+            ' Obtain receive results from the test card
+            ErrorStatus = ArrRecvEndPoint(nSenderIndex).vbGetReceiveResults(oRecvCommMgrStats, oRecvNBStats)
+            If (ErrorStatus <> 0) Then
+               Call oLog.Failed ("Failed to get receive results.", 88888)
+               oLog.Write ("Will attempt to continue with next test instance")
+               Exit For
+            End If
+
+            ' Now, verify the statistics
+            Call VerifyStatistics(ArrRSSEnabled(nSenderIndex), _
+               nSenderIndex, _
+               ArrConstructorType(nSenderIndex), _
+               oSendCommMgrStats, _
+               oSendNBStats, _
+               oRecvCommMgrStats, _
+               oRecvNBStats)
+
+            Set oSendNBStats = Nothing
+            Set oRecvNBStats = Nothing
+         Next
+
+         ' Cleanup
+         For nSenderIndex = 1 To NumPacketTypes
+            ArrRecvOpen(nSenderIndex).vbSetPacketFilter(CLng(0))
+
+            ' Close the communication channel we just used
+            ArrSendEndPoint(nSenderIndex).vbCloseCommunicationChannel()
+            ArrRecvEndPoint(nSenderIndex).vbCloseCommunicationChannel()
+
+            Set ArrSendNBConfig(nSenderIndex) = Nothing
+            Set ArrRecvNBConfig(nSenderIndex) = Nothing
+         Next
+
+         ' Done, next testcase
+      Next
+
+      ExecuteMultipleConnectionsTestCases = True
+   End Function
+End Class
+
+</script>
+</job>
+</package>
+
+
+
+
+
+<!--- CRC = 0x47fa1a5d --->

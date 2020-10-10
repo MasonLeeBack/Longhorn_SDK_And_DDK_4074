@@ -1,0 +1,536 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, 802_5, FDDI
+</MEDIA>
+<WHQL>
+802_3, 802_5, FDDI
+</WHQL>
+<CARDMACH>
+2C,1M
+</CARDMACH>
+<RUNORDER>
+1670
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[
+This script tests simultaneous activities
+
+This test will start multiple stress tests between the client test
+and Support adapters. Some of the opens will hold the packets for
+a short time after receiving them. This is controlled by setting the
+setreceiveoption of each open. While the stress tests are running
+another open is used to change the packet filter, add and remove
+multicast addresses, and add and remove wake patterns to see if
+the card can handle the simultaneous activities.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="2c_Simultaneous" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+
+        <!-- Begin Wireless Specific Includes -->
+        <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	     <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	     <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	     <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	     <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+        <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+        <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+        <!-- End Wireless Specific Includes -->
+
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script language="VBScript" src="..\inc\ConstLAN.vbs"/>
+      <script id="2c_Simultaneous" language="VBScript">
+'==========================================================================
+' Script Name:    2c_Simultaneous
+'==========================================================================
+
+Option Explicit
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0), GetSupportAdapterIndex (oNDInfo.AdapterList, 0))
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard, oTestOpen
+   Private oSuppCard, oSuppOpen
+   Private m_lTestAdapterIndex, m_lSuppAdapterIndex
+   Private MASK_SILENCE_LOG
+   Private MASK_RESTORE_LOG_MASK
+
+   Private Sub Class_Initialize
+        ' Mask off all write and force direct all log output to debugger
+        MASK_SILENCE_LOG = DEBUGWRITE
+
+        ' Save the current log output verbosity information
+        MASK_RESTORE_LOG_MASK = oNDInfo.ScriptOutputControl
+   End Sub
+
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+
+      Set oSuppCard = Nothing
+   End Sub
+
+   Sub WriteToLog (WriteMsg)
+      ' Set the log mask to accept writes
+      oNDInfo.ScriptOutputControl = MASK_RESTORE_LOG_MASK
+      oLog.Write (WriteMsg)
+      oNDInfo.ScriptOutputControl = MASK_SILENCE_LOG
+   End Sub
+
+   Sub FailureToLog (FailMsg, FailureID)
+      ' Do nothing
+   End Sub
+
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+
+      Set pAdapterList = oNDInfo.AdapterList
+
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+
+      If (Not oTestCard.vbCreateAdapter(pAdapterList(m_lTestAdapterIndex))) Then
+         Exit Function
+      End If
+
+      oLog.Variation ("Setting up Support Adapter")
+      Set oSuppCard = New CLanCard
+      If (oSuppCard is Nothing) Then
+         Exit Function
+      End If
+
+      If (Not oSuppCard.vbCreateAdapter(pAdapterList(m_lSuppAdapterIndex))) Then
+         Exit Function
+      End If
+
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then
+
+         Dim oOpen : Set oOpen = oTestCard.vbOpenAdapter()
+
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")
+         If(vbAssociateWep(oOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If
+
+         Set oOpen = Nothing
+         Set oOpen = oSuppCard.vbOpenAdapter()
+
+         oLog.Variation ("Associating support device with " & NDTESTAP2 & " ...")
+         If(vbAssociateWep(oOpen, NDTESTAP2) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate support device with " & NDTESTAP2, 88888
+            Exit Function
+         End If
+
+         Set oOpen = Nothing
+
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+
+   Public Function RunTest (lTestAdapterIndex, lSuppAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      m_lSuppAdapterIndex = lSuppAdapterIndex
+
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+
+      ExecuteTestCore
+   End Function
+
+   Public Function ExecuteTestCore
+      Dim arrTestOpen(), arrSuppOpen()
+      Dim oTestControlOpen
+      Dim oSuppControlOpen
+
+      Dim nTestMaxPacketSize, nSupportMaxPacketSize, nMaxPacketSize
+      Dim TestAddr
+
+      Dim nTestId
+
+      Dim bResult
+      Dim bForceNdis30
+
+      Dim PacketCount
+
+      Dim OptionsMask()
+      Dim arrWaitDone()          ' holds the number of stress tests done
+
+      Dim TypesOfStressTests
+      Dim StressTests
+
+      Dim nCount, nCount2
+
+      Dim WakeOnLanSupport, SystemWakeOnLanSupport
+      Dim WOLSupported
+
+      Dim ValueOne, ValueTwo
+      Dim AvailFilters
+      Dim TestMulticast
+
+      Dim ReceiveOption()
+      Dim lReceiveOptions
+      Dim StartTime,TestDuration
+
+      Dim nLogMask
+      Dim nNdisStatus
+
+      oLog.Variation ("Collect device characteristics")
+
+      ' Collect all the support adapter characteristics that we want
+      Set oSuppControlOpen = oSuppCard.vbOpenAdapter
+      If (oSuppControlOpen is Nothing) Then
+         Exit Function
+      End If
+      nSupportMaxPacketSize = oSuppControlOpen.vbGetMaxPacketSize()
+      oSuppControlOpen.vbNdisClose()
+      Set oSuppControlOpen = Nothing
+
+      ' Now switch to the test adapter
+      Set oTestControlOpen = oTestCard.vbOpenAdapter
+      If (oTestControlOpen is Nothing) Then
+         Exit Function
+      End If
+      TestAddr = oTestControlOpen.vbGetCardAddress()
+      nTestMaxPacketSize = oTestControlOpen.vbGetMaxPacketSize()
+
+      Do
+
+         ' This sets up the different receive options.  The opens that use the RECEIVE_QUEUE option will
+         ' hold their packets for a short amount of time.
+
+         lReceiveOptions = 2
+
+         ReDim ReceiveOption(lReceiveOptions)
+
+         ReceiveOption(0) = RECEIVE_DEFAULT
+         ReceiveOption(1) = RECEIVE_QUEUE
+
+         ' These options are not use at this time
+         ' ReceiveOption(2) = RECEIVE_DOUBLE_QUEUE
+         ' ReceiveOption(3) = RECEIVE_TRIPLE_QUEUE
+
+         ' This determines how many simultaneous stress tests are run at a time.
+         StressTests = 4
+         ReDim arrTestOpen(StressTests)
+         ReDim arrSuppOpen(StressTests)
+
+         ' Each stress test is run with a client and a server.  They are always run between
+         ' the test and Support adapters
+
+         nMaxPacketSize = nTestMaxPacketSize
+         If (nSupportMaxPacketSize < nMaxPacketSize) Then
+            nMaxPacketSize = nSupportMaxPacketSize
+         End If
+
+         oLog.Variation("Testing card for multicast and wakeonlan support")
+         '
+         ' This code determines if multicasting is supported and if there is
+         ' room for one more multicast address
+         '
+         TestMulticast = FALSE
+
+         ' oSuppControlOpen is a test card open
+         AvailFilters = oTestControlOpen.vbGetFilters()
+
+         nLogMask = oLog.Mask
+         oLog.Mask = DO_NOTHING
+
+         If (AvailFilters And MULTICAST) Then
+            bResult = oTestControlOpen.vbAddMulticastAddr(GoodMulticastAddr)
+            If (bResult) Then
+               bResult = oTestControlOpen.vbRemoveMulticastAddr(GoodMulticastAddr)
+               If (bResult) Then
+                  oLog.Write("Card supports multicasting, and has room for one more multicast addrress" )
+                  TestMulticast = TRUE
+               End If
+            End If
+         End If
+
+         oLog.Mask = nLogMask
+
+         ' This determines if wake on lan is supported and if there is room
+         ' for one more wol pattern
+         WOLSupported = FALSE
+
+         ValueOne = &H12345&
+         ValueTwo = &H56789&
+
+         WakeOnLanSupport = oTestControlOpen.vbWakeOnLanSupportInfo(SystemWakeOnLanSupport)
+
+         If (WakeOnLanSupport And WAKE_UP_PATTERN_MATCH) Then
+            bResult = oTestControlOpen.vbAddWakePattern(nNdisStatus, 0, ValueOne, 4, ValueTwo, 8, ValueOne)
+            If (bResult And nNdisStatus = NDIS_STATUS_SUCCESS) Then
+               bResult = oTestControlOpen.vbRemoveWakePattern(nNdisStatus, 0, ValueOne, 4, ValueTwo, 8, ValueOne)
+               If (bResult And nNdisStatus = NDIS_STATUS_SUCCESS) Then
+                  oLog.Write("Card supports Wake on Lan" )
+                  WOLSupported = TRUE
+               End If
+            End If
+         End If
+
+         '
+         ' This loop creates all the opens needed for the stress tests
+         ' and sets up the test parameters on those opens.
+         '
+         nCount = CLng(0)
+         nCount2 = CLng(0)
+
+         While(nCount < StressTests)
+
+            oLog.Variation("Opening test & Support card instances")
+            Set arrTestOpen(nCount) = oTestCard.vbOpenAdapter()
+            If(arrTestOpen(nCount) is Nothing) Then
+               Exit Do     ' kicks out of outer While loop to cleanup
+            End If
+
+            Set arrSuppOpen(nCount) = oSuppCard.vbOpenAdapter()
+            If(arrSuppOpen(nCount) is Nothing) Then
+               Exit Do     ' kicks out of outer While loop to cleanup
+            End If
+
+            oLog.Variation("Setup IP Related Information for Test and support Card")
+            bResult = SetupTestForIP(arrTestOpen(nCount), m_lTestAdapterIndex, arrSuppOpen(nCount), m_lSuppAdapterIndex)
+            If(Not bResult) Then
+               Exit Do
+            End If
+
+            oLog.Variation("Setting up instances")
+
+            nTestId = oNDTSupp.Random(1, 32765)
+
+            ' RemoteId sets the message ID that will be sent on
+            ' LocalId sets the message ID value we will receive on
+            arrTestOpen(nCount).vbSetChannelId(nTestId)
+            arrSuppOpen(nCount).vbSetChannelId(nTestId)
+
+            ' Will be running stress on the network, so net must not be busy
+            arrTestOpen(nCount).vbSetReceiveOption(RECEIVE_DEFAULT Or ReceiveOption(nCount2))
+            arrSuppOpen(nCount).vbSetReceiveOption(RECEIVE_DEFAULT Or ReceiveOption(nCount2))
+
+            nCount2 = nCount2 + 1
+            If(nCount2 = lReceiveOptions) Then
+               nCount2 = 0
+            End If
+
+            Call arrTestOpen(nCount).vbSetPacketFilter(DIRECTED)
+            Call arrSuppOpen(nCount).vbSetPacketFilter(DIRECTED)
+
+            nCount = nCount + 1
+         WEnd
+
+         '
+         ' set up variables for different types of stress tests
+         '
+         TypesOfStressTests = 4
+
+         PacketCount = 200000
+
+         ReDim OptionsMask(TypesOfStressTests)
+
+         OptionsMask(0) = STRESS_RANDOMSIZE Or STRESS_RAND Or STRESS_ACK Or STRESS_WINDOWING_OFF
+         OptionsMask(1) = STRESS_RANDOMSIZE Or STRESS_SMALL Or STRESS_ACK10 Or STRESS_WINDOWING_OFF
+         OptionsMask(2) = STRESS_RANDOMSIZE Or STRESS_ZEROS Or STRESS_NORESP Or STRESS_WINDOWING_OFF
+         OptionsMask(3) = STRESS_RANDOMSIZE Or STRESS_ONES Or STRESS_FULLRESP Or STRESS_WINDOWING_OFF
+
+         nCount = 0
+         nCount2 = 0
+         TestDuration = 30*60 ' 30 minutes
+         StartTime = Timer    ' Do this before starting stress in case machine becomes cpu bound
+
+         oLog.Variation("Starting stress")
+         While (nCount < StressTests)
+            If (nCount2 = TypesOfStressTests) Then
+               nCount2 = 0
+            End If
+            ' StartStress ClientOpen, ServerOpen, PacketSize, OptionsMask, Iterations, TestDuration
+            bResult = arrTestOpen(nCount).vbStartStress(arrSuppOpen(nCount), nMaxPacketSize, OptionsMask(nCount2), PacketCount, TestDuration)
+
+            If (Not bResult) Then
+               call oLog.Failed ("Unable to start stress test" , 21074)
+            End If
+
+            nCount = nCount + 1
+            nCount2 = nCount2 + 1
+         WEnd
+
+         '
+         ' now while the stress tests are running go into a loop adding and removing
+         ' filters, multicast addresses, and wol patterns.
+         '
+
+         nCount = 0
+
+         oLog.Variation("Running OID query/set loop")
+         '
+         ' Setup the log object so writes from dll are ignored!
+         ' This is necessary to stop the log file from becoming huge
+         ' From this point on ONLY WriteToLog method will put any comments to the log
+         ' oLog.Write commands and even DLLWrite commands from script will not go
+         ' Any failures and warnings will go into the log file.
+         ' The side effect is if something fails, we would not have enough
+         ' context information about it.
+         '
+         oNDInfo.ScriptOutputControl = MASK_SILENCE_LOG
+
+         Do While( (Timer - StartTime) < TestDuration)
+            WriteToLog("Setting packet filter")
+            bResult = oTestControlOpen.vbSetPacketFilter(AvailFilters)
+            If (Not bResult) Then
+               Call FailureToLog("Unable to set packet filter", 88888)
+            End If
+
+            If (WOLSupported) Then
+               WriteToLog("Adding wake pattern")
+               bResult = oTestControlOpen.vbAddWakePattern(nNdisStatus, 0, ValueOne, 4, ValueTwo, 8, ValueOne)
+               If (Not bResult) Then
+                  Call FailureToLog("Unable to add wake pattern", 88888)
+               End If
+            End If
+
+            If (TestMulticast) Then
+               WriteToLog("Adding multicast address")
+               bResult = oTestControlOpen.vbAddMulticastAddr(GoodMulticastAddr)
+               If (bResult) Then
+                  WriteToLog("Deleting added multicast address")
+                  bResult = oTestControlOpen.vbRemoveMulticastAddr(GoodMulticastAddr)
+                  If (Not bResult) Then
+                     Call FailureToLog("Unable to add multicast address", 88888)
+                  End If
+               Else
+                  Call FailureToLog("Unable to add multicast address", 88888)
+               End If
+            End If
+
+            If (WOLSupported) Then
+               WriteToLog("Removing wake pattern")
+               bResult = oTestControlOpen.vbRemoveWakePattern(nNdisStatus,  0, ValueOne, 4, ValueTwo, 8, ValueOne)
+               If (Not bResult) Then
+                  Call FailureToLog("Unable to remove wake pattern", 88888)
+               End If
+            End If
+
+            WriteToLog("Clearing packet filter")
+            bResult = oTestControlOpen.vbSetPacketFilter(CLng(0))
+            If (Not bResult) Then
+               Call FailureToLog("Unable to clear packet filter", 88888)
+            End If
+
+            nCount = nCount + 1
+
+            ' Sleep for a short interval to let other processes run
+            WScript.Sleep 2000      ' 2 seconds
+         Loop
+         ' Restore the log output level
+         oNDInfo.ScriptOutputControl = MASK_RESTORE_LOG_MASK
+
+         '
+         ' now wait for the stress tests to end
+         '
+         ReDim arrWaitDone(StressTests)
+
+         nCount = CLng(0)
+         Do While (nCount < StressTests)
+            oLog.Variation("Waiting for stress tests to complete")
+            arrWaitDone(nCount) = False
+
+            bResult = arrTestOpen(nCount).vbWaitStress
+            If (bResult) Then
+               arrWaitDone(nCount) = True
+            Else
+               call oLog.Failed ("Unable to wait for stress test to complete" , 21081)
+            End If
+            nCount = nCount + 1
+         Loop
+
+         '
+         ' by now, all the backchannel communication should be done
+         '
+         nCount = CLng(0)
+         Do While (nCount < StressTests)
+            If (arrWaitDone(nCount)) Then
+               oLog.Variation("Obtaining stress results")
+               bResult = arrTestOpen(nCount).vbGetStressResults
+               If (Not bResult) Then
+                  oLog.Write("Unable to get stress results" )
+               End If
+            Else
+               oLog.Write ("Were unable to complete wait stress test for this open.")
+               oLog.Write ("Not obtaining its stress results")
+            End If
+            nCount = nCount + 1
+         Loop
+
+         '
+         ' Get the events on all of the opens
+         '
+         oLog.Variation("Clear Events")
+
+         nCount = 0
+         Do While(nCount < StressTests)
+            Call arrTestOpen(nCount).vbClearEvents()
+            Call arrSuppOpen(nCount).vbClearEvents()
+
+            nCount = nCount + 1
+         Loop
+
+         bResult = oTestControlOpen.vbClearEvents()
+         If(Not bResult) Then
+            oLog.Write("It is ok for there to be unexpected calls to NdisIndicateReceive " )
+            oLog.Write("this open was using promiscuous mode." )
+         End If
+      Loop While(False)
+
+
+   End Function
+
+End Class
+
+</script>
+</job>
+</package>
+
+
+<!--- CRC = 0x6dfeb0c2 --->

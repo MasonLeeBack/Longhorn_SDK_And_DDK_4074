@@ -1,0 +1,347 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, 802_5, FDDI
+</MEDIA>
+<WHQL>
+802_3, 802_5, FDDI
+</WHQL>
+<CARDMACH>
+1C,1M
+</CARDMACH>
+<RUNORDER>
+1210
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[Verifies the ability of miniport to detect invalid task offload information!
+The scripts first checks for ability to support Task offloading. The test continues 
+only if the card supports task offloading. If supported, first a null task offloaded
+onto the NIC to clear out any offloading TCP/IP may have in there.
+
+The script then offloads the following invalid offload tasks to test how the NIC handles this:
+1. An invalid offload version is privided to the NIC to see if that is detected
+2. If Checksum Offload supported, an unsupported combination is offloaded
+3. If Largesend Offload supported, an unsupported combination is offloaded
+
+The script then checks how many connects, disconnect and resets were executed by the NIC
+while these tasks were being executed. The number of connects or disconnects that occured
+must be either 0 or equal to the number of resets for the behavior to be considered correct.
+
+The script ends by unloading and reloading the driver to restore any tasks that TCP/IP
+may have offloaded onto the NIC.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="1c_OffloadInvalid" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oPNPPower" progid="NDTSupp.Setup.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      
+      <!-- Begin Wireless Specific Includes -->
+      <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	   <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	   <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	   <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	   <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+      <!-- End Wireless Specific Includes -->
+      
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/> 
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COffloadCard.vbs"/>        
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\COffloadOpen.vbs"/>        
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script language="VBScript" src="..\inc\Offload.vbs"/>
+      <script id="1c_OffloadInvalid" language="VBScript">
+'==========================================================================
+' Script Name:    1c_OffloadInvalid
+'==========================================================================
+Option Explicit 
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0)) 
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard, oTestOpen
+   Private m_lTestAdapterIndex
+   Private TestCardGUID
+   
+   Private Sub Class_Initialize
+      
+   End Sub
+   
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+      Set oTestOpen = Nothing
+   End Sub
+   
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+      
+      Set pAdapterList = oNDInfo.AdapterList
+      
+      TestCardGUID = pAdapterList(m_lTestAdapterIndex).GUID
+      
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New COffloadCard    ' Create a COffloadCard and not CLanCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oTestOpen = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpen is Nothing) Then
+         Exit Function
+      End If
+      
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+                  
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")           
+         If(vbAssociateWep(oTestOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If	
+                                          
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+      
+      Set pAdapterList = Nothing
+      
+      ' Initialize Global Task Offload variables
+      If (Not oTestOpen.vbGetTaskOffloadInfo()) Then
+         call oLog.Write("Cannot run test! Unable to Query NIC for Task Offload Information")
+         oLog.Write("Task Offloading is not supported by this NIC")
+         Exit Function
+      End If
+      
+      ' Check for Task Offload Support
+      If (Not GlobTaskOffloadSupport) Then
+         oLog.Write("Cannot run test, OID_TCP_TASK_OFFLOAD not supported by miniport")
+         Exit Function
+      End If
+      
+      SetupTest = TRUE
+   End Function
+   
+   Public Function RunTest (lTestAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+      
+      ExecuteTestCore
+   End Function
+   
+   
+   Private Function ExecuteTestCore
+      Dim bResult
+      
+      ' Task offload variables
+      Dim OffloadInfo (100)
+      
+      ' Set to No task offload
+      oLog.Variation("Set To NO Task Offload")
+      bResult = oTestOpen.vbSetOffloadTask(0, Null, Null)
+      If (Not bResult) Then
+         call oLog.Failed ("SetOffloadTask to NO task offload returned FAILURE on Test Card" , 21723)
+      End If
+      
+      oLog.Variation("Invalid Task Offload Version Test")
+      OffloadInfo(0) = CLng(OFFLOAD_VERSION)
+      OffloadInfo(1) = &Hffffffff&
+      
+      ' Query OID_TCP_TASK_OFFLOAD
+      Dim NdisStatus, BytesWritten, BytesNeeded
+      NdisStatus = 0
+      bResult = oTestOpen.vbNdisRequest(OID_TCP_TASK_OFFLOAD, OffloadInfo, 400, _
+            REQUEST_QUERY_INFO, BytesWritten, BytesNeeded, _
+            NdisStatus, FALSE)
+      If(bResult) Then
+         If (NdisStatus = 0) Then ' NDIS_STATUS_SUCCESS
+            call oLog.Failed ("Invalid Task Offload version NOT detected !!!" , 21724)
+         End If
+      Else
+         call oLog.Failed ("Unable to get Task Offload support information" , 21725)
+      End If
+      
+      ' Test for Unsupported Checksum offload combination
+      If(GlobCksumTasks <> 0) Then
+         oLog.Variation("Testing with Unsupported Checksum Task Offload combination !!!")    
+         Call wsfUnSupportedChecksumTest()
+      End If   
+      
+      ' Test for Unsupported LargeSend offload combination
+      If(GlobLargeSendTasks <> 0) Then
+         oLog.Variation("Testing with Unsupported LargeSend Task Offload combination !!!")    
+         Call wsfUnsupportedLargeSendTest()
+      End If
+      
+      ' Get Reset, Media Connect, Media Disconnect events
+      Dim nResets, nDisconnects, nConnects
+      oLog.Variation("GetEvents")
+      bResult = oTestOpen.vbGetEvents(nResets, nDisconnects, nConnects)
+      If(bResult) Then
+         If ((nDisconnects <> 0) And (nDisconnects <> nResets)) Then
+            call oLog.Failed ("Incorrect number of disconnect events " & nDisconnects & ". Should have been 0 or " & nResets , 21730)
+         End If
+         
+         If ((nConnects <> 0) And (nConnects <> nResets)) Then
+            call oLog.Failed ("Incorrect number of connect events " & nConnects & ". Should have been 0 or " & nResets , 21731)
+         End If
+         
+         If (nConnects <> nDisconnects) Then
+            call oLog.Failed ("Disconnect events " & nDisconnects & " should equal connect events " & nConnects , 21732)
+         End If
+      Else
+         call oLog.Failed ("Get events failed on test card open instance" , 21733)
+      End If
+      
+      ' Close the Adapter
+      oLog.Variation("NdisClose Test Adapter")
+      bResult = oTestOpen.vbNdisClose()
+      If(Not bResult) Then
+         call oLog.Failed ("Could not close open instance" , 21734)
+      End If
+      Set oTestOpen = Nothing
+      
+      ' Unload & load driver to restore Tcp/Ip settings
+      oLog.Variation("Unload & Reload driver to restore TCP/IP's task offload settings")
+      Call wsfRestoreTCPIPSettings()        
+      
+   End Function
+   
+   '----------------------------------------------------------------------------------------------
+   ' Procedure:      wsfUnSupportedChecksumTest
+   '              Checks what happens when an unsupported checksum offload combination is used
+   '
+   ' Arguments: oTestOpen : Test card open instance
+   '
+   ' Returns: True if rejected, false otherwise
+   '----------------------------------------------------------------------------------------------
+   Private Function wsfUnSupportedChecksumTest()
+      Dim CksumOffloadInfo
+      Dim bResult
+      
+      wsfUnSupportedChecksumTest = FALSE
+      ' Create a copy of the checksum offload object        
+      Set CksumOffloadInfo = oNDTCore.CreateTcpIpChecksumObj(GlobCksumOffloadInfo(0))
+      If (Not(CksumOffloadInfo) is Nothing) Then    
+         ' Get Variant of the checksum offload object        
+         bResult = CksumOffloadInfo.GetVariant()
+         If(bResult) Then
+            ' Set to Checksum task offload
+            bResult = oTestOpen.vbSetOffloadTask(0, CksumOffloadInfo, Null)
+            If(bResult) Then
+               call oLog.Failed ("SET request returns SUCCESS : Unsupported Checksum Offload combination NOT detected" , 21726)
+            Else
+               wsfUnSupportedChecksumTest = TRUE
+            End If
+            
+         Else
+            oLog.Write("Could NOT GetVariant, skipping variation") 
+         End If
+         Set CksumOffloadInfo = Nothing
+      Else
+         call oLog.Failed ("CreateTcpIpChecksumObj FAILED to create a copy" , 21727)
+      End If
+   End Function    
+   
+   
+   '----------------------------------------------------------------------------------------------
+   ' Procedure:      wsfUnsupportedLargeSendTest
+   '              Checks what happens when an unsupported large send offload combination is used
+   '
+   ' Arguments: oTestOpen : Test card open instance
+   '
+   ' Returns: True if rejected, false otherwise
+   '----------------------------------------------------------------------------------------------
+   Private Function wsfUnsupportedLargeSendTest()
+      Dim LargeSendOffloadInfo
+      Dim bResult
+      
+      wsfUnsupportedLargeSendTest = FALSE
+      ' Create a copy of the LargeSend offload object        
+      Set LargeSendOffloadInfo = oNDTCore.CreateTcpIpLargeSendObj(GlobLargeSendOffloadInfo(0))
+      If (Not(LargeSendOffloadInfo) is Nothing) Then    
+         ' Get Variant of the LargeSend offload object        
+         bResult = LargeSendOffloadInfo.GetVariant()
+         If(bResult) Then
+            ' Set to LargeSend task offload
+            bResult = oTestOpen.vbSetOffloadTask(0, LargeSendOffloadInfo, Null)
+            If(bResult) Then
+               call oLog.Failed ("SET request returns SUCCESS : Unsupported LargeSend Offload combination NOT detected" , 21728)
+            Else
+               wsfUnsupportedLargeSendTest = TRUE
+            End If
+         Else
+            oLog.Write("Could NOT GetVariant, skipping variation") 
+         End If
+         Set LargeSendOffloadInfo = Nothing
+      Else
+         call oLog.Failed ("CreateTcpIpLargeSendObj FAILED to create a copy" , 21729)
+      End If   
+   End Function
+   
+   '----------------------------------------------------------------------------------------------
+   ' Procedure:      wsfRestoreTCPIPSettings
+   '              Restores the TCP/IP settings on the test card by unloading and reloading the Driver
+   '
+   ' Arguments: oTestCard : Test card object
+   '                   TestCardGUID: GUID of the test card
+   '
+   ' Returns:
+   '----------------------------------------------------------------------------------------------
+   Function wsfRestoreTCPIPSettings()
+      Dim nResult
+      
+      wsfRestoreTCPIPSettings = FALSE
+      nResult = oPNPPower.StopDriver(TestCardGUID)
+      If (nResult = 0) Then
+         oPNPPower.StartDriver(TestCardGUID)
+         If (oTestCard.vbWaitForLinkWithDelay(90, glWaitForLinkExtraDelay)) Then     ' wait for link to be established
+            wsfRestoreTCPIPSettings = TRUE
+         End If
+      Else
+         call oLog.Failed ("StopDriver failed : Unable to unload driver, TCP/IP offload settings have not been restored !!!" , 21735)
+      End If
+   End Function
+   
+End Class
+
+</script>
+</job>
+</package>
+
+
+<!--- CRC = 0x69b9636e --->

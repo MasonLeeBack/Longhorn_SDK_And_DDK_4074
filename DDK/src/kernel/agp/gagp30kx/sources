@@ -1,0 +1,16 @@
+TARGETNAME=gagp30kx
+TARGETTYPE=DRIVER
+TARGETPATH=obj
+
+TARGETLIBS=..\agplib\$O\agplib.lib
+
+INCLUDES=..\inc;..\..\..\inc
+
+MSC_WARNING_LEVEL=/W3 /WX
+
+SOURCES=gagp30kx.rc     \
+        init.c          \
+        gart.c		\
+        kxagplib.c      \
+        verifier.c
+

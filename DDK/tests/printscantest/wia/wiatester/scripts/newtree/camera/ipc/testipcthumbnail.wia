@@ -1,0 +1,55 @@
+Test Assertion_A13451
+
+Var p:Property, root:Item
+Var dt
+{
+    PrintDescriptionFromXML('13.4.5.1')
+    StartWia()
+    GetRoot(root)
+    GetDeviceType(dt)
+
+    If ( dt != StiDeviceTypeDigitalCamera )
+    Then Exit Passed
+
+    #Check For New Item Tree 
+    If(!IsNewTree(root))
+    Then
+    {
+        Writeln '\tThe device does not support New Item Tree'
+        Exit Failed 
+    }
+
+    GetNextItem(root)
+
+    While ( root ) Do 
+    {
+        If ( !CheckItemType(root, WiaItemTypeImage) )
+        Then Goto label
+
+        If ( !GetProperty(root, p, WIA_IPC_THUMBNAIL) )
+        Then 
+        {
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+
+        If (!CheckPropertyAccessFromXML(p) )
+        Then 
+        {
+            Writeln '\tIncorrect access'
+            Exit Failed
+        }
+
+        If (!CheckPropertyTypeFromXML(p) )
+        Then 
+        {
+           Writeln '\tInvalid vartype'
+           Exit Failed
+        }
+
+:label:
+        GetNextItem(root)
+    }
+
+    StopWia()
+}

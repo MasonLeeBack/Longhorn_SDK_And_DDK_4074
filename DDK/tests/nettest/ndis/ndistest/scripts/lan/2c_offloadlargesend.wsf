@@ -1,0 +1,763 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, 802_5, FDDI 
+</MEDIA>
+<WHQL>
+802_3, 802_5, FDDI
+</WHQL>
+<CARDMACH>
+2C,1M
+</CARDMACH>
+<RUNORDER>
+1560
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[This test verifies the ability of the NIC to segment large TCP/IP packets
+
+The script has two loops. The outer loop tests various supported kinds of 
+offloading.
+These include largesend offload (with and without resets), largesend offload 
+with checksum (if supported)
+and testing largesend with unspecified encapsulation type but specified 
+header size. The resets
+test is needed to make sure the offload informations persists after a NIC 
+reset.
+
+The inner loop goes through setting 4 different largesend combinations for 
+each of the above offload types.
+They are no largesend offload, largesend without TCP options, largesend with 
+TCP options,
+largesend with IP options, largesend with TCP/IP options.
+
+for each combination, the Test NIC first sends out 20 packets with minimum 
+packet size and mimumum
+message segment size. Using two loops the scripts loops through increasing 
+packet sizes (inner loop)
+and increasing MSS sizes (outer loop) for this combination till it hits MAX 
+for each. This is repeated
+for each of the 17 combinations of largesend
+
+The entire test is run again with Etnernet SNAP packet. Note that with SNAP 
+packets, checksum offload
+with unspecified encapsulation type and specified header size is skipped.
+
+while wrapping up, the script also checks that the number of resets, connects 
+and disconnects are as expected.
+if there were any resets, connects or disconnects at all, they must be equal 
+in number. the driver is then 
+reloaded to restore any offload setting done by TCP/IP and the script ends.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="2c_OffloadLargeSend" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      
+        <!-- Begin Wireless Specific Includes -->
+        <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	     <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	     <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	     <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	     <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+        <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+        <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+        <!-- End Wireless Specific Includes -->
+        
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/> 
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COffloadCard.vbs"/>        
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\COffloadOpen.vbs"/>        
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script language="VBScript" src="..\inc\Offload.vbs"/>
+      <script id="2c_OffloadLargeSend" language="VBScript">
+'==========================================================================
+' Script Name:    2c_OffloadLargeSend
+'==========================================================================
+Option Explicit 
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0), GetSupportAdapterIndex (oNDInfo.AdapterList, 0)) 
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard, oSuppCard         ' These are instances of the COffloadCard objects
+   Private oTestOpen, oSuppOpen         ' These are instances of the COffloadOpen object
+   
+   Private m_lTestAdapterIndex, m_lSuppAdapterIndex
+   Private TestCardGUID
+   Private m_lMaxPacketSize
+   
+   Private Sub Class_Initialize
+      
+   End Sub
+   
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+      Set oTestOpen = Nothing
+      
+      Set oSuppCard = Nothing
+      Set oSuppOpen = Nothing
+   End Sub
+   
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+      
+      Set pAdapterList = oNDInfo.AdapterList
+      
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New COffloadCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oTestOpen = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpen is Nothing) Then
+         Exit Function
+      End If
+      
+      oLog.Variation ("Setting up Support Adapter")
+      Set oSuppCard = New COffloadCard
+      If (oSuppCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oSuppOpen = oSuppCard.vbSetupBasicTest(pAdapterList (m_lSuppAdapterIndex))
+      If (oSuppOpen is Nothing) Then
+         Exit Function
+      End If
+      
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+               
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")           
+         If(vbAssociateWep(oTestOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If	
+         
+         oLog.Variation ("Associating support device with " & NDTESTAP2 & " ...")       
+         If(vbAssociateWep(oSuppOpen, NDTESTAP2) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate support device with " & NDTESTAP2, 88888
+            Exit Function
+         End If	
+                           
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+      
+      TestCardGUID = pAdapterList(m_lTestAdapterIndex).GUId
+      
+      ' Verify that the maximum packet size is atleast 150 bytes
+      m_lMaxPacketSize = oTestOpen.vbGetMaxPacketSize()
+      If (m_lMaxPacketSize < 150) Then
+         call oLog.Failed ("MTU less than 150, Unable to run test !!!" , 21670)
+         Exit Function
+      End If
+      
+      ' Initialize Global Task Offload variables
+      oLog.Variation("Get Task Offload Support Info")
+      If (Not oTestOpen.vbGetTaskOffloadInfo()) Then
+         call oLog.Write("Cannot run test! Unable to Query NIC for Task Offload Information")
+         call oLog.Write("Task Offloading is not supported by this NIC")
+         Exit Function
+      End If
+      
+      ' Check for Task Offload Support
+      If (Not GlobTaskOffloadSupport) Then
+         call oLog.Write("Cannot run test, OID_TCP_TASK_OFFLOAD not supported by miniport")
+         Exit Function
+      End If
+      
+      ' Check for Checksum Task Offload Support
+      If (GlobLargeSendTasks = 0) Then
+         call oLog.Write("Cannot run test, LargeSend task offload not supported")
+         Exit Function
+      End If
+      
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+   
+   Public Function RunTest (lTestAdapterIndex, lSuppAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      m_lSuppAdapterIndex = lSuppAdapterIndex
+      
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+      
+      ExecuteTestCore
+      
+      ' Close the Test Adapter
+      Dim bResult
+      oLog.Variation("NdisClose Test Adapter")
+      bResult = oTestOpen.vbNdisClose()
+      If(Not bResult) Then
+         call oLog.Failed ("Could not close Test Adapter open instance" , 21716)
+      End If
+      Set oTestOpen = Nothing
+      
+      ' Close the Support Adapter
+      oLog.Variation("NdisClose Support Adapter")
+      bResult = oSuppOpen.vbNdisClose()
+      If(Not bResult) Then
+         call oLog.Failed ("Could not close Support Adapter open instance" , 21717)
+      End If
+      Set oSuppOpen = Nothing
+      
+      ' Unload & load driver to restore Tcp/Ip settings
+      oLog.Variation("Unload & Reload driver to restore TCP/IP's task offload settings")
+      Call wsfRestoreTCPIPSettings() 
+      
+   End Function
+   
+   Private Function ExecuteTestCore
+      Dim TestAddr, SuppAddr
+      Dim bResult, TestId, nReceiveDelay
+      Dim nMedium
+
+      nMedium = oTestCard.NdisMedium
+      
+      ' Get MAC address of Test & Support Card
+      TestAddr = oTestOpen.vbGetCardAddress()
+      SuppAddr = oSuppOpen.vbGetCardAddress()
+      
+      ' Set receive options
+      oSuppOpen.vbSetReceiveOption(RECEIVE_DEFAULT)
+      
+      ' Set Packet filters
+      
+      If(Not oSuppOpen.vbSetPacketFilter(DIRECTED)) Then
+         Exit Function
+      End If
+      
+      nReceiveDelay = oTestOpen.vbGetReceiveDelay()
+      
+      Dim nPacketsSent, lPacketCount, lPacketsReceived, nBytesReceived, lCksumPassed, lCksumFailed
+      Dim lDataSize,  lDataSizeInc
+      Dim ResetSleep
+      
+      ' Task Offload Variables
+      Dim OffloadInfo(100), OffloadHdrInfo(4), DefaultOffloadHdr(2)
+      Dim CksumTasks, LargeSendTasks
+      Dim CksumOffloadInfo, LargeSendOffloadInfo
+      Dim BytesWritten, BytesNeeded, NdisStatus, lMaxDataSize, lMinSegmentCount
+      Dim EtherSnapTest, CksumOffloadSupport
+      Dim lBytesToSend, lPacketsToExpect, lBytesToExpect
+      
+      ' Copy over the global LargeSend offload info in a temporary variable
+      Set LargeSendOffloadInfo = oNDTCore.CreateTcpIpLargeSendObj(GlobLargeSendOffloadInfo(0))
+      If (LargeSendOffloadInfo is Nothing) Then
+         call oLog.Failed ("CreateTcpIpLargeSendObj FAILED to create a copy" , 21755)
+         Set oTestCard = Nothing
+         Set oSuppCard = Nothing
+         Exit Function
+      End If
+      
+      lMaxDataSize     = LargeSendOffloadInfo.MaxOffLoadSize
+      lMinSegmentCount = LargeSendOffloadInfo.MinSegmentCount
+      
+      ' Set Data Size
+      lDataSize = m_lMaxPacketSize - 150
+
+      If ((nMedium = NDISMEDIUM802_5) Or (nMedium = NDISMEDIUMFDDI)) Then
+         ResetSleep = 1000
+      Else
+         ResetSleep = 500
+      End If 
+      
+      lPacketCount = 20
+      EtherSnapTest = FALSE
+      
+      If (GlobCksumTasks <> 0) Then
+         CksumOffloadSupport = TRUE
+         Set CksumOffloadInfo = oNDTCore.CreateTcpIpChecksumObj(GlobCksumOffloadInfo(0))
+         If (CksumOffloadInfo is Nothing) Then
+            call oLog.Failed ("CreateTcpIpChecksumObj FAILED to create a copy for Checksum Offload" , 21756)
+            CksumOffloadSupport = FALSE    	
+         End If    
+      Else ' Cksum Offload NOT supported !!!
+         CksumOffloadSupport = FALSE
+      End If
+      
+      Dim lMss, lMssInc, lMinMss, lMaxMss, lMaxMtuData
+      ' Figure out Min & Max Mss
+      lMinMss = 536
+      lMaxMtuData = m_lMaxPacketSize - 150
+      Do While(lMinMss > lMaxMtuData)
+         lMinMss = lMinMss / 2
+         If (lMinMss = 0) Then
+            call oLog.Failed ("Unable to find suitable minimum MSS value for the MTU : " & m_lMaxPacketSize , 21757)
+            Exit Function
+         End If
+      Loop
+      
+      lDataSize = lMinMss * lMinSegmentCount
+      Do While(lMaxDataSize < lDataSize)
+         lMinMss = lMinMss / 2
+         If (lMinMss = 0) Then
+            call oLog.Failed ("Unable to find suitable MSS value for the provided MaxOffloadSize (" & lMaxDataSize & ") & MinSegmentCount (" & lMinSegmentCount & ")" , 21758)
+            Exit Function
+         End If
+      Loop
+      
+      lMaxMss = lMaxMtuData
+      lDataSize = lMaxMss * lMinSegmentCount
+      Do While(lMaxDataSize < lDataSize)
+         lMaxMss = lMaxMss - 50
+         If (lMaxMss < lMinMss) Then
+            call oLog.Failed ("Unable to find suitable max MSS value for the provided MaxOffloadSize (" & lMaxDataSize & "), MinSegmentCount (" & lMinSegmentCount & ") & MTU (" & m_lMaxPacketSize & ")" , 21759)
+            Exit Function
+         End If
+      Loop
+      
+      lMss = lMinMss
+      lMssInc = CLng((lMaxMss - lMinMss)/5)
+      
+      OffloadHdrInfo(0) = ENCAPSULATION
+      OffloadHdrInfo(1) = CLng(0)  ' Unspecified Encapsulation Type
+      
+      Dim Outer, MaxTests
+      Outer = CLng(0)
+      MaxTests = CLng(4)
+      
+      Do While (Outer < (MaxTests + 1))
+         
+         If (Outer = 0) Then
+            DefaultOffloadHdr(0) = CLng(0)
+         End If
+         
+         ' Check for Ethernet SNAP support
+         If (Outer = MaxTests) Then
+            If (EtherSnapTest = TRUE) Then
+               Exit Do
+            End If
+            
+            If (GlobSnapLargeSendTasks <> 0) Then
+               Outer = 0
+               EtherSnapTest = TRUE
+               DefaultOffloadHdr(0) = ENCAPSULATION ' Flag
+               DefaultOffloadHdr(1) = CLng(4) ' LLC-SNAP ROUTED
+               ' Copy over the global SNAP LargeSend offload info in a temporary variable
+               Set LargeSendOffloadInfo = oNDTCore.CreateTcpIpLargeSendObj(GlobSnapLargeSendOffloadInfo(0))
+               If (LargeSendOffloadInfo is Nothing) Then
+                  call oLog.Failed ("CreateTcpIpLargeSendObj FAILED to create a copy for Snap largesend Offload" , 21760)
+                  Exit Do   
+               End If
+               
+               If (GlobSnapCksumTasks<> 0) Then
+                  CksumOffloadSupport = TRUE
+                  Set CksumOffloadInfo = oNDTCore.CreateTcpIpChecksumObj(GlobSnapCksumOffloadInfo(0))
+                  If (CksumOffloadInfo is Nothing) Then
+                     CksumOffloadSupport = FALSE
+                     call oLog.Failed ("CreateTcpIpChecksumObj FAILED to create a copy for Snap xsum Offload" , 21761)
+                  End If
+               Else
+                  CksumOffloadSupport = FALSE	
+               End If
+               oLog.Write(vbLf & "Testing with Ethernet LLC-SNAP frames !!!" & vbLf)
+            Else
+               oLog.Write("Media not Ethernet or Checksum offload NOT supported on Ethernet LLC-SNAP frames !!!" & vbLf)
+               Exit Do
+            End If
+         End If
+         
+         ' Set Default encapsulation types
+         If (Outer = 0) Then
+            oTestOpen.vbSetIpDefaults(DefaultOffloadHdr)
+            oSuppOpen.vbSetIpDefaults(DefaultOffloadHdr)
+         End If
+         
+         ' Set to No task offload
+         oLog.Variation("Set to NO Task Offload")
+         bResult = oTestOpen.vbSetOffloadTask(0, Null, Null)
+         If(Not bResult) Then
+            call oLog.Failed ("Unable to set to NO task offload, This might affect the results of the variations that follow !!!" , 21762)
+         End If
+         
+         If ((Outer = 0) Or (Outer = 2)) Then
+            If (Outer = 0) Then
+               oLog.Variation("Testing LargeSend Offload !!!")
+            Else
+               oLog.Variation("Testing LargeSend Offload with Resets !!!")
+            End If
+            bResult = oTestOpen.vbSetOffloadTask(0, LargeSendOffloadInfo, Null)
+            If (Not bResult) Then
+               call oLog.Failed ("SetOffloadTask returned FAILURE" , 21763)
+            End If
+         ElseIf (Outer = 1) Then
+            oLog.Variation("Testing LargeSend Offload with NO Checksum Offload !!!")        
+            ' Set Checksum & TCP LargeSend Task Offload        
+            If (CksumOffloadSupport = TRUE) Then        
+               bResult = oTestOpen.vbSetOffloadTask(0, CksumOffloadInfo, LargeSendOffloadInfo)
+               If (Not bResult) Then
+                  call oLog.Failed ("SetOffloadTask returned FAILURE" , 21764)
+               End If        
+            Else
+               oLog.Write("Checksum Offload NOT Supported !!!" & vbLf)
+               bResult = FALSE
+            End If        
+         ElseIf ((Outer = 3) And (Not EtherSnapTest)) Then ' Not running this variation for Ethernet SNAP    
+            oLog.Variation( "Testing LargeSend Offload with Unspecified Encapsulation type & specified Encapsulation Header Size !!!")
+            if (GlobUnspecEncapTaskOffloadSupport) Then
+               Dim i, TempOffloadInfo(100), TempRetLen, TempBytesWritten
+               Dim TempBytesNeeded, TempNdisStatus
+               for i=0 to 3
+                  TempOffloadInfo (i) = CLng(OffloadHdrInfo (i))
+               Next
+               TempRetLen = CLng (400)
+               TempBytesWritten = CLng(0)
+               TempBytesNeeded = CLng(0)
+               
+               bResult = oTestOpen.vbNdisRequest (OID_TCP_TASK_OFFLOAD, TempOffloadInfo, TempRetLen, _
+                     REQUEST_QUERY_INFO, TempBytesWritten, TempBytesNeeded, TempNdisStatus, TRUE)
+               If not bResult then
+                  Call oLog.Failed ("Query info on OID_TCP_TASK_OFFLOAD failed" , 21765)
+                  Exit Do
+               End if
+               
+               ' If NDIS_STATUS_NOT_ACCEPTED returned, then this feature is not supported
+               ' Skip variation for this feature
+               If (TempNdisStatus <> &HC00000BB) then
+                  
+                  ' Check if the information returned is same as in the regular case
+                  If (GlobUnspecEncapLargeSendTasks <> GlobLargeSendTasks) Then
+                     call oLog.Failed ("Inconsistent LargeSend task-offload information returned by miniport" , 21766)
+                     Exit Do
+                  End If
+                  ' Compare if they are equal
+                  Dim NumOfTasks
+                  NumOfTasks = GlobUnspecEncapLargeSendTasks
+                  Do While (NumOfTasks > 0)
+                     NumOfTasks = NumOfTasks - 1
+                     bResult = GlobLargeSendOffloadInfo(NumOfTasks).CompareTcpIpLargeSendObjects(GlobUnspecEncapLargeSendOffloadInfo(NumOfTasks))
+                     If(Not bResult) Then
+                        call oLog.Failed ("Inconsistent LargeSend task-offload information returned by miniport" , 21767)
+                        Exit Do
+                     End If
+                  Loop
+                  
+                  ' Set to LargeSend task offload
+                  bResult = oTestOpen.vbSetOffloadTask(OffloadHdrInfo, GlobUnspecEncapLargeSendOffloadInfo(0), Null)
+                  If (Not bResult) Then
+                     call oLog.Failed ("SetOffloadTask returned FAILURE" , 21768)
+                  End If
+               Else
+                  bResult = False
+                  oLog.Write ("The NIC does not support unspecified encapsulation type. Skipping variation" )
+               End If
+            Else
+               oLog.Write("Adapter does NOT support task offload with Unspecified Encapsulation" & vbLf)
+               bResult = FALSE
+            End If
+         Else
+            bResult = FALSE ' Bail out when Outer = 3 & EtherSnapTest is TRUE
+         End If
+         
+         If (bResult) Then
+            Dim Inner, Tx, Rx, Needed, Options, OffloadFlags		
+            Inner = 0		
+            Do While (Inner < 5)
+               Do ' Loop to break out & continue
+                  Tx = 0
+                  Rx = 0
+                  Needed = 0
+                  Options = 0
+                  OffloadFlags = 0
+                  If (Inner = 0) Then
+                     oLog.Variation("Testing NO TCP LargeSend offload on current packet !!!")
+                     lDataSize = m_lMaxPacketSize - 150
+                  ElseIf (Inner = 1) Then
+                     oLog.Variation("Testing TCP LargeSend Off-load without options !!!")
+                  ElseIf (Inner = 2) Then
+                     oLog.Variation("Testing TCP LargeSend Off-load with IP options  !!!")
+                     If (Not LargeSendOffloadInfo.IpOptions) Then
+                        oLog.Write("TCP LargeSend Off-load with IP options NOT supported, skipping variation" & vbLf)
+                        Exit Do
+                     End If
+                     Options = IP_OPTION
+                  ElseIf (Inner = 3) Then
+                     oLog.Variation("Testing TCP LargeSend Off-load with TCP options !!!")
+                     If (Not LargeSendOffloadInfo.TcpOptions) Then
+                        oLog.Write("TCP LargeSend Off-load with TCP options NOT supported, skipping variation" & vbLf)
+                        Exit Do
+                     End If
+                     Options = TCP_OPTIONS
+                  ElseIf (Inner = 4) Then
+                     oLog.Variation("Testing TCP LargeSend Off-load with TCP & IP options !!!")
+                     If ((Not LargeSendOffloadInfo.TcpOptions) Or (Not LargeSendOffloadInfo.IpOptions)) Then
+                        oLog.Write("One or Both of TCP LargeSend Off-load with TCP & IP options NOT supported, skipping variation" & vbLf)
+                        Exit Do
+                     End If
+                     Options = TCP_OPTIONS Or IP_OPTION
+                  End If
+                  
+                  If (Inner = 0) Then   
+                     ' Setting to NO offload on current packet     
+                     Call oTestOpen.vbSetOffloadPktInfo(CLng(0), CLng(0))
+                  Else
+                     lMss = lMinMss
+                     ' Setting Per-Packet information
+                     Call oTestOpen.vbSetOffloadPktInfo (MSS_TX, lMss) 
+                  End If
+                  
+                  ' Reset Card, the offload information must persist resets
+                  If (Outer = 2) Then
+                     ' the sleep before the reset is on purpose
+                     Wscript.Sleep ResetSleep
+                     oTestOpen.vbNdisReset()
+                  End If
+                  
+                  '
+                  ' Outer while loop steps thru MSS (Valid only for Outer = 0
+                  ' Inner while loop steps thru the packet size
+                  '
+                  Do While (TRUE)
+                     If (Inner = 0) Then
+                        lDataSize = m_lMaxPacketSize - 150
+                     Else
+                        lDataSize = lMss * lMinSegmentCount
+                        lDataSizeInc = CLng((lMaxDataSize - lDataSize) / 10)
+                     End If
+                     
+                     Do While (TRUE)					
+                        oLog.Variation("Testing with Packet Size = " & lDataSize & " and MSS = " & lMss)
+                        ' Set Source & Destination IP address
+                        TestId = oNDTSupp.Random(1, 32765)
+                        oTestOpen.vbSetLocalId(TestId)
+                        oSuppOpen.vbSetRemoteId(TestId)
+                        TestId = oNDTSupp.Random(1, 32765)
+                        oSuppOpen.vbSetLocalId(TestId)
+                        oTestOpen.vbSetRemoteId(TestId)            	
+                        
+                        ' Start IP Capture at Server
+                        bResult = oSuppOpen.vbStartIpCapture()
+                        If(Not bResult) Then
+                           Exit Do
+                        End If
+                        
+                        nPacketsSent = CLng(0)
+                        ' Send IP packet from Client to Supported Card
+                        bResult = oTestOpen.vbVerifiedSendIP(SuppAddr, V4, TCP, lPacketCount, lDataSize, Options)
+                        If(Not bResult) Then
+                           Exit Do
+                        End If
+                        
+                        lBytesToSend = lPacketCount * lDataSize
+                        ' Check if its the NO Segmentation case
+                        If (Inner = 0) Then
+                           lPacketsToExpect = lPacketCount
+                           lBytesToExpect   = lBytesToSend
+                        Else
+                           ' Get number of bytes sent
+                           bResult = oTestOpen.vbGetOffloadPktInfo(MSS_RX, lBytesToExpect, lPacketsToExpect)
+                           If (bResult) Then
+                              If (lBytesToExpect < lBytesToSend) Then
+                                 oLog.Warned("WARNING: Actual number of bytes sent (after segmentation) : " & lBytesToExpect & ", less than the number requested : " & lBytesToSend & " !!!" & vbLf)
+                              ElseIf (lBytesToExpect > lBytesToSend) Then
+                                 call oLog.Failed ("FAILURE: Test NIC sends more TCP data ( " & lBytesToExpect & "bytes) than actually off-loaded to segment ( " & lBytesToSend & "bytes)" , 21774)
+                                 lBytesToExpect = lBytesToSend
+                              End If
+                           Else
+                              call oLog.Failed ("FAILURE : Unable to GetOffloadPktInfo for LargeSend" , 21775)
+                              Exit Do
+                           End If
+                        End If
+                        
+                        ' Since the total number of packets sent is much more than lPacketCount,
+                        ' wait for twice the time
+                        Wscript.Sleep nReceiveDelay 
+                        Wscript.Sleep nReceiveDelay 
+                        
+                        ' Get IP Capture results at Server
+                        lPacketsReceived = CLng(0)
+                        nBytesReceived = CLng(0)   				
+                        lCksumPassed = CLng(0)
+                        lCksumFailed = CLng(0)            		
+                        bResult = oSuppOpen.vbGetIPCaptureResults(lPacketsReceived, nBytesReceived, lCksumPassed, lCksumFailed)
+                        If(bResult) Then
+                           If (lPacketsReceived <> lPacketsToExpect) Then
+                              call oLog.Failed ("GetIPCaptureResults on Support Card : Should have received " & lPacketsToExpect & " packets, Received " & lPacketsReceived , 21776)
+                           End If  
+                           If (nBytesReceived <> lBytesToExpect) Then
+                              call oLog.Failed ("GetIPCaptureResults on Support Card : Should have received " & lBytesToExpect & " Bytes, Received " & nBytesReceived , 21777)
+                           End If
+                           
+                           If ((lCksumPassed <> (TCP_CKSUM Or IP_CKSUM)) Or (lCksumFailed <> 0)) Then
+                              call oLog.Failed ("FAILURE : Checksum Verification (by tester) failed, Incorrect or No checksum computation by Test Card !!!" , 21778)
+                           End If	
+                        Else
+                           call oLog.Failed ("GetIPCaptureResults Failed on Supported Adapter" , 21779)
+                        End If
+                        
+                        If ((Inner = 0) Or (lDataSize = lMaxDataSize)) Then
+                           Exit Do
+                        End If
+                        
+                        If (lDataSize > (lMaxDataSize - lDataSizeInc)) Then
+                           lDataSize = lMaxDataSize
+                        Else
+                           lDataSize = lDataSize + lDataSizeInc
+                        End If
+                        oLog.Write(vbLf & "#### Increasing Packet size and hence the number of segments sent out by NIC ####" & vbLf)
+                     Loop ' End of Inner While Loop
+                     
+                     If ((Inner = 0) Or (Outer <> 0) Or (lMss = lMaxMss)) Then
+                        Exit Do
+                     End If
+                     
+                     If (lMss > (lMaxMss - lMssInc)) Then
+                        lMss = lMaxMss
+                     Else
+                        lMss = lMss + lMssInc
+                     End If
+                     oLog.Write(vbLf & "#### Increasing Maximum Segment Size (MSS) and hence the size of segment sent out by NIC ####" & vbLf)
+                     ' Setting Per-Packet information
+                     Call oTestOpen.vbSetOffloadPktInfo (MSS_TX, lMss)
+                  Loop ' End of Outer While Loop                  
+               Loop While(False)' End of breakout Do 
+               Inner = Inner + 1
+            Loop ' End of "Inner" loop	 		
+         End If	
+         Outer = Outer + 1           
+      Loop
+      
+      DefaultOffloadHdr(0) = CLng(0)
+      oTestOpen.vbSetIpDefaults(DefaultOffloadHdr)
+      oSuppOpen.vbSetIpDefaults(DefaultOffloadHdr)		
+      
+      Dim Resets, Disconnects, Connects
+      ' Get Reset, Media Connect, Media Disconnect events
+      oLog.Variation("GetEvents")
+      bResult = oTestOpen.vbGetEvents(Resets, Disconnects, Connects)
+      If(bResult) Then
+         If ((Disconnects <> 0) And (Disconnects <> Resets)) Then
+            call oLog.Failed ("Incorrect number of disconnect events " & Disconnects & ". Should have been 0 or " & Resets , 21780)
+         End If
+         
+         If ((Connects <> 0) And (Connects <> Resets)) Then
+            call oLog.Failed ("Incorrect number of connect events " & Connects & ". Should have been 0 or " & Resets , 21781)
+         End If
+         
+         If (Connects <> Disconnects) Then
+            call oLog.Failed ("Disconnect events " & Disconnects & " should equal connect events " & Connects , 21782)
+         End If
+      Else
+         call oLog.Failed ("Get events failed on test card open instance" , 21783)
+      End If
+      
+   End Function
+   
+   
+   '----------------------------------------------------------------------------------------------
+   ' Procedure:      RestoreTCPIPSettings
+   '              Restores the TCP/IP settings on the test card by unloading and reloading the Driver
+   '
+   ' Arguments: oTestCard : Test card object
+   '                   TestCardGUID: GUID of the test card
+   '
+   ' Returns:
+   '----------------------------------------------------------------------------------------------
+   Function wsfRestoreTCPIPSettings()
+      Dim oProtoBinders, oTestBinder, nCurrentState, bResult
+
+      '
+      ' This is a quick fix for the protocol binding problem
+      ' Only first and last scripts of protocol binder have'
+      ' initialization done correctly. No issue was hit since
+      ' only first and last script accessed the binding object.
+      ' Now, This script has become someone in the middle using
+      ' the binder object
+      '
+
+      wsfRestoreTCPIPSettings = False
+      oProtoBinders = oNDTSession ("ProtocolBinders")
+
+      If (IsEmpty (oProtoBinders)) Then
+         call oLog.Warned ("Could not find Protocol binders in session")
+         Exit Function
+      End If
+
+      Set oTestBinder = oProtoBinders(0)
+
+      On Error Resume Next
+
+      ' Unbind TCP/IP if bound
+      bResult = oTestBinder.ChangeBinding ("Internet Protocol (TCP/IP)", UNBIND_PROTOCOL, nCurrentState)
+
+      If (err.Number = 462) Then
+         err.Clear
+         ' An exception was thrown because ProtocolBinder was not initialized
+         ' Initialize it now
+         Set oTestBinder.m_oLogRef = oLog
+         Set oTestBinder.m_oBindCtrl = oSuppCore.CreateBindCtrl (oTestBinder.m_nConnectionID)
+         If (oTestBinder.m_oBindCtrl Is Nothing) Then
+            oLog.SafeWarned ("Could not create Bind Control Object")
+            On Error Goto 0
+            Exit Function
+         End If
+
+         Call oTestBinder.GetSupportedProtocols
+
+         ' Try unbinding now
+         bResult = oTestBinder.ChangeBinding ("Internet Protocol (TCP/IP)", UNBIND_PROTOCOL, nCurrentState)
+         if (Not bResult) Then
+            call oLog.Write ("Could not unbind TCP/IP! Will continue with the test")
+            On Error Goto 0
+            Exit Function
+         End If
+      End If
+
+      On Error Goto 0
+
+      If (Not bResult) Then
+         call oLog.Write ("Could not unbind TCP/IP! Will continue with the test")
+         Exit Function
+      End If
+
+      ' Rebind TCP/IP! This will restore offload settings
+      If (Not oTestBinder.ChangeBinding ("Internet Protocol (TCP/IP)", BIND_PROTOCOL, nCurrentState)) Then
+         call oLog.Write ("Could not bind TCP/IP! Will continue with the test")
+      End If     
+
+      wsfRestoreTCPIPSettings = True
+   End Function   
+End Class
+
+</script>
+</job>
+</package>
+
+
+
+
+
+<!--- CRC = 0xdb8033af --->

@@ -1,0 +1,281 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, 802_5, FDDI
+</MEDIA>
+<CARDMACH>
+2C,1M,2M
+</CARDMACH>
+<RUNORDER>
+1690
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[
+This test sets up stress between two cards with support card as stress client and
+test card as stress server. The stress runs for five iterations with different buffering
+options. The ability of test card to receive different-sized packets at a faster rate 
+and to respond with different types of acknowledgement packets is tested in this script.
+Packet loss is common during this test and main test criterion is that the
+miniport driver is able to handle send/receives with different buffer configurations.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="2c_StressServer" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      
+        <!-- Begin Wireless Specific Includes -->
+        <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	     <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	     <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	     <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	     <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+        <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+        <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+        <!-- End Wireless Specific Includes -->
+        
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/> 
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script language="VBScript" src="..\inc\ConstLAN.vbs"/>
+      <script id="2c_StressServer" language="VBScript">
+'==========================================================================
+' Script Name: 2c_StressServer
+'==========================================================================
+Option Explicit 
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0), GetSupportAdapterIndex (oNDInfo.AdapterList, 0)) 
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard, oTestOpen
+   Private oSuppCard, oSuppOpen
+   Private m_lTestAdapterIndex, m_lSuppAdapterIndex
+   
+   Private Sub Class_Initialize
+      
+   End Sub
+   
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+      Set oTestOpen = Nothing
+      
+      Set oSuppCard = Nothing
+      Set oSuppOpen = Nothing
+   End Sub
+   
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+      
+      Set pAdapterList = oNDInfo.AdapterList
+      
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oTestOpen = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpen is Nothing) Then
+         Exit Function
+      End If
+      
+      oLog.Variation ("Setting up Support Adapter")
+      Set oSuppCard = New CLanCard
+      If (oSuppCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oSuppOpen = oSuppCard.vbSetupBasicTest(pAdapterList (m_lSuppAdapterIndex))
+      If (oSuppOpen is Nothing) Then
+         Exit Function
+      End If
+      
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+               
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")           
+         If(vbAssociateWep(oTestOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If	
+         
+         oLog.Variation ("Associating support device with " & NDTESTAP2 & " ...")       
+         If(vbAssociateWep(oSuppOpen, NDTESTAP2) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate support device with " & NDTESTAP2, 88888
+            Exit Function
+         End If	
+                           
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+      
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+   
+   Public Function RunTest (lTestAdapterIndex, lSuppAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      m_lSuppAdapterIndex = lSuppAdapterIndex
+      
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+      
+      ExecuteTestCore
+      
+   End Function
+   
+   Private Function ExecuteTestCore
+      Dim nTestId
+      Dim nCount
+      
+      Dim bResult
+      Dim bForceNdis30
+      
+      Dim nReceiveDelay                  ' set depending on the media
+      nReceiveDelay = 150                ' Initial, will be actually queried for
+      
+      Dim nMaxPacketSize
+      
+      Dim arrIterations(5)
+      Dim arrPacketSize(5)
+      Dim arrOptionMask(5)
+      
+      oLog.Variation("Setup IP Related Information for Test and support Card")
+      bResult = SetupTestForIP(oTestOpen, m_lTestAdapterIndex, oSuppOpen, m_lSuppAdapterIndex)
+      If(Not bResult) Then
+         Exit Function
+      End If
+      
+      oLog.Variation("Setup Instances")
+      
+      nTestId = oNDTSupp.Random(1, 32765)
+      
+      oTestOpen.vbSetChannelId(nTestId)
+      oSuppOpen.vbSetChannelId(nTestId)
+      
+      oTestOpen.vbSetReceiveOption(RECEIVE_DEFAULT)
+      oSuppOpen.vbSetReceiveOption(RECEIVE_DEFAULT)
+      
+      Dim nTestMaxPacketSize, nSupportMaxPacketSize
+      
+      nTestMaxPacketSize = oTestOpen.vbGetMaxPacketSize()
+      nSupportMaxPacketSize = oSuppOpen.vbGetMaxPacketSize()
+      If (nTestMaxPacketSize > nSupportMaxPacketSize) Then
+         nMaxPacketSize = nTestMaxPacketSize
+      Else
+         nMaxPacketSize = nSupportMaxPacketSize
+      End If
+      
+      If (Not oTestOpen.vbSetPacketFilter(DIRECTED)) Then
+         Exit Function
+      End If
+      
+      
+      If (Not oSuppOpen.vbSetPacketFilter(DIRECTED)) Then
+         Exit Function
+      End If
+      
+      '
+      ' Setup variables for all the tests...
+      '
+      
+      '
+      '
+      arrIterations(0)  = 10000
+      arrPacketSize(0)  = nMaxPacketSize
+      arrOptionMask(0)  = STRESS_RANDOMSIZE Or STRESS_RAND Or STRESS_ACK Or STRESS_WINDOWING_ON
+      
+      '
+      '
+      arrIterations(1)  = 40000 / nMaxPacketSize
+      arrPacketSize(1)  = nMaxPacketSize
+      arrOptionMask(1)  = STRESS_CYCLICAL Or STRESS_RAND Or STRESS_FULLRESP Or STRESS_WINDOWING_ON
+      
+      '
+      '
+      arrIterations(2)  = 10000
+      arrPacketSize(2)  = 256
+      arrOptionMask(2)  = STRESS_RANDOMSIZE Or STRESS_RAND Or STRESS_ACK10 Or STRESS_WINDOWING_ON
+      
+      '
+      '
+      arrIterations(3)  = 10000
+      arrPacketSize(3)  = nMaxPacketSize
+      arrOptionMask(3)  = STRESS_RANDOMSIZE Or STRESS_RAND Or STRESS_NORESP Or STRESS_WINDOWING_OFF
+      
+      '
+      '
+      arrIterations(4)  = 10000
+      arrPacketSize(4)  = nMaxPacketSize
+      arrOptionMask(4)  = STRESS_RANDOMSIZE Or STRESS_RAND Or STRESS_FULLRESP Or STRESS_WINDOWING_OFF
+      
+      '
+      ' Now run the tests, test adapter will act as the client
+      '
+      nCount = 0
+      While (nCount < 5)
+         oLog.Variation("Stress Test - test adapter as server" & vblf)
+         
+         bResult = oSuppOpen.vbStartStress(oTestOpen, arrPacketSize(nCount), arrOptionMask(nCount), arrIterations(nCount), 0)
+         If (bResult) Then
+            bResult = oSuppOpen.vbWaitStress()
+            If (bResult) Then
+               bResult = oSuppOpen.vbGetStressResults()
+               If (Not bResult) Then
+                  Call oLog.Failed ("Unable to get stress results from the support adapter." , 21230)
+               End If
+            Else
+               Call oLog.Failed ("Unable to WaitStress on the support adapter." , 21231)
+            End If
+         Else
+            Call oLog.Failed ("Unable to start stress on the support adapter." , 21232)
+         End If
+         
+         Call oTestOpen.vbClearEvents()
+         Call oSuppOpen.vbClearEvents()
+         
+         nCount = nCount + 1
+      WEnd
+      
+      
+   End Function
+End Class
+
+</script>
+</job>
+</package>
+
+
+
+
+<!--- CRC = 0x292d9591 --->

@@ -1,0 +1,8 @@
+DIRS= \
+     genprint \
+     mini \
+     monitors \
+     msplot \
+     oemdll \
+     pp \
+     tty

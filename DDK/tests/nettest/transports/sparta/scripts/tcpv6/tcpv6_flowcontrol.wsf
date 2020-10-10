@@ -1,0 +1,768 @@
+'
+' File          : TCPv6_FlowControl.wsf
+' Author        : Sandeep Prabhu [5/14/01]
+'
+' A script to test slow-start, fast rexmit and congestion avoidance
+'
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\common\IPv6Common.Lib"/>
+      <script language="VBScript" src="..\common\TCPv6Helper.Lib"/>
+      <script id="TCPv6_FlowControl" language="VBScript">
+
+
+option explicit
+    
+Dim Core, Sparta, Autosrv, MediaType, AutoArpObject, IFace, pControllerObj, ExceptionStatus
+
+Const FR_CA          =  "FastRexmit_CongestionAvoidance"
+Const TO_SS_CA       =  "Timeout_SlowStart_CongestionAvoidance"
+Const FR_FR_CA       =  "FastRexmit_FastRexmit_CongestionAvoidance"
+Const FR_DUPACKS_CA  =  "FastRexmit_DupAcks_CongestionAvoidance"
+ 
+'
+' Start the script
+'           
+StartScript "TCPv6_FlowControl", g_szLogDirectory, "Tests for TCP flow control algorithms" 
+
+
+' ==================================================================================================
+' Main routine
+' ==================================================================================================
+Sub Main
+
+   Core.SetAssertionTracking "80500"
+   '/**
+   ' @area name="Offload Compliance Test Assertions"
+   ' @group name="TCP Flow Control Test Assertions"
+   ' @group name="Slow Start, Fast Retransmit and Congestion Avoidance Assertions" 
+   ' @define name="Offload" Offload Compliance Test Assertions
+   ' @define name="TCPFC" TCP Flow Control Test Assertions
+   ' @define name="SFCv6" Slow Start, Fast Retransmit and Congestion Avoidance Assertions for TCP/IP v6
+   ' @hierarchy Offload TCPFC SFCv6
+   ' @key Reference="WLP# - x.x.x.x; RFC-1122 Sections 4.2.2.15, 4.2.2.21; RFC-793 Section 3.9"
+   ' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+   ' @key TestName="TCPV6 Flow Control-Slow Start, Fast Retransmit and Congestion Avoidance Tests"
+   ' @key TestLog="TCPv6_FlowControl.log"
+   '*/
+
+
+   '/**
+   ' @test name="The stack must do Slow Start, Congestion Avoidance and rexmit happen on a TO in TCP ESTABLISHED State"
+   ' Verify TCP start with slow start: When a new connection is established with a host on another network, the congestion window is initialized . 
+   ' Each time an ACK is received, the congestion window is increased by one segment.  
+   ' Verify TCP followed with congestion avoidance.
+   ' Verify TCP rexmit happen on a TO.
+   '*/
+   Core.StartTest "ESTD: Slow start and congestion avoidance after rexmit on TO"
+   FlowControl TRUE, TO_SS_CA 
+   Core.EndTest
+   Core.Sleep 2500
+   
+
+   '/**
+   ' @test name="The stack must do Slow Start, Congestion Avoidance and rexmit happen on a TO in TCP CLOSE_WAIT State"
+   ' Verify TCP start with slow start: When a new connection is established with a host on another network, the congestion window is initialized . 
+   ' Each time an ACK is received, the congestion window is increased by one segment.  
+   ' Verify TCP followed with congestion avoidance.
+   ' Verify TCP rexmit happen on a TO.
+   '*/
+   Core.StartTest "CLOSE_WAIT: Slow start and congestion avoidance after rexmit on TO"
+   FlowControl FALSE, TO_SS_CA 
+   Core.EndTest
+   Core.Sleep 2500
+      
+
+   '/**
+   ' @test name="The stack must do Fast Rexmit and congestion avoidance after 3 dup ACKs in TCP ESTABLISHED State"
+   ' Verify TCP start with slow start: When a new connection is established with a host on another network, the congestion window is initialized .
+   ' Each time an ACK is received, the congestion window is increased by one segment.
+   ' Verify if 3 dup ACKs are received, TCP do a fast rexmit, window drops to 1/2. 
+   ' Verify TCP followed with congestion avoidance.
+   '*/
+   Core.StartTest "ESTD: Fast Rexmit and congestion avoidance after 3 dup ACKs"
+   FlowControl TRUE, FR_CA 
+   Core.EndTest
+   Core.Sleep 2500
+
+   '/**
+   ' @test name="The stack must do Fast Rexmit and congestion avoidance after 3 dup ACKs in TCP CLOSE_WAIT State"
+   ' Verify TCP start with slow start: When a new connection is established with a host on another network, the congestion window is initialized .
+   ' Each time an ACK is received, the congestion window is increased by one segment.
+   ' Verify if 3 dup ACKs are received, TCP do a fast rexmit, window drops to 1/2. 
+   ' Verify TCP followed with congestion avoidance.
+   '*/
+   Core.StartTest "CLOSE_WAIT: Fast Rexmit and congestion avoidance after 3 dup ACKs"
+   FlowControl FALSE, FR_CA 
+   Core.EndTest
+   Core.Sleep 2500
+
+   '/**
+   ' @test name="The stack must do Multiple Fast Retransmit and Congestion Avoidance in TCP ESTABLISHED State"
+   ' Verify TCP start with slow start: When a new connection is established with a host on another network, the congestion window is initialized .
+   ' Each time an ACK is received, the congestion window is increased by one segment.
+   ' Verify if 3 dup ACKs are received, TCP do a fast rexmit, window drops to 1/2. 
+   ' Verify TCP followed with congestion avoidance.
+   '*/
+   Core.StartTest "ESTD: Multiple Fast Rexmit and congestion avoidance"
+   FlowControl TRUE, FR_FR_CA 
+   Core.EndTest
+   Core.Sleep 2500
+
+   '/**
+   ' @test name="The stack must do Multiple Fast Retransmit and Congestion Avoidance in TCP CLOSE_WAIT State"
+   ' Verify TCP start with slow start: When a new connection is established with a host on another network, the congestion window is initialized .
+   ' Each time an ACK is received, the congestion window is increased by one segment.
+   ' Verify if 3 dup ACKs are received, TCP do a fast rexmit, window drops to 1/2. 
+   ' Verify TCP followed with congestion avoidance.
+   '*/
+   '*/
+   Core.StartTest "CLOSE_WAIT: Multiple Fast Rexmits and congestion avoidance"
+   FlowControl FALSE, FR_FR_CA 
+   Core.EndTest
+   Core.Sleep 2500
+
+   '/**
+   ' @test name="The stack must do Fast Retransmit and ssthresh do not change in TCP ESTABLISHED State"
+   ' Verify TCP start with slow start: When a new connection is established with a host on another network, the congestion window is initialized .
+   ' Each time an ACK is received, the congestion window is increased by one segment.  
+   ' Verify if 3 dup ACKs are received, TCP do a fast rexmit, window drops to 1/2. 
+   ' Verify ssthresh do not change.
+   '*/
+   Core.StartTest "ESTD: Dup Acks after fast rexmit don't change ssthresh"
+   FlowControl TRUE, FR_DUPACKS_CA 
+   Core.EndTest
+   Core.Sleep 2500
+   
+   '/**
+   ' @test name="The stack must do Fast Retransmit and ssthresh do not change in TCP CLOSE_WAIT State"
+   ' Verify TCP start with slow start: When a new connection is established with a host on another network, the congestion window is initialized .
+   ' Each time an ACK is received, the congestion window is increased by one segment.  
+   ' Verify if 3 dup ACKs are received, TCP do a fast rexmit,window drops to 1/2. 
+   ' Verify ssthresh do not change.
+   '*/   
+   Core.StartTest "CLOSE_WAIT: Dup Acks after fast rexmit don't change ssthresh"
+   FlowControl FALSE, FR_DUPACKS_CA 
+   Core.EndTest
+   Core.Sleep 2500
+End Sub
+
+'
+' A routine to test the following
+'     - slow start and open up window fully
+'        - fast rexmit happens on third dup ACK, window drops to 1/2
+'        - timeout drops window to 2MSS, then slow start till window raised to 1/2
+'     - congestion avoidance done open up window fully
+'     - verify the size of the fully open window
+'
+Sub FlowControl(bEstd, TestType)
+   Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim ulBytesRcvd, pPacket, AutoNDObject, pIFace, ulSendSize, usWindowSize, ulCWnd   
+   Dim ulExpectedAckNumber, ulCounter, fFlag
+
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 15000
+   usDestPort = 15001
+   usWindowSize = 10*DEFAULT_MSS
+   fFlag = FALSE
+
+   Core.StartVariation
+
+   Set AutoNDObject = Sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, g_szLocalSpoofIp6Address, FALSE)    
+   Set pIFace = CreateInterface(TRUE, g_szRemoteMacAddress, g_szRemoteIp6Address, g_szLocalSpoofIp6Address)
+   pIFace.StartListening
+           
+   
+   '
+   ' Esatablish a TCP connection
+   '
+   ulStatus = ActiveConnectEx(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId, usWindowSize, pIFace)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "FlowControl: ActiveConnectEx - " & ulStatus
+      exit sub
+   end if
+   
+   '
+   ' do loop used to get around using goto
+   '
+   do
+   
+      if (bEstd = FALSE) then
+         '
+         ' Send a FIN
+         '
+         Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, (TCP_FIN or TCP_ACK), 0)
+         pPacket.TCPHeader.WindowSize = usWindowSize
+         IFace.Send(pPacket)
+   
+   
+         '
+         ' Receive an ACK
+         '
+         Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 200, pIFace) 
+         if (pPacket is Nothing) then
+            Core.BlockVariation "FlowControl: Didn't receive an ACK for FIN-ACK"
+            exit do
+         end if
+      end if
+   
+      '
+      ' Check the slow start behavior and open up the window fully
+      '
+      ulCWnd = 2*DEFAULT_MSS
+      ulSendSize = 54*DEFAULT_MSS
+      ulStatus = pControllerObj.Send(ulSessionId, 1, 0, ulSendSize, ulTID)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "FlowControl: Send - " & ulStatus
+         exit do
+      end if
+      
+      ulStatus = VerifySlowStartEx(TRUE, ulSeqNumber, ulAckNumber, DEFAULT_MSS, usWindowSize, ulSendSize, ulCWnd, pIFace)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "FlowControl: VerifySlowStartEx - " & ulStatus
+         exit do
+      end if
+      ulCWnd = Clng(10*DEFAULT_MSS)
+      
+      'Msgbox("Verified slow start. CWin = " & ulCWnd)
+   
+      if ((TestType = FR_CA) OR (TestType = FR_FR_CA)) then    
+         '
+         ' Check the fast rexmit behavior
+         '
+         Core.StartVariation
+         ulStatus = FastRexmitExact(usWindowSize, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber, pIFace)
+         if (ulStatus = 1) then
+            Core.BlockVariation "FlowControl: FastRexmitExact - " & ulStatus
+            exit do
+         elseif (ulStatus <> 0) then
+            Core.FailSev1Variation "FlowControl: FastRexmitExact - " & ulStatus
+            Core.log "COMMENT: 367431	FastTrack: TCPv6: Stack doesn't do fast retransmission on receiving duplicate ACKs"
+            exit do
+         end if
+         ulCWnd = Clng(ulCWnd/2)   
+         
+         if (TestType = FR_FR_CA) then
+            '
+            ' Check the fast rexmit behavior
+            '
+            Core.StartVariation
+            ulStatus = FastRexmitExact(usWindowSize, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber, pIFace)
+            if (ulStatus = 1) then
+               Core.BlockVariation "FlowControl: FastRexmitExact - " & ulStatus
+               exit do
+            elseif (ulStatus <> 0) then
+               Core.FailSev1Variation "FlowControl: FastRexmitExact - " & ulStatus
+               Core.log "COMMENT: 367431	FastTrack: TCPv6: Stack doesn't do fast retransmission on receiving duplicate ACKs"
+               exit do
+            end if
+            ulCWnd = Clng(ulCWnd/2)   
+         end if
+      elseif (TestType = TO_SS_CA) then      
+         '
+         ' Have a rexmit happen on a TO
+         '
+         fFlag = TRUE
+         Core.StartVariation
+         ulStatus = pControllerObj.Send(ulSessionId, 1, 0, DEFAULT_MSS, ulTID)
+         if (ulStatus <> 0) then
+            Core.BlockVariation "FlowControl: Send - " & ulStatus
+            exit do
+         end if
+   
+         '
+         ' Receive the packet and its rexmit
+         '
+         ulExpectedAckNumber = ulAckNumber
+         For ulCounter = 1 to 2
+            Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 5000, pIFace)
+            if (pPacket is Nothing) then
+               Core.FailSev1Variation "FlowControl: Didn't receive the data packet"
+               exit do
+            elseif ((pPacket.TcpHeader.SeqNumber <> ulExpectedAckNumber) or (ulBytesRcvd <> DEFAULT_MSS)) then
+               Core.FailSev1Variation "FlowControl: Incorrect packet - " & Hex(pPacket.TcpHeader.SeqNumber) & " <> " & Hex(ulExpectedAckNumber) & ", " & ulBytesRcvd
+               exit do
+            end if
+         Next
+   
+         '
+         ' Send an ACK
+         '
+         Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+         pPacket.TCPHeader.WindowSize = usWindowSize
+         IFace.Send(pPacket)
+         ulCWnd = 2*DEFAULT_MSS
+   
+      
+         '
+         ' Check the slow start behavior and open up the window fully
+         '
+         Core.StartVariation
+         ulSendSize = 14*DEFAULT_MSS
+         ulStatus = pControllerObj.Send(ulSessionId, 1, 0, ulSendSize, ulTID)
+         if (ulStatus <> 0) then
+            Core.BlockVariation "FlowControl: Send - " & ulStatus
+            exit do
+         end if
+         
+         ulStatus = VerifySlowStartEx(TRUE, ulSeqNumber, ulAckNumber, DEFAULT_MSS, usWindowSize, ulSendSize, ulCWnd, pIFace)
+         if (ulStatus <> 0) then
+            Core.BlockVariation "FlowControl: VerifySlowStartEx - " & ulStatus
+            exit do
+         end if
+         ulCWnd = 5*DEFAULT_MSS
+         
+         fFlag = TRUE
+      elseif (TestType = FR_DUPACKS_CA) then
+         '
+         ' Check the fast rexmit behavior
+         '
+         Core.StartVariation
+         ulStatus = FastRexmit(ulCWnd, usWindowSize, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber, pIFace)
+         if (ulStatus = 1) then
+            Core.BlockVariation "FlowControl: FastRexmit - " & ulStatus
+            exit do
+         elseif (ulStatus <> 0) then
+            Core.FailSev1Variation "FlowControl: FastRexmit - " & ulStatus
+            Core.log "COMMENT: 367431	FastTrack: TCPv6: Stack doesn't do fast retransmission on receiving duplicate ACKs"
+            exit do
+         end if
+         ulCWnd = Clng(ulCWnd/2)   
+      end if
+      
+      '
+      ' Check the congestion avoidance
+      '
+      Core.StartVariation
+      ulStatus = CongestionAvoidance(fFlag, ulCWnd, usWindowSize, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber, pIFace)
+      if (ulStatus = 1) then
+         Core.BlockVariation "FlowControl: CongestionAvoidance - " & ulStatus
+         exit do
+      elseif (ulStatus <> 0) then
+         Core.FailSev1Variation "FlowControl: CongestionAvoidance - " & ulStatus
+         exit do
+      end if
+      ulCWnd = usWindowSize
+            
+      '
+      ' Verify the window is fully open
+      '
+      Core.StartVariation
+      ulSendSize = usWindowSize + DEFAULT_MSS
+      ulStatus = pControllerObj.Send(ulSessionId, 1, 0, ulSendSize, ulTID)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "FlowControl: Send - " & ulStatus
+         exit do
+      end if
+      
+      ulStatus = VerifySlowStartEx(TRUE, ulSeqNumber, ulAckNumber, DEFAULT_MSS, usWindowSize, ulSendSize, ulCWnd, pIFace)
+      if (ulStatus <> 0) then
+         Core.FailSev1Variation "FlowControl: VerifySlowStartEx - " & ulStatus
+         exit do
+      end if
+   loop while (FALSE)
+
+   '
+   ' Reset the connection
+   '
+   ulStatus = ResetConnectionEx(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.log "ERROR: FlowControl: ResetConnectionEx - " & ulStatus
+   end if
+End Sub
+
+
+
+'************************************************************************************
+'                                   Helper functions
+'************************************************************************************             
+
+'
+' Function to make the stack initiate a connection
+'
+Function ActiveConnectEx(usSrcPort, usDestPort, szSrcAddress, ulSeqNumber, ulAckNumber, ulSessionId, usWindowSize, pIFace)
+   Dim pPacket, ulTID, ulBytesRcvd, ulStatus
+   
+   '
+   ' Make the stack issue a connect & grab the SYN
+   '
+   Set pPacket = RecvSyn(usSrcPort, usDestPort, szSrcAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace, ulTID)
+   if (pPacket is Nothing) then
+      Core.log "ActiveConnectEx: Failed to receive a SYN"
+      ActiveConnectEx = 1
+      exit function
+   end if 
+
+   '
+   ' Send a SYN-ACK
+   '
+   Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_SYN or TCP_ACK, szSrcAddress)
+   pPacket.IpHeader.SourceAddress = szSrcAddress
+   pPacket.TcpHeader.TcpOption(0).AddMSS DEFAULT_MSS
+   if Not(IsNull(usWindowSize)) then
+      pPacket.TcpHeader.WindowSize = usWindowSize
+   end if
+   pIFace.Send(pPacket)
+   
+   '
+   ' Receive the ACK
+   ' 
+   Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 1000, pIFace) 
+   if Not(pPacket is Nothing) then
+      ActiveConnectEx = 0
+      '
+      ' Check if connection is offloaded
+      '
+      If Not IsConnectionOffloaded(usSrcPort, usDestPort, szSrcAddress, g_szRemoteIp6Address, ulSessionId) and g_fTestOffload And g_fTOENic Then
+         Core.Log "ActiveConnectEx : Failed to offload the connection"
+         ActiveConnectEx = 3
+         ResetConnectionEx usSrcPort, usDestPort, szSrcAddress, ulSeqNumber, ulAckNumber, ulSessionId
+      End If
+      exit function
+   end if 
+   
+   '
+   ' Reset the connection
+   '  
+   Core.log "ActiveConnectEx: Failed to receive an ACK"
+   ulStatus = ResetConnectionEx(usSrcPort, usDestPort, szSrcAddress, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.log "ERROR: ActiveConnectEx: ResetConnectionEx - " & ulStatus
+   end if
+   ActiveConnectEx = 2
+   
+End Function
+
+'
+' Function to verify the stack obeys slow start
+'
+Function VerifySlowStartEx(fLongInitialTO, ulSeqNumber, ulAckNumber, ulMSS, ulWindowSize, ulBytesSent, ulStartCWin, pIFace)
+   Dim ulExpectedCWin, ulTotalBytesRcvd, ulBytesRcvd, pPacket, ulTmpBytesRcvd, szSrcAddress
+   Dim usSrcPort, usDestPort, ulTimeout, ulStatus
+
+   ulExpectedCWin = ulStartCWin
+   ulTotalBytesRcvd = 0   
+   
+   ulTimeout = 200
+   if (fLongInitialTO) then
+      ulTimeout = 5000
+   end if
+   
+   do
+      '
+      ' Receive all the data sent without receiving an ACK
+      '      
+      ulBytesRcvd = 0
+      do 
+         Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulTmpBytesRcvd, TCP_ACK, ulTimeout, pIFace)   
+         If ((pPacket is Nothing) Or (ulTmpBytesRcvd = 0)) then
+            exit do
+         end if
+         ulBytesRcvd = ulBytesRcvd + ulTmpBytesRcvd
+         usSrcPort = pPacket.TCPHeader.DestPort
+         usDestPort = pPacket.TCPHeader.SrcPort
+         szSrcAddress = pPacket.IpHeader.DestAddress
+         ulTimeout = 200
+      loop while Not(pPacket is Nothing)      
+      
+      ulTotalBytesRcvd = ulTotalBytesRcvd + ulBytesRcvd
+
+      '
+      ' Check we received data as per the current CWin settings. 
+      ' We should never receive more than the expected CWin and the only case where we can
+      ' receive less than the expected CWin is when there is not enough data sent
+      '
+      if (ulBytesRcvd > ulExpectedCWin) then
+         Core.log "ERROR: VerifySlowStartEx: Incorrect byte count " & ulBytesRcvd & " > " & ulExpectedCWin
+         VerifySlowStartEx = 1
+         exit function
+      elseif ((ulBytesRcvd < ulExpectedCWin) AND (ulTotalBytesRcvd <> ulBytesSent)) then      
+         Core.log "ERROR: VerifySlowStartEx: Incorrect byte count " & ulBytesRcvd & " < " & ulExpectedCWin
+         VerifySlowStartEx = 2
+         exit function
+      end if
+      
+      '
+      ' Send an ACK
+      '      
+      Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+      pPacket.IPHeader.SourceAddress = szSrcAddress
+      pPacket.TCPHeader.WindowSize = ulWindowSize
+      IFace.Send(pPacket)
+      
+      '
+      ' Update the expected CWIn
+      '
+      if ((ulExpectedCWin+ulMSS) <= ulWindowSize) then
+         ulExpectedCWin = ulExpectedCWin + ulMSS
+      end if
+   loop while (ulTotalBytesRcvd < ulBytesSent)
+   
+   VerifySlowStartEx = 0
+End Function
+
+'
+' Function to test the fast rexmit behavior - ensure that the third dup ACK causes a
+' rexmit of the packet
+'
+Function FastRexmitExact(ulWindowSize, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber, pIFace)
+   Dim ulStatus, ulTID, pACKPacket, pTCPPacket, ulBytesRcvd, ulTimeout, ulCounter, ulLastAckNumber
+
+   '
+   ' Ask Autosrv to do a send of 2 segments
+   '
+   ulStatus = pControllerObj.Send(ulSessionId, 1, 0, DEFAULT_MSS*2, ulTID)
+   if (ulStatus <> 0) then
+      Core.Log "FastRexmitExact: Send - " & ulStatus
+      FastRexmitExact = 1
+      exit function
+   end if
+
+   Set pACKPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+   pACKPacket.TCPHeader.WindowSize = ulWindowSize
+
+   '
+   ' Start receiving the data and verifying the fast rexmit behavior
+   '
+   ulTimeout = 5000
+   For ulCounter = 1 to 2
+      '
+      ' Receive a packet
+      '
+      Set pTCPPacket = RecvTCPPacketEx(ulSeqNumber, ulLastAckNumber, ulBytesRcvd, TCP_ACK, ulTimeout, pIFace)   
+      if (pTCPPacket is Nothing) then
+         Core.log "FastRexmitExact: Didn't receive data packet - " & ulCounter
+         FastRexmitExact = 2
+         exit function
+      end if
+
+      '
+      ' Resend the last ACK
+      '
+      Dim ulDataLength
+      ulAckNumber = pTCPPacket.TCPHeader.SeqNumber + ulBytesRcvd
+      IFace.Send(pACKPacket)
+   Next
+
+   '
+   ' Receive the rexmit
+   '
+   Set pTCPPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 100, pIFace)   
+   if (pTCPPacket is Nothing) then
+      Core.log "FastRexmitExact: Didn't receive fast rexmitted packet"
+      FastRexmitExact = 3
+      exit function
+   end if
+   if (pTCPPacket.TCPHeader.SeqNumber <> pACKPacket.TCPHeader.AckNumber) then
+      Core.log "FastRexmitExact: Incorrect rexmit - " & pTCPPacket.TCPHeader.SeqNumber & " <> " & pACKPacket.TCPHeader.AckNumber
+      FastRexmitExact = 4
+      exit function
+   end if
+
+   '
+   ' Ack the entire data
+   '   
+   ulAckNumber = ulLastAckNumber
+   pACKPacket.TCPHeader.AckNumber = ulLastAckNumber
+   IFace.Send(pACKPacket)
+
+   FastRexmitExact = 0
+End Function
+
+'
+' Function to test congestion avoidance
+'
+Function CongestionAvoidance(fFirstAckSent, ulCWnd, ulWindowSize, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber, pIFace)
+   Dim ulStatus, ulTID, pACKPacket, pTCPPacket, ReceiveTimer
+   Dim ulBytesRcvd, ulReceiveTO, bFirst, bPreRexmit, ulTotalBytesRcvd, ulSendDataSize
+   Dim ulCurrentCWin, ulFactor, ulBytesExpected, ulNumBytesRcvd, ulNextAckNumber
+   Dim ulTimeout, ulTmpAckNumber
+   
+   'Core.log "Start CWin = " & ulCWnd
+   
+   '
+   ' Calculate the send data size
+   '
+   ulSendDataSize = ulCWnd - DEFAULT_MSS
+   ulCurrentCWin = ulCWnd
+   do while (ulCurrentCWin < ulWindowSize)
+      ulSendDataSize = ulSendDataSize + ulCurrentCWin + 2*DEFAULT_MSS
+      ulCurrentCWin = ulCurrentCWin + DEFAULT_MSS
+   loop
+
+   '
+   ' Start receiving the data
+   '
+   ulTotalBytesRcvd = 0
+   ulFactor = Clng(ulCWnd/DEFAULT_MSS) + 1
+   ulReceiveTO = 500   
+   ulBytesExpected = ulCWnd
+   if (ulBytesExpected <> ((ulFactor-1)*DEFAULT_MSS)) then
+      ulBytesExpected = (ulFactor-1)*DEFAULT_MSS
+   end if
+   Set pACKPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+   pACKPacket.TCPHeader.WindowSize = ulWindowSize
+   ulNextAckNumber = ulAckNumber
+   ulCurrentCWin = ulCWnd
+   if (fFirstAckSent) then
+      ulCurrentCWin = ulCurrentCWin + Clng(DEFAULT_MSS*DEFAULT_MSS/ulCWnd)
+   end if      
+
+
+   '
+   ' Ask Autosrv to do a huge send
+   '
+   ulStatus = pControllerObj.Send(ulSessionId, 1, 0, ulSendDataSize, ulTID)
+   if (ulStatus <> 0) then
+      Core.Log "CongestionAvoidance: Send - " & ulStatus
+      CongestionAvoidance = 1
+      exit function
+   end if
+   
+
+   ulTimeout = 5000
+   While (ulTotalBytesRcvd <> ulSendDataSize)
+      '
+      ' Receive data till timeout happens
+      '
+      ulNumBytesRcvd = 0
+      do
+         Dim ulDataLength
+         Set pTCPPacket = RecvTCPPacketEx(ulSeqNumber, ulTmpAckNumber, ulBytesRcvd, TCP_ACK, ulTimeout, pIFace)   
+         if not (pTCPPacket is nothing) then
+            if (pTCPPacket.TCPHeader.SeqNumber <> ulAckNumber) then
+               Core.log "CongestionAvoidance: Incorrect packet received " & Hex(pTCPPacket.TCPHeader.SeqNumber) & " <> " & Hex(ulAckNumber)
+               CongestionAvoidance = 2
+               exit function
+            end if
+            ulAckNumber = ulAckNumber + ulBytesRcvd
+            ulNumBytesRcvd = ulNumBytesRcvd + ulBytesRcvd
+         end if
+         ulTimeout = 200
+      loop while Not (pTCPPacket is Nothing)
+
+                                                     
+      ulTotalBytesRcvd = ulTotalBytesRcvd + ulNumBytesRcvd
+
+      '
+      ' Ensure the amount of data received is as expected
+      '
+      if (ulNumBytesRcvd <> ulBytesExpected) then
+         Core.Log "CongestionAvoidance: Didn't receive expected data - " & ulNumBytesRcvd & " <> " & ulBytesExpected
+         CongestionAvoidance = 3
+         exit function
+      end if
+
+      '
+      ' Send an ACK for the appropriate packet
+      '
+      if (ulTotalBytesRcvd = ulSendDataSize) then
+         ulNextAckNumber = ulAckNumber
+      else
+         ulNextAckNumber = ulNextAckNumber + DEFAULT_MSS
+      end if
+      pACKPacket.TCPHeader.AckNumber = ulNextAckNumber
+      pIFace.Send(pACKPacket)
+      
+      '
+      ' Calculate the new values for CWin and bytes expected
+      '
+      ulCurrentCWin = ulCurrentCWin + Clng(Fix(DEFAULT_MSS*(DEFAULT_MSS/ulCurrentCWin)))
+      'Core.log "CWin = " & ulCurrentCWin
+      ulBytesExpected = DEFAULT_MSS
+      if ((ulTotalBytesRcvd+DEFAULT_MSS) > ulSendDataSize) then
+         ulBytesExpected = ulSendDataSize - ulTotalBytesRcvd
+      end if
+      if (ulCurrentCWin >= (ulFactor*DEFAULT_MSS)) then
+         ulBytesExpected = 2*DEFAULT_MSS
+         ulFactor = ulFactor + 1
+      end if
+   Wend
+   
+   CongestionAvoidance = 0
+
+End Function
+
+
+'
+' Function to test the fast rexmit behavior
+'
+Function FastRexmit(ulCWnd, ulWindowSize, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber, pIFace)
+   Dim ulStatus, ulTID, pACKPacket, pTCPPacket, ReceiveTimer
+   Dim ulBytesRcvd, ulReceiveTO, bFirst, bPreRexmit, ulTotalBytesRcvd, ulSendDataSize
+   Dim ulTimeout, ulDupAckNumber, ulTmpAckNumber
+
+   '
+   ' Ask Autosrv to do a huge send - max allowed by CWin
+   '
+   ulSendDataSize = ulCWnd
+   ulStatus = pControllerObj.Send(ulSessionId, 1, 0, ulSendDataSize, ulTID)
+   if (ulStatus <> 0) then
+      Core.Log "FastRexmit: Send - " & ulStatus
+      FastRexmit = 1
+      exit function
+   end if
+
+   '
+   ' Start receiving the data and verifying the fast rexmit behavior
+   '
+   bFirst = TRUE
+   bPreRexmit = TRUE
+   ulReceiveTO = 400
+   Set pACKPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+   pACKPacket.TCPHeader.WindowSize = ulWindowSize
+   ulTotalBytesRcvd = 0
+   ulDupAckNumber = ulAckNumber
+   ulTimeout = 5000
+   do while ((ulTotalBytesRcvd <> ulSendDataSize) OR (bPreRexmit = TRUE))
+      '
+      ' Receive a packet
+      '
+      Set pTCPPacket = RecvTCPPacketEx(ulSeqNumber, ulTmpAckNumber, ulBytesRcvd, TCP_ACK, ulTimeout, pIFace)   
+      if (pTCPPacket is Nothing) then
+         Core.log "FastRexmit: Didn't receive data packet"
+         FastRexmit = 2
+         exit function
+      end if
+      ulTimeout = 100      
+
+      if ((pTCPPacket.TCPHeader.SeqNumber = ulDupAckNumber) AND (bFirst = FALSE)) then
+         '
+         ' If this is the rexmit, ACK everything till now
+         '
+         pACKPacket.TCPHeader.AckNumber = ulAckNumber + ulTotalBytesRcvd
+         ulAckNumber = ulAckNumber + ulTotalBytesRcvd
+         pIFace.Send(pACKPacket)
+         bPreRexmit = FALSE
+      elseif (bPreRexmit = TRUE) then
+         '
+         ' If this is pre rexmit, resend the ACK
+         '
+         pIFace.Send(pACKPacket)
+         ulTotalBytesRcvd = ulTotalBytesRcvd + ulBytesRcvd
+      else
+         '
+         ' If this is post rexmit, send the ACK for this packet
+         '
+         ulTotalBytesRcvd = ulTotalBytesRcvd + ulBytesRcvd
+         ulAckNumber = pTCPPacket.TCPHeader.SeqNumber + ulBytesRcvd
+         pACKPacket.TCPHeader.AckNumber = pTCPPacket.TCPHeader.SeqNumber + ulBytesRcvd
+         pIFace.Send(pACKPacket)
+      end if
+      bFirst = FALSE
+   loop
+   
+   FastRexmit = 0
+End Function
+
+
+
+      </script>
+   </job>
+</package>

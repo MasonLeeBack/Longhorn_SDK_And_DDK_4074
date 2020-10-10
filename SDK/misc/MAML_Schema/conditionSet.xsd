@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<schema 
+        xmlns="http://www.w3.org/2001/XMLSchema"
+        xmlns:maml="http://schemas.microsoft.com/maml/2003/5"
+		xmlns:doc="http://schemas.microsoft.com/maml/internal"
+        targetNamespace="http://schemas.microsoft.com/maml/2003/5" 
+        blockDefault="#all" 
+        elementFormDefault="qualified" 
+        attributeFormDefault="unqualified"
+        xml:lang="en"
+    >
+
+    <!-- Schema documentation -->
+    <annotation>
+        <documentation>
+            This schema describes MAML, the Microsoft Assistance Markup Language.
+            MAML is intended for software documentation. In particular, it is 
+            intended to accomodate the needs of Microsoft documentation.
+        </documentation>
+        <documentation>
+            The schema is broken into three main areas: end user, developer and
+            IT Pro. These areas adequaltely categorize Microsoft
+            documentation.
+        </documentation>
+        <documentation>
+            The namespace uri for this version of MAML is: http://schemas.microsoft.com/maml/2003/5.
+            Each backwards-incompatible revision to MAML will require that the date fields be appropriately
+            incremented in uri of the updated version of the MAML schema.
+        </documentation>
+    </annotation>
+    
+    <include schemaLocation="baseConditional.xsd"/>
+    
+    <!-- *************************************************************************** -->
+    
+    <complexType name="conditionAxisType" mixed="false">
+        <simpleContent>
+            <extension base="token"/>
+        </simpleContent>
+    </complexType>
+    
+    <element name="conditionAxis" type="maml:conditionAxisType">
+        <annotation>
+            <documentation>
+            Provides the axis of a condition.
+            </documentation>
+            <appinfo><doc:localizable>false</doc:localizable></appinfo>
+        </annotation>
+    </element>
+    
+    <complexType name="conditionValueType" mixed="true">
+        <sequence>
+            <any namespace="##any" processContents="skip" minOccurs="0" maxOccurs="unbounded"/>
+        </sequence>
+    </complexType>
+
+    <element name="conditionValue" type="maml:conditionValueType">
+        <annotation>
+            <documentation>
+            Provides the value of a condition.
+            </documentation>
+            <appinfo><doc:localizable>false</doc:localizable></appinfo>
+        </annotation>
+    </element>
+    
+    <complexType name="conditionType" mixed="false">
+        <sequence>
+            <element ref="maml:conditionAxis"/>
+            <element ref="maml:conditionValue" minOccurs="1" maxOccurs="unbounded"/>
+        </sequence>
+    </complexType>
+    
+    <element name="condition" type="maml:conditionType">
+        <annotation>
+            <documentation>
+            Provides the axis and value(s) of a condition.
+            </documentation>
+            <appinfo><doc:localizable>n/a</doc:localizable></appinfo>
+        </annotation>
+    </element>
+    
+    <complexType name="conditionSetType" mixed="false">
+        <sequence>
+            <element ref="maml:platform" minOccurs="0" maxOccurs="unbounded"/>
+            <element ref="maml:programmingLanguage" minOccurs="0" maxOccurs="unbounded"/>
+            <element ref="maml:condition" minOccurs="0" maxOccurs="unbounded"/>
+        </sequence>
+        <attributeGroup ref="maml:addressAttributeGroup"/>
+    </complexType>
+    
+    
+    <element name="conditionSet" type="maml:conditionSetType">
+        <annotation>
+            <documentation>
+            This element is used to hold a set of conditions.
+            </documentation>
+            <appinfo><doc:localizable>false</doc:localizable></appinfo>
+        </annotation>
+    </element>
+    
+    <complexType name="conditionSetsType" mixed="false">
+        <sequence>
+            <element ref="maml:conditionSet" minOccurs="0" maxOccurs="unbounded"/>
+        </sequence>
+    </complexType>
+    
+    <element name="conditionSets" type="maml:conditionSetsType">
+        <annotation>
+            <documentation>
+            This element is used to hold a set of condition sets.
+            </documentation>
+            <appinfo><doc:localizable>false</doc:localizable></appinfo>
+        </annotation>
+    </element>
+
+</schema>

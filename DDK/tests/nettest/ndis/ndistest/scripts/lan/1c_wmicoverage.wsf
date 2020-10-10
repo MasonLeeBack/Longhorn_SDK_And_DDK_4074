@@ -1,0 +1,1828 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, 802_5, FDDI, Irda
+</MEDIA>
+<MEDIA>
+802_3, 802_5, FDDI
+</MEDIA>
+<CARDMACH>
+1C,1M
+</CARDMACH>
+<RUNORDER>
+1240
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[This script tests the querying of driver information using WMI. This
+test first obtains the list of GUID supported by the driver (and by NDIS on behalf
+of the driver). It then attempts to query these GUIDs using WMI. It tries to query/set
+the various exposed guids both as administrator and normal user.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+  <job id="UseCWmi" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oPNPPower" progid="NDTSupp.Setup.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+
+      <!-- Begin Wireless Specific Includes -->
+      <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	   <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	   <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	   <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	   <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+      <!-- End Wireless Specific Includes -->
+
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CIrdaCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CIrdaOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ConstWmi.vbs"/>
+      <script language="VBScript" src="..\inc\CWmi.vbs"/>
+      <script language="VBScript" src="..\inc\DBRead.vbs"/>
+      <script language="VBScript" src="..\inc\Random.vbs"/>
+      <script language="VBScript" src="..\inc\privilegeslib.vbs"/>
+      <script id="UseCWmi" language="VBScript">
+'==========================================================================
+' Script Name:    1c_PrivateWMI.wsf
+'==========================================================================
+Option Explicit
+' Constants for each data type that we need to pass to the ndisrequest calls
+Const STRINGDATA = &H10
+Const ARRAYDATA = &H8
+Const STATDATA = &H4
+Const ADDRESS = &H2
+Const LONGDATA = &H1
+
+' Constants for each query type
+Const QUERYSET = &H3
+Const SET_REQUEST = &H2
+Const QUERY_REQUEST = &H1
+
+' Any other valid value for the above 3 fields is represented as OTHER
+Const OTHER = &H0
+
+' These tell if its an optional or required oid
+Const REQUIRED_OID = &H1
+Const OPTIONAL_OID = &H2
+Const PRIVATE_OID  = &H3
+
+' Constants that tell if we are going to print/modify the data in a WMIRequest
+Const PRINT_DATA = &H1
+Const MODIFY_DATA = &H2
+
+' Constants for the kind of error to flag for the problem
+Const LOG_AS_FAIL = &H4
+Const LOG_AS_WARN = &H2
+Const LOG_AS_WRITE = &H1
+
+' Anything that is invalid. This is any value that does not appear above. This will
+' be used in the file to indicate that this field is not valid in this scenario
+Const INVALID = &H1000
+
+Dim oTestObj
+
+Call Initialize()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0))
+
+Call Terminate ()
+Set oTestObj = Nothing
+
+Class TestObj
+   Dim oWMI
+   Dim oRandom
+   Dim m_lTestAdapterIndex
+   Dim m_strAdapterName
+   Dim m_nMedium
+   Dim m_nPhysicalMedium
+   Dim oRequiredOids
+   Dim oOptionalOids
+   Dim TestCardGUID
+   Dim oTestCard
+   Dim oTestOpen
+   Dim oPrivilegesCtrl
+
+   Private Sub Class_Initialize
+      Set oWMI = New CWMI
+      Set oRequiredOids = New CWmiList
+      Set oOptionalOids = New CWmiList
+      Set oRandom = New CRandomGenerator
+      Set oPrivilegesCtrl = New CPrivilegesCtrl
+   End Sub
+
+   Private Sub Class_Terminate
+      Set oWMI = Nothing
+      Set oRequiredOids = Nothing
+      Set oOptionalOids = Nothing
+      Set oRandom = Nothing
+      Set oPrivilegesCtrl = Nothing
+   End Sub
+
+   Private Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+
+      oLog.Variation ("Setting up WMI connection")
+      If (Not oWmi.Connect("", "root\wmi")) Then
+         Call oLog.Failed ("Unable to connect. Error 0x" & Hex(oWMI.LastWMIError), 88888)
+         Exit Function
+      End If
+
+      Set pAdapterList = oNDInfo.AdapterList
+
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+
+      Set oTestOpen = oTestCard.vbSetupBasicTest (pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpen Is Nothing) Then
+         Exit Function
+      End If
+
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then
+
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")
+         If(vbAssociateWep(oTestOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If
+
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+
+      oLog.Variation ("Collecting required parameters")
+
+      TestCardGUID = pAdapterList(m_lTestAdapterIndex).GUID
+
+      ' Cannot use "pAdapterList(m_lTestAdapterIndex).Description" as it strips certain characters
+      If (Not wsfGetAdapterName(TestCardGUID, m_strAdapterName)) Then
+         Exit Function
+      End If
+
+      m_nMedium = oTestOpen.NdisMedium
+      m_nPhysicalMedium = oTestCard.vbGetPhysicalMedium
+
+      Set pAdapterList = Nothing
+
+      SetupTest = True
+   End Function
+
+   Private Function wsfGetAdapterName(ByVal AdapterGuid, ByRef strAdapterName)
+      Dim oWMIRequest, oWMIBuffer
+
+      wsfGetAdapterName = False
+      oLog.Write ("Using WMI to query for device name corresponding to " & AdapterGuid)
+
+      Set oWMIRequest = New CWMIRequest
+
+      oWMIRequest.ClassName = "MSNdis_EnumerateAdapter"
+      oWMIRequest.RequestType = QUERY_CLASS_INSTANCE_PROPERTIES
+
+      Set oWMIBuffer = New CWMIBuffer
+      oWMIBuffer.PropertyName = "DeviceName"
+      oWMIBuffer.Data = "\DEVICE\" & AdapterGuid
+      oWMIBuffer.DataType = wbemCimtypeString
+      oWMIRequest.PushInBuffer(oWMIBuffer)
+
+      Set oWMIBuffer = New CWMIBuffer
+      oWMIBuffer.PropertyName = "InstanceName"
+      oWMIRequest.PushOutBuffer(oWMIBuffer)
+
+'      Use this if want to use outside of this script
+'      If (Not oWMI.WMIRequest(oWMIRequest)) Then
+
+      If (Not DoWMIRequest(oWMIRequest, "query", True, True, REQUIRED_OID)) Then
+         oLog.Write ("Unable to obtain device instance name from ndis")
+         Exit Function
+      End If
+
+      strAdapterName = oWMIRequest.OutObject(0).Data
+      oLog.Write ("Adapter name: " & strAdapterName)
+
+
+      wsfGetAdapterName = True
+
+      Set oWMIBuffer = Nothing
+      Set oWMIRequest = Nothing
+
+   End Function
+
+   Private Function wsfGetWMIInformation
+      Dim oDBManager
+      Dim TagArraySize, TagArray(3,2)
+
+      oLog.Variation("Setting up OID database")
+
+      ' Create the database manager
+      Set oDBManager = New CDatabaseManager
+      oDBManager.DBFile = "..\inc\oidsdb.vbs"
+
+      ' Create the list of tag keys we are interested in
+
+      ' The interface to use is NdisRequest
+      TagArray(0,0) = "Interface"
+      TagArray(0,1) = "WMI"
+
+      ' Choose the media type
+      TagArray(1,0) = "Media"
+
+      Select Case (m_nMedium)
+         Case NDISMEDIUM802_3:
+               TagArray(1,1) = "NDISMEDIUM802_3"
+         Case NDISMEDIUM802_5:
+               TagArray(1,1) = "NDISMEDIUM802_5"
+         Case NDISMEDIUMFDDI:
+               TagArray(1,1) = "NDISMEDIUMFDDI"
+         Case NDISMEDIUMIRDA:
+               TagArray(1,1) = "NDISMEDIUMIRDA"
+         Case Else:
+               Call oLog.Failed ("Incorrect media type", 88888)
+      End Select
+
+      TagArray(2,0) = "OIDSUPPORT"
+      TagArray(2,1) = "REQUIRED"
+      TagArraySize = 3
+
+      Call oDBManager.FillDBFromFile (oRequiredOids, TagArray, TagArraySize)
+
+      ' Get anything that is optional
+      TagArray(2,0) = "OIDSUPPORT"
+      TagArray(2,1) = "OPTIONAL"
+      TagArraySize = 3
+
+      Call oDBManager.FillDBFromFile (oOptionalOids, TagArray, TagArraySize)
+
+      If (m_nPhysicalMedium = NDISPHYSICALMEDIUMWIRELESSLAN) Then
+         ' Add the extra entries for the wireless lan
+         TagArray(1,1) = "NDISPHYSICALMEDIUMWIRELESSLAN"
+
+         TagArray(2,1) = "REQUIRED"
+         Call oDBManager.FillDBFromFile (oRequiredOids, TagArray, TagArraySize)
+
+         TagArray(2,1) = "OPTIONAL"
+         Call oDBManager.FillDBFromFile (oOptionalOids, TagArray, TagArraySize)
+
+      End If
+
+      Set oDBManager = Nothing
+
+   End Function
+
+   Private Function ByteToHexStr(nByte)
+      Dim strVal, locByte
+
+      locByte = CByte(nByte)
+      If (locByte < 16) Then
+         ' Need to pad a zero
+         strVal = "0" & Hex(locByte)
+      Else
+         strVal = Hex(locByte)
+      End If
+
+      ByteToHexStr = strVal
+   End Function
+
+
+   Private Function ConvertByteArrayToLong(ByteArray, nStartPos, ulRetValue)
+      Dim nLongVal
+      ConvertByteArrayToLong = True
+
+      On Error Resume Next
+      nLongVal = ByteArray(nStartPos) + (2^8 * ByteArray(nStartPos+1)) + (2^16 * ByteArray(nStartPos+2)) + (2^24 * ByteArray(nStartPos+3))
+      If (Err <> 0) Then
+         oLog.Write ("Convert Error: " & Err.Description & " when converting to DWORD")
+         Err.Clear
+         ConvertByteArrayToLong = False
+      End If
+
+      ulRetValue = CLng(nLongVal)
+      If (Err <> 0) Then
+         oLog.Write ("Convert Error: " & Err.Description & " when casting DWORD to Long")
+         Err.Clear
+         ConvertByteArrayToLong = False
+      End If
+
+      On Error Goto 0
+
+   End Function
+
+   Private Function ConvertByteArrayToGuidStructFormat(ByteArray, nStartPos)
+      Dim strGuid
+
+      strGuid = "{"
+
+      strGuid = strGuid & ByteToHexStr(ByteArray(nStartPos+3)) & ByteToHexStr(ByteArray(nStartPos+2)) & ByteToHexStr(ByteArray(nStartPos+1)) & ByteToHexStr(ByteArray(nStartPos+0)) & "-"
+
+      strGuid = strGuid & ByteToHexStr(ByteArray(nStartPos+5)) & ByteToHexStr(ByteArray(nStartPos+4)) & "-"
+      strGuid = strGuid & ByteToHexStr(ByteArray(nStartPos+7)) & ByteToHexStr(ByteArray(nStartPos+6)) & "-"
+
+      strGuid = strGuid & ByteToHexStr(ByteArray(nStartPos+8)) & "-" & ByteToHexStr(ByteArray(nStartPos+9)) & "-"
+
+      strGuid = strGuid & ByteToHexStr(ByteArray(nStartPos+10)) & "-" & ByteToHexStr(ByteArray(nStartPos+11)) & "-"
+      strGuid = strGuid & ByteToHexStr(ByteArray(nStartPos+12)) & "-" & ByteToHexStr(ByteArray(nStartPos+13)) & "-"
+      strGuid = strGuid & ByteToHexStr(ByteArray(nStartPos+14)) & "-" & ByteToHexStr(ByteArray(nStartPos+15)) & "}"
+
+'      ConvertByteArrayToGuid = "{FFFFFFFF-FFFF-FFFF-FF-FF-FF-FF-FF-FF-FF-FF}"
+      ConvertByteArrayToGuidStructFormat = strGuid
+   End Function
+
+
+   Private Function ConvertByteArrayToGuidStringFormat(ByteArray, nStartPos)
+      Dim strGuid
+
+      strGuid = "{"
+
+      strGuid = strGuid & ByteToHexStr(ByteArray(nStartPos+3)) & ByteToHexStr(ByteArray(nStartPos+2)) & ByteToHexStr(ByteArray(nStartPos+1)) & ByteToHexStr(ByteArray(nStartPos+0)) & "-"
+
+      strGuid = strGuid & ByteToHexStr(ByteArray(nStartPos+5)) & ByteToHexStr(ByteArray(nStartPos+4)) & "-"
+      strGuid = strGuid & ByteToHexStr(ByteArray(nStartPos+7)) & ByteToHexStr(ByteArray(nStartPos+6)) & "-"
+
+      strGuid = strGuid & ByteToHexStr(ByteArray(nStartPos+8)) & ByteToHexStr(ByteArray(nStartPos+9)) & "-"
+
+      strGuid = strGuid & ByteToHexStr(ByteArray(nStartPos+10)) & ByteToHexStr(ByteArray(nStartPos+11))
+      strGuid = strGuid & ByteToHexStr(ByteArray(nStartPos+12)) & ByteToHexStr(ByteArray(nStartPos+13))
+      strGuid = strGuid & ByteToHexStr(ByteArray(nStartPos+14)) & ByteToHexStr(ByteArray(nStartPos+15)) & "}"
+
+'      ConvertByteArrayToGuid = "{FFFFFFFF-FFFF-FFFF-FF-FF-FF-FF-FF-FF-FF-FF}"
+      ConvertByteArrayToGuidStringFormat = strGuid
+   End Function
+
+   ' This function would parse the buffer returned by the OID_GEN_SUPPORTED_GUIDSs array
+   ' and fill the oDriverGuid structure with the returned information
+   Private Function wsfGetSupportedGuidList(oPrivateOids)
+      Dim ListLen, arrNdisGuid()
+      Dim ulFlags, nNumGuids
+      Dim fOidFlags, strGuid
+      Dim oOidEntry
+      Dim nIndex, nPos
+
+      ' Constants in the structure
+      Const fNDIS_GUID_TO_OID           = &H001
+      Const fNDIS_GUID_TO_STATUS        = &H002
+      Const fNDIS_GUID_ANSI_STRING      = &H004
+      Const fNDIS_GUID_UNICODE_STRING   = &H008
+      Const fNDIS_GUID_ARRAY            = &H010
+      Const fNDIS_GUID_ALLOW_READ       = &H020
+      Const fNDIS_GUID_ALLOW_WRITE      = &H040
+
+      wsfGetSupportedGuidList = False
+
+      oLog.Variation ("Setting up supported oids array")
+
+      ReDim arrNdisGuid(1)
+      arrNdisGuid(0) = CByte(0)
+      ListLen = 0
+      If (Not oTestOpen.vbFastNdisRequest(OID_GEN_SUPPORTED_GUIDS, arrNdisGuid, ListLen)) Then
+         Call oLog.Failed ("Unable to query OID_GEN_SUPPORTED_GUIDS", 88888)
+         Exit Function
+      End If
+
+      nNumGuids = UBound(arrNdisGuid)/28
+
+      For nIndex = 0 To nNumGuids-1
+         nPos = nIndex * 28    ' size of NDIS_GUID structure
+
+         oLog.Write ("Guid (" & nIndex & ")")
+
+         If Not ConvertByteArrayToLong(arrNdisGuid, nPos+24, ulFlags) Then
+            ' Default flag value
+            ulFlags = &H00000111      ' Not settable, allow read, guid to oid
+         End If
+
+         fOidFlags = CLng(0)
+         Set oOidEntry = New CDBEntry
+
+         oOidEntry.PropertyName = ""
+         oOidEntry.RequestType = INVALID
+         oOidEntry.FaultSeverity = LOG_AS_WARN
+
+         strGuid = ConvertByteArrayToGuidStructFormat(arrNdisGuid, nPos)
+         oOidEntry.Guid = strGuid
+         oOidEntry.ClassName = strGuid
+         oOidEntry.OidName = ConvertByteArrayToGuidStringFormat(arrNdisGuid, nPos)
+
+         oLog.Write ("   Guid " &  oOidEntry.Guid)
+
+         If ((ulFlags AND fNDIS_GUID_TO_OID) <> 0) Then
+            fOidFlags = fOidFlags Or fNDIS_GUID_TO_OID
+         ElseIf ((ulFlags And fNDIS_GUID_TO_STATUS) <> 0) Then
+            fOidFlags = fOidFlags Or fNDIS_GUID_TO_STATUS
+         Else
+            Call oLog.Failed ("Unknown association", 88888)
+         End If
+
+         If Not ConvertByteArrayToLong(arrNdisGuid, nPos+20, oOidEntry.Length) Then
+            ' Unknown length
+            oOidEntry.Length = -1
+         End If
+
+         oLog.Write ("   Length " & oOidEntry.Length)
+
+         oLog.Write ("   Flags 0x" & Hex(ulFlags))
+         If ((ulFlags And fNDIS_GUID_ANSI_STRING) <> 0) Then
+            oLog.Write ("     - fNDIS_GUID_ANSI_STRING")
+            fOidFlags = fOidFlags Or &H04
+
+         ElseIf ((ulFlags And fNDIS_GUID_UNICODE_STRING) <> 0) Then
+            oLog.Write ("     - fNDIS_GUID_UNICODE_STRING")
+
+         ElseIf ((ulFlags And fNDIS_GUID_ARRAY) <> 0) Then
+            oLog.Write ("     - fNDIS_GUID_ARRAY")
+            fOidFlags = fOidFlags Or &H08
+         End If
+
+         If ((ulFlags And fNDIS_GUID_ALLOW_READ) <> 0) Then
+            oLog.Write ("     - fNDIS_GUID_ALLOW_READ ")
+            fOidFlags = fOidFlags Or &H10
+         ElseIf ((ulFlags And fNDIS_GUID_ALLOW_WRITE) <> 0) Then
+            oLog.Write ("     - fNDIS_GUID_ALLOW_WRITE")
+            fOidFlags = fOidFlags Or &H20
+         End If
+
+         oOidEntry.DataType = OTHER
+
+         ' Store the flag that we obtained
+         oOidEntry.Flags = fOidFlags
+         oLog.Write ("   Storing flag 0x" & fOidFlags)
+
+         oPrivateOids.AddEntry(oOidEntry)
+      Next
+
+      wsfGetSupportedGuidList = True
+   End Function
+
+   ' Drop the correct privilege so that we would no longer appear to ndis etc
+   ' as administrator
+   Private Function wsfLowerPrivilege
+      oLog.Variation ("Dropping Load driver privilege")
+      wsfLowerPrivilege = oPrivilegesCtrl.RemovePrivilege ("SeLoadDriverPrivilege")
+   End Function
+
+   ' Repossess the privilege that we dropped earlier to go to a lower privilege. The
+   ' implementation depends on the wsfLowerPrivilege function
+   Private Function wsfRestorePrivilege
+      oLog.Variation ("Reacquiring Load driver privilege")
+      wsfRestorePrivilege = oPrivilegesCtrl.AddPrivilege ("SeLoadDriverPrivilege")
+   End Function
+
+   Private Function FillWMIRequest(oOidEntry, oWMIRequest, RequestType)
+      Dim NewWMIBuffer
+
+      oWMIRequest.ClearRequest
+
+      oWMIRequest.ClassName = oOidEntry.ClassName
+      oWMIRequest.RequestType = RequestType
+
+      ' Input side. For this, we know that we expect to match with only one value
+      Set NewWMIBuffer = New CWMIBuffer
+      NewWMIBuffer.PropertyName = "InstanceName"
+      NewWMIBuffer.Data = m_strAdapterName
+      NewWMIBuffer.DataType = wbemCimtypeString
+
+      oWMIRequest.PushInBuffer (NewWMIBuffer)
+
+      ' Output side. We will fill the various properties that we want to obtain from WMI
+      Dim arrPName, strPropertyName
+
+      arrPName = Split(oOidEntry.PropertyName, "#")
+      For Each strPropertyName in arrPName
+         Set NewWMIBuffer = New CWMIBuffer
+         NewWMIBuffer.PropertyName = strPropertyName
+         oWMIRequest.PushOutBuffer (NewWMIBuffer)
+      Next
+   End Function
+
+   ' Create a framework of the WMIRequest structure that we can then use for setting
+   Private Function CreateWMIRequestForSet(oOrigWMIRequest, ActionSubtype)
+      Dim nCount, oOrigWMIBuffer, nIndex
+
+      CreateWMIRequestForSet = False
+
+      ' This function modifies the output buffers. Be careful
+      ' Now we have the root class that we are working with.
+
+      For nCount = 0 To oOrigWMIRequest.OutSize-1
+         Set oOrigWMIBuffer = oOrigWMIRequest.OutObject(nCount)
+         ' Lets first off remove the instance name property if present
+         If (oOrigWMIBuffer.PropertyName = "InstanceName") Then
+            ' The qualifiers are already set, only set the data
+            oOrigWMIBuffer.Data = m_strAdapterName
+
+            ' We do not want this property to be modified
+            oOrigWMIBuffer.Locked = True
+         ElseIf (oOrigWMIBuffer.PropertyName = "Active") Then
+            ' The qualifiers are already set, only set the data
+            oOrigWMIBuffer.Data = True
+
+            ' We do not want this property to be modified
+            oOrigWMIBuffer.Locked = True
+
+         Else
+            ' here, we would create the remaining structure
+            Dim oWMIEmbObj, oWMIArray
+            Dim oNewWMIRequest, oNewWMIBuffer
+
+            ' For objects, we need to create those objects and store those
+
+            If (oOrigWMIBuffer.DataType = wbemCimtypeObject) Then
+               ' Here, we will create the embedded object structure, but
+               ' not use it just yet
+
+               Set oWMIEmbObj = New CWMIEmbeddedObject
+
+               Set oNewWMIRequest = New CWMIRequest
+               oNewWMIRequest.ClassName = oOrigWMIBuffer.EmbeddedObject
+
+               ' This is an unknown class and we will obtain all its properties
+               oNewWMIRequest.RequestType = FILL_CLASS_PROPERTIES
+
+               ' Do a wmi request so that we can get the class properties and qualifiers
+               If (Not CreateWMIRequestForSet(oNewWMIRequest, ActionSubtype)) Then
+                  oLog.Write ("Unable to obtain information about oid")
+                  Exit Function
+               End If
+
+               ' Copy all the properties on the input side into the new buffer. This
+               ' would generally be zero, but just to be safe
+               For nIndex = 0 To oNewWMIRequest.InSize-1
+                  oWMIEmbObj.PushBuffer(oNewWMIRequest.InObject(nIndex))
+               Next
+
+               ' Copy all the properties on the output side also
+               For nIndex = 0 To oNewWMIRequest.OutSize-1
+                  oWMIEmbObj.PushBuffer(oNewWMIRequest.OutObject(nIndex))
+               Next
+
+            End If
+
+            If (oOrigWMIBuffer.ArrayType) Then
+               Dim nArraySize
+
+               Set oWMIArray = New CWMIArray
+
+               If (VarType(oOrigWMIBuffer.SizeInformation) = vbString) Then
+                  ' We can makeup an array size and store it
+                  nArraySize = ModifyScalarProperty(3, wbemCimtypeUint8, ActionSubtype)
+
+                  ' Lets not allow the array size to be too big
+                  If (nArraySize > 10) Then
+                     nArraySize = nArraySize \ 10
+                  End If
+
+                  ' Find the property that holds the new array size and modify it
+                  For nIndex = 0 To oOrigWMIRequest.OutSize-1
+                     Set oNewWMIBuffer = oOrigWMIRequest.OutObject(nIndex)
+                     If (StrComp(oNewWMIBuffer.PropertyName, oOrigWMIBuffer.SizeInformation, 1) = 0) Then
+                        oNewWMIBuffer.Data = nArraySize
+                        ' We do not want the size to be modified
+                        oNewWMIBuffer.Locked = True
+                        Exit For
+                     End If
+                  Next
+               Else
+                  nArraySize = oOrigWMIBuffer.SizeInformation
+               End If
+
+               ' We cannot modify this array for size, so lets just create the buffers
+               For nIndex = 0 To nArraySize-1
+                  Set oNewWMIBuffer = New CWMIBuffer
+
+                  ' Copy the original buffer data to the new one
+                  oNewWMIBuffer.DataType = oOrigWMIBuffer.DataType
+                  oNewWMIBuffer.ArrayType = False
+                  oNewWMIBuffer.PropertyName = oOrigWMIBuffer.PropertyName
+                  oNewWMIBuffer.EmbeddedObject = oOrigWMIBuffer.EmbeddedObject
+
+                  If (oOrigWMIBuffer.DataType = wbemCimTypeObject) Then
+                     ' In this case, the data is actually the structure above
+                     ' Copy the structure so that we can actually store it as
+                     ' each element
+                     Dim oNewWMIEmbObj
+
+                     Set oNewWMIEmbObj = New CWMIEmbeddedObject
+
+                     oNewWMIEmbObj.CopyObject(oWMIEmbObj)
+                     Set oNewWMIBuffer.Data = oNewWMIEmbObj
+                     Set oNewWMIEmbObj = Nothing
+                  End If
+                  oWMIArray.PushElement(oNewWMIBuffer)
+               Next
+               Set oOrigWMIBuffer.Data = oWMIArray
+
+            ElseIf (oOrigWMIBuffer.DataType = wbemCimtypeObject) Then
+               ' Set the structure that we have found for the object
+               Set oOrigWMIBuffer.Data = oWMIEmbObj
+            End If
+
+         End If
+      Next
+
+      CreateWMIRequestForSet = True
+   End Function
+
+   Private Function ModifyScalarProperty(ByVal vOriginalData, ByVal DataType, ByVal ActionSubtype)
+      Dim vData
+
+      vData = vOriginalData
+
+      If (ActionSubtype = 0) Then
+         ' We will zero out the data
+         If (DataType = wbemCimtypeBoolean) Then
+            vData = False
+         ElseIf (DataType = wbemCimtypeString) Then
+            vData = ""
+         ElseIf (DataType = wbemCimtypeChar16) Then
+            vData = "0"
+         ElseIf (DataType = wbemCimtypeSint16 Or _
+                  DataType = wbemCimtypeSint32 Or _
+                  DataType = wbemCimtypeSint8 Or _
+                  DataType = wbemCimtypeUint8 Or _
+                  DataType = wbemCimtypeUint16 Or _
+                  DataType = wbemCimtypeUint32 Or _
+                  DataType = wbemCimtypeSint64 Or _
+                  DataType = wbemCimtypeUint64) Then
+            vData = 0
+         ElseIf (DataType = wbemCimtypeReal32 Or _
+                  DataType = wbemCimtypeReal64) Then
+            vData = 0.0
+         End If
+      Else
+         ' We will get random data
+         If (DataType = wbemCimtypeBoolean) Then
+            vData = False
+         ElseIf (DataType = wbemCimtypeString) Then
+            vData = oRandom.GetRandomAlphaString(10)
+         ElseIf (DataType = wbemCimtypeChar16) Then
+            vData = oRandom.GetRandomAlpha(1)
+         ElseIf (DataType = wbemCimtypeSint16 Or _
+                  DataType = wbemCimtypeSint32 Or _
+                  DataType = wbemCimtypeSint8 Or _
+                  DataType = wbemCimtypeUint8 Or _
+                  DataType = wbemCimtypeUint16 Or _
+                  DataType = wbemCimtypeUint32 Or _
+                  DataType = wbemCimtypeSint64 Or _
+                  DataType = wbemCimtypeUint64) Then
+            vData = oRandom.GetRandomNumber(0,255)
+         ElseIf (DataType = wbemCimtypeReal32 Or _
+                  DataType = wbemCimtypeReal64) Then
+            vData = oRandom.GetRandomFloat(0,1024)
+         End If
+      End If
+
+      ModifyScalarProperty = vData
+   End Function
+
+   Public Function RunTest(lTestAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+
+      ' Prepare the WMI database for use
+      Call wsfGetWMIInformation
+
+      ' Test both standard required and optional oids
+      Call wsfTestStandardOids
+
+      ' Test the oids/guids that the driver exports
+      Call wsfTestPrivateOids
+
+      ' Test that events are getting signalled correctly
+      Call wsfTestWMIEvents
+
+   End Function
+
+
+   ' Does the actual WMIRequest and logs an error when appropriate
+   ' strRequestType contains either "set" or "query"
+   ' bOperSupported is True for set/query if oid/guid is settable/queryable, else false
+   '                is False if private oid/guid
+   ' bPrivileged is True if we are permitted to do the operation, false otherwise
+   ' OidType is either Optional or required
+   Private Function DoWMIRequest(oWMIRequest, strRequestType, bOperSupported, bPrivileged, OidType)
+
+      DoWMIRequest = False
+      If (Not oWMI.WMIRequest(oWMIRequest)) Then
+         ' WMI request failed
+         If ((oWMI.LastWMIError <> 0) And bOperSupported) Then
+            If (OidType = OPTIONAL_OID) Then
+               ' optional oid not supported
+               oLog.Write ("Unable to " & strRequestType & " error = 0x" & Hex(oWMI.LastWMIError))
+            Else
+               ' required oid not supported, not good
+               Call oLog.Failed ("Unable to " & strRequestType & " error = 0x" & Hex(oWMI.LastWMIError), 88888)
+            End If
+         Else
+            ' we can fail if there is no instance or because we cannot do requested operation on oid
+            oLog.Write ("Oid " & strRequestType & " not supported")
+         End If
+      Else
+         If (Not bPrivileged) Then
+            ' we did not hold enough privileges to do this operation, but still succeeded
+            If (OidType <> PRIVATE_OID) Then
+               Call oLog.Failed ("Able to " & strRequestType & " oid without appropriate privilege", 88888)
+            Else
+               Call oLog.Warned ("Able to " & strRequestType & " oid without appropriate privilege")
+            End If
+         ElseIf ((Not bOperSupported) And (OidType <> PRIVATE_OID)) Then
+            ' we should not have been able to do this operation (set or query) on this oid (queryonly or setonly)
+            Call oLog.Failed ("Able to " & strRequestType & " a non-" & strRequestType & "able oid", 88888)
+         Else
+            ' WMI Request was successful
+            DoWMIRequest = True
+         End If
+      End If
+
+   End Function
+
+
+   Private Function ProcessObjectData (oWMIEmbObject, oWMIRequest, nOutPosition, Action, ActionSubtype)
+      Dim oWMIBuffer
+      Dim nCount
+
+      ProcessObjectData = True
+      If (Not IsNull(oWMIEmbObject)) Then
+         For nCount = 0 To oWMIEmbObject.Size-1
+            Set oWMIBuffer = oWMIEmbObject.ArrProperty(nCount)
+            ProcessObjectData = ProcessWMIBuffer (oWMIBuffer, oWMIRequest, nOutPosition, Action, ActionSubtype)
+         Next
+      End If
+   End Function
+
+   Private Function ProcessArrayData(oWMIArray, oWMIRequest, nOutPosition, Action, ActionSubtype)
+      Dim nCount
+      Dim oWMIBuffer
+
+      ProcessArrayData = True
+
+      If (Not IsNull(oWMIArray)) Then
+         For nCount = 0 To oWMIArray.Size-1
+            Set oWMIBuffer = oWMIArray.ArrElement(nCount)
+            ProcessArrayData = ProcessWMIBuffer (oWMIBuffer, oWMIRequest, nOutPosition, Action, ActionSubtype)
+         Next
+      End If
+   End Function
+
+   Private Function ProcessWMIBuffer (oWMIBuffer, oWMIRequest, nOutPosition, Action, ActionSubtype)
+      Dim DataType
+
+      DataType = oWMIBuffer.DataType
+
+      If (oWMIBuffer.ArrayType) Then
+         ' Arrays get preferred over objects
+         ProcessWMIBuffer = ProcessArrayData(oWMIBuffer.Data, oWMIRequest, nOutPosition, Action, ActionSubtype)
+      ElseIf (DataType = wbemCimtypeObject) Then
+         ' Use our printing function to print the embedded object
+         ProcessWMIBuffer = ProcessObjectData(oWMIBuffer.Data, oWMIRequest, nOutPosition, Action, ActionSubtype)
+      ElseIf (DataType = wbemCimtypeReference) Then
+         oLog.Write ("Unable to process reference data type of property " & oWMIBuffer.PropertyName)
+         ProcessWMIBuffer = False
+      Else
+         ' A standard scalar data type
+         If (Action = PRINT_DATA) Then
+            oLog.Write (oWMIBuffer.PropertyName & " = " & oWMIBuffer.Data)
+         ElseIf (Not oWMIBuffer.Locked) Then
+            ' Modify scalar data
+            oWMIBuffer.Data = ModifyScalarProperty(oWMIBuffer.Data, DataType, ActionSubtype)
+         End If
+
+         ProcessWMIBuffer = True
+      End If
+   End Function
+
+
+   Private Function ProcessWMIRequestData (oWMIRequest, Action, ActionSubtype)
+      Dim DataType
+      Dim oWMIBuffer, nCount
+
+      ProcessWMIRequestData = False
+      For nCount = 0 To oWMIRequest.OutSize-1
+         Set oWMIBuffer = oWMIRequest.OutObject(nCount)
+         ProcessWMIRequestData = ProcessWMIBuffer (oWMIBuffer, oWMIRequest, nCount, Action, ActionSubtype)
+
+         If (Not ProcessWMIRequestData) Then
+            oLog.Write ("Unable to print WMI request results")
+            Exit Function
+         End If
+      Next
+
+   End Function
+
+   ' Test the standard oids exposed to WMI. Test both as regular user and
+   ' as administrator
+   Private Function wsfTestStandardOids
+      Dim nCount, nMaxSize
+
+      Dim ErrorStatus, DataBuffer()
+      Dim nCurrBuffSize, nReqBuffSize, nBytesNeeded
+
+      oLog.Variation ("Standard required oids")
+      nMaxSize = oRequiredOids.Size - 1
+      For nCount = 0 To nMaxSize
+         ' query as admin and regular user
+         Call wsfQueryWmiClassName(oRequiredOids.EntryAt(nCount), REQUIRED_OID)
+
+         ' set as admin and regular user
+         Call wsfSetWmiClassName(oRequiredOids.EntryAt(nCount), REQUIRED_OID)
+
+         ' query and set using bad buffers
+         If (oRequiredOids.Length(nCount) = -1) Then
+            ' Unknown length oid
+
+            ' first lets try a query
+            Call wsfRequestUnknownSize(oRequiredOids.EntryAt(nCount), REQUIRED_OID, QUERY_SINGLE_INSTANCE)
+
+            ' now lets try a set
+            Call wsfRequestUnknownSize(oRequiredOids.EntryAt(nCount), REQUIRED_OID, SET_SINGLE_INSTANCE)
+         Else
+            ' Known length oid
+
+            ' first lets try a query
+            Call wsfRequestKnownSize(oRequiredOids.EntryAt(nCount), REQUIRED_OID, QUERY_SINGLE_INSTANCE)
+
+            ' now lets try a set
+            Call wsfRequestKnownSize(oRequiredOids.EntryAt(nCount), REQUIRED_OID, SET_SINGLE_INSTANCE)
+         End If
+      Next
+
+      nMaxSize = oOptionalOids.Size - 1
+      For nCount = 0 To nMaxSize
+         ' query as admin and regular user
+         Call wsfQueryWmiClassName(oOptionalOids.EntryAt(nCount), OPTIONAL_OID)
+
+         ' set as admin and regular user
+         Call wsfSetWmiClassName(oOptionalOids.EntryAt(nCount), OPTIONAL_OID)
+
+         ' query and set using bad buffers
+         If (oOptionalOids.Length(nCount) = -1) Then
+            ' Unknown length oid
+
+            ' first lets try a query
+            Call wsfRequestUnknownSize(oOptionalOids.EntryAt(nCount), OPTIONAL_OID, QUERY_SINGLE_INSTANCE)
+
+            ' now lets try a set
+            Call wsfRequestUnknownSize(oOptionalOids.EntryAt(nCount), OPTIONAL_OID, SET_SINGLE_INSTANCE)
+         Else
+            ' Known length oid
+
+            ' first lets try a query
+            Call wsfRequestKnownSize(oOptionalOids.EntryAt(nCount), OPTIONAL_OID, QUERY_SINGLE_INSTANCE)
+
+            ' now lets try a set
+            Call wsfRequestKnownSize(oOptionalOids.EntryAt(nCount), OPTIONAL_OID, SET_SINGLE_INSTANCE)
+         End If
+      Next
+
+   End Function
+
+   Private Function wsfQueryWmiClassName (oOidEntry, OidType)
+      Dim bQueryable, bPrivilege
+      Dim oWMIRequest
+
+      Set oWMIRequest = New CWMIRequest
+      bQueryable = False
+      If ((oOidEntry.RequestType And QUERY_REQUEST) <> 0) Then
+         bQueryable = True
+      End If
+
+      oLog.Variation ("Querying " & oOidEntry.OidName & " as Administrator")
+      bPrivilege = True
+
+      ' Fill WMI Request for querying this particular oid
+      Call FillWMIRequest(oOidEntry, oWMIRequest, QUERY_CLASS_INSTANCE_PROPERTIES)
+
+      If (DoWMIRequest(oWMIRequest, "query", bQueryable, bPrivilege, OidType)) Then
+         ' display queried data
+         Call ProcessWMIRequestData(oWMIRequest, PRINT_DATA, 0)
+
+         If (wsfLowerPrivilege) Then
+            ' Yes, we were able to drop privileges, lets try to query again
+            oLog.Variation ("Querying " & oOidEntry.OidName & " with dropped privileges")
+            If (Not oOidEntry.AllowsAllRead) Then
+               bPrivilege = False
+            End If
+
+            'ReFill WMI Request, clearing the old data
+            Call FillWMIRequest(oOidEntry, oWMIRequest, QUERY_CLASS_INSTANCE_PROPERTIES)
+
+            If (DoWMIRequest(oWMIRequest, "query", bQueryable, bPrivilege, OidType)) Then
+               ' display queried data
+               Call ProcessWMIRequestData(oWMIRequest, PRINT_DATA, 0)
+            End If
+
+            If (Not wsfRestorePrivilege) Then
+               oLog.Write ("Unable to restore privilege to administrator. Following")
+               oLog.Write ("variation may fail")
+            End If
+         End If
+
+      End If
+
+   End Function
+
+   Private Function wsfSetWmiClassName (oOidEntry, OidType)
+      Dim bSetable, bPrivilege
+      Dim oSetWMIRequest, oWMIRequest
+      Dim nModType                  ' What type of modification to do
+
+      Set oWMIRequest = New CWMIRequest
+      Set oSetWMIRequest = New CWMIRequest
+
+      bSetable = False
+      If ((oOidEntry.RequestType And SET_REQUEST) <> 0) Then
+         ' Check that flag that ndis had set and see if it is says we can set
+         If (oOidEntry.IsSettable) Then
+            bSetable = True
+         End If
+      End If
+
+      oLog.Variation ("Creating data for setting " & oOidEntry.OidName)
+
+      ' Create the oSetWMIRequest that we would modify
+      Call FillWMIRequest(oOidEntry, oSetWMIRequest, FILL_PROPERTY_QUALIFIERS)
+
+      ' Do a wmi request so that we can get the class properties and qualifiers
+      If (Not oWMI.WMIRequest(oSetWMIRequest)) Then
+         oLog.Write ("Unable to obtain information about oid")
+         Exit Function
+      End If
+
+      For nModType = 0 To 1
+         oLog.Variation ("Using modification method " & nModType)
+
+         If (Not CreateWMIRequestForSet(oSetWMIRequest, nModType)) Then
+            oLog.Write ("Unable to prepare data for setting")
+            Exit Function
+         End If
+
+         ' Modify the data for the setWmiRequest that we want to set
+         Call ProcessWMIRequestData(oSetWMIRequest, MODIFY_DATA, nModType)
+         ' Fix the request type to be the correct one
+         oSetWMIRequest.RequestType = SET_CLASS_INSTANCE_PROPERTIES
+
+         ' print that data
+         oLog.Write ("Will try to set.. ")
+         Call ProcessWMIRequestData(oSetWMIRequest, PRINT_DATA, 0)
+
+         Call oWMIRequest.CopyRequest(oSetWMIRequest)
+         oLog.Variation ("Setting " & oOidEntry.OidName & " as Administrator")
+         bPrivilege = True
+
+         If (DoWMIRequest(oWMIRequest, "set", bSetable, bPrivilege, OidType)) Then
+            ' set was successful, lets try as non admin
+
+            If (wsfLowerPrivilege) Then
+               ' Yes, we were able to drop privileges, lets try to set again
+               oLog.Variation ("Setting " & oOidEntry.OidName & " with dropped privileges")
+
+               If (Not oOidEntry.AllowsAllRead) Then
+                  bPrivilege = False
+               End If
+
+               ' Copy the same data that we tried to set as admin to our new request
+               Call oWMIRequest.CopyRequest(oSetWMIRequest)
+               If (DoWMIRequest(oWMIRequest, "set", bSetable, bPrivilege, OidType)) Then
+                  ' Currently do nothing if we fail
+               End If
+
+               If (Not wsfRestorePrivilege) Then
+                  oLog.Write ("Unable to restore privilege to administrator. Following")
+                  oLog.Write ("variation may fail")
+               End If
+            End If
+
+         End If
+      Next
+   End Function
+
+   Private Function wsfQuerySetWmiGuid (oOidEntry, RequestType)
+      Dim oWMIRequest, oWMIBuffer
+
+      wsfQuerySetWmiGuid = False
+
+      Set oWMIRequest = New CWMIRequest
+      oLog.Variation ("Obtaining class name for " & oOidEntry.OidName)
+
+      ' We need to get the name of the class, lets do that now
+      ' Use the class name that is in the guid format that is stored in WMI::COM format
+      oWMIRequest.ClassName = oOidEntry.OidName
+      oWMIRequest.RequestType = QUERY_GUID_CLASS_NAME
+
+      If (Not DoWMIRequest(oWMIRequest, "query", True, True, REQUIRED_OID)) Then
+         Call oLog.Failed ("Unable to obtain class name from guid " & oOidEntry.OidName, 88888)
+         Exit Function
+      End If
+
+      ' We now have the name of the class. Lets continue
+      oOidEntry.ClassName = oWMIRequest.ClassName
+      oLog.Write ("Corresponding class name = " & oOidEntry.ClassName)
+
+      ' Get the properties of this class
+      oWMIRequest.RequestType = FILL_CLASS_PROPERTIES
+      If (Not DoWMIRequest(oWMIRequest, "query", True, True, REQUIRED_OID)) Then
+         Call oLog.Failed ("Unable to obtain class properties for guid " & oOidEntry.OidName, 88888)
+         Exit Function
+      End If
+
+      ' copy it into the oOidEntry section
+      Dim nCount
+      oOidEntry.PropertyName = ""
+      For nCount = 0 To oWMIRequest.OutSize-2
+         Set oWMIBuffer = oWMIRequest.OutObject(nCount)
+         If ((oWMIBuffer.PropertyName <> "InstanceName") And (oWMIBuffer.PropertyName <> "Active")) Then
+            oOidEntry.PropertyName = oOidEntry.PropertyName & oWMIBuffer.PropertyName & "#"
+         End If
+      Next
+
+      Set oWMIBuffer = oWMIRequest.OutObject(oWMIRequest.OutSize-1)
+      If ((oWMIBuffer.PropertyName <> "InstanceName") And (oWMIBuffer.PropertyName <> "Active")) Then
+         oOidEntry.PropertyName = oOidEntry.PropertyName & oWMIBuffer.PropertyName
+      End If
+
+      Set oWMIRequest = Nothing
+      Set oWMIBuffer = Nothing
+      ' Call the actual routine that does the query/set
+      If (RequestType = SET_REQUEST) Then
+         wsfQuerySetWmiGuid = wsfSetWmiClassName(oOidEntry, PRIVATE_OID)
+      Else
+         wsfQuerySetWmiGuid = wsfQueryWmiClassName(oOidEntry, PRIVATE_OID)
+      End If
+   End Function
+
+
+
+   ' Tests all the private GUIDS. Uses the oDriverGuid list and tries to both
+   ' query and set the oids that the driver exposes to WMI. Again will test as
+   ' both administrator and regular user
+   Private Function wsfTestPrivateOids
+      Dim oPrivateOids
+
+      Set oPrivateOids = New CWmiList
+
+      ' Get the list of guids that the driver supports
+      Call wsfGetSupportedGuidList(oPrivateOids)
+
+      ' Now that we have the list of oids, lets try to set/query them
+      Dim nCount, nMaxSize
+
+      oLog.Variation ("Private guids")
+      ' If its a private guid, it must be supported
+
+      nMaxSize = oPrivateOids.Size - 1
+      For nCount = 0 To nMaxSize
+         ' query as admin and regular user
+         Call wsfQuerySetWmiGuid(oPrivateOids.EntryAt(nCount), QUERY_REQUEST)
+
+         ' set as admin and regular user
+         Call wsfQuerySetWmiGuid(oPrivateOids.EntryAt(nCount), SET_REQUEST)
+
+         ' query using bad buffers
+         Call wsfRequestUnknownSize(oPrivateOids.EntryAt(nCount), PRIVATE_OID, QUERY_SINGLE_INSTANCE)
+
+         ' set using bad buffers
+         Call wsfRequestUnknownSize(oPrivateOids.EntryAt(nCount), PRIVATE_OID, SET_SINGLE_INSTANCE)
+      Next
+
+      Set oPrivateOids = Nothing
+   End Function
+
+   Private Function wsfRequestUnknownSize(oOidEntry, OidType, RequestType)
+      Dim nCurrBufferSize, nMaxSize
+      Dim bCanAdjustMaxSize
+      Dim nCount, DataArr()
+      Dim ErrorStatus, BytesNeeded
+      Dim bResult
+
+      nMaxSize = 1000
+      nCurrBufferSize = 0
+
+      bCanAdjustMaxSize = True
+      oLog.Variation ("Testing unknown length guid " & oOidEntry.Guid)
+      oLog.Write (oOidEntry.OidName)
+
+      Do
+         oLog.Write ("Current Buffer Size = " & nCurrBufferSize)
+
+         ReDim DataArr(nCurrBufferSize)
+         For nCount = 0 To nCurrBufferSize-1
+            DataArr(nCount) = CByte(0)
+         Next
+
+         bResult = oTestCard.vbWmiRequest(oOidEntry.Guid, DataArr, nCurrBufferSize, _
+                              RequestType, ErrorStatus, BytesNeeded)
+
+         If (ErrorStatus = ERROR_SUCCESS) Then
+            If (bCanAdjustMaxSize) Then
+               nMaxSize = nCurrBufferSize + 9
+               ' Extra check to reduce number of iterations
+               If (nMaxSize > 2*nCurrBufferSize) Then
+                  nMaxSize = 2 * nCurrBufferSize
+               End If
+               bCanAdjustMaxSize = False
+            End If
+         ElseIf (ErrorStatus = ERROR_INSUFFICIENT_BUFFER) Then
+
+'            If (RequestType = QUERY_SINGLE_INSTANCE) Then
+               If (BytesNeeded > nMaxSize) Then
+                  ' If we are never going to have a big enough buffer, lets just forget trying to get a result
+                  ' size and only try some more invalid buffer sizes
+                  If (bCanAdjustMaxSize) Then
+                     nMaxSize = nCurrBufferSize + 5
+                     bCanAdjustMaxSize = False
+                  End If
+               ElseIf (BytesNeeded > (nCurrBufferSize + 10)) Then
+                  nCurrBufferSize = nCurrBufferSize + 9  ' jump faster than just by 1
+               End If
+'            End If
+         Else
+            oLog.Write("Failed with ErrorStatus = " & ErrorStatus)
+
+            ' Failure other than short buffer, (invalid parameters, etc) so stop testing soon
+            If (bCanAdjustMaxSize) Then
+               ' Now only check for a few more buffer sizes
+               nMaxSize = nCurrBufferSize + 8  ' atleast cross one long value
+               bCanAdjustMaxSize = False
+            End If
+         End If
+
+         nCurrBufferSize = nCurrBufferSize + 1
+      Loop While (nCurrBufferSize < nMaxSize)
+   End Function
+
+   Private Function wsfRequestKnownSize(oOidEntry, OidType, RequestType)
+      Dim nRequiredSize, nMaxSize, nCurrBufferSize
+      Dim nCount, DataArr()
+      Dim ErrorStatus, BytesNeeded
+      Dim bResult
+
+      nRequiredSize = oOidEntry.Length
+      nMaxSize = nRequiredSize + 5
+
+      bResult = True
+
+      oLog.Variation ("Testing known length guid " & oOidEntry.Guid)
+      oLog.Write (oOidEntry.OidName)
+
+      ' For each size, query result
+      For nCurrBufferSize = 0 To nMaxSize
+
+         oLog.Write ("Current Buffer Size = " & nCurrBufferSize & " and Required Buffer Size = " & nRequiredSize)
+         ReDim DataArr(nCurrBufferSize)
+
+         For nCount = 0 To nCurrBufferSize-1
+            DataArr(nCount) = CByte(0)
+         Next
+
+         bResult = oTestCard.vbWmiRequest(oOidEntry.Guid, DataArr, nCurrBufferSize, _
+                              RequestType, ErrorStatus, BytesNeeded)
+
+         If (nCurrBufferSize < nRequiredSize) Then
+            ' Used a small buffer size than required for this oid
+            If (ErrorStatus = ERROR_SUCCESS) Then
+               Call oLog.Failed ("Call succeeded even when the buffer was small.", 88888)
+               bResult = False
+            ElseIf (ErrorStatus = ERROR_INSUFFICIENT_BUFFER) Then
+               ' BytesNeeded is the size required
+               If (BytesNeeded <> nRequiredSize) Then
+                  oLog.Write ("Incorrect BytesNeeded " & BytesNeeded & ". Expected " & nRequiredSize)
+               End If
+            Else
+               oLog.Write ("Failed with ErrorStatus = " & ErrorStatus)
+            End If
+         ElseIf (ErrorStatus <> ERROR_SUCCESS) Then
+            If (RequestType = QUERY_SINGLE_INSTANCE And OidType = REQUIRED_OID) Then
+               ' We had a big enough buffer, query should not have failed
+               oLog.Warned ("Failed with ErrorStatus = " & ErrorStatus)
+            Else
+               oLog.Write("Failed with ErrorStatus = " & ErrorStatus)
+            End If
+         End If
+
+         If (Not bResult) Then
+            Exit For
+         End If
+      Next
+   End Function
+
+   ' Listens for WMI events, tries to actully initialite some of those events
+   Private Function wsfTestWMIEvents
+      Dim oWMIRequest1, oWMIRequest2
+      Dim bResult1, bResult2
+      Dim oWMIBuffer1, oWMIBuffer2
+      Dim DriverNDISVersion
+
+      Set oWMIRequest1 = New CWMIRequest
+      Set oWMIRequest2 = New CWMIRequest
+
+      oLog.Variation ("Testing WMI event Reset start and Reset end")
+      ' Currently we cannot reset NDIS 6.0 miniports
+      DriverNDISVersion = oNDTSession (m_lTestAdapterIndex & "OID_GEN_DRIVER_VERSION")
+      If (Not IsEmpty (DriverNDISVersion)) Then
+         If (DriverNDISVersion = &H600&) Then
+            ' This is NDIS 6.0 miniport, NDISTest protocol cannot reset it
+            oLog.Write("Will not attempt NdisReset since its NDIS 6.0 miniports")
+         End If
+      Else
+         DriverNDISVersion = &H501&    ' Assuming NDIS 5.1
+         oLog.Warned("Unable to determine driver NDIS version. Test will cause false reset failure for NDIS 6.0 miniports")
+      End If
+      
+      If (DriverNDISVersion = &H600&) Then
+         oLog.Write("Skipped Reset test since its NDIS 6.0 miniport")         
+      Else      
+         oWMIRequest1.ClearRequest
+         oWMIRequest2.ClearRequest
+
+         Set oWMIBuffer1 = New CWMIBuffer
+         Set oWMIBuffer2 = New CWMIBuffer
+
+         oWMIRequest1.ClassName = "MSNdis_StatusResetStart"
+         oWMIBuffer1.PropertyName = "InstanceName"
+         oWMIBuffer1.Data = m_strAdapterName
+         oWMIBuffer1.DataType = wbemCimtypeString
+         oWMIRequest1.PushInBuffer(oWMIBuffer1)
+
+         oWMIRequest2.ClassName = "MSNdis_StatusResetEnd"
+         oWMIBuffer2.PropertyName = "InstanceName"
+         oWMIBuffer2.Data = m_strAdapterName
+         oWMIBuffer2.DataType = wbemCimtypeString
+         oWMIRequest2.PushInBuffer(oWMIBuffer2)
+
+         bResult1 = oWMI.StartWaitForWMIEvent(oWMIRequest1)
+         bResult2 = oWMI.StartWaitForWMIEvent(oWMIRequest2)
+
+         If (bResult1 And bResult2) Then
+            oLog.Variation "Generating Reset Start/End event"
+
+            oTestOpen.vbNdisReset()
+            Wscript.Sleep 1000         ' wait for a second
+
+            If (oWMI.StopWaitForWMIEvent (oWMIRequest1, 1000)) Then
+               Call ProcessWMIRequestData(oWMIRequest1, PRINT_DATA, 0)
+            ElseIf (oWMI.LastWMIError = wbemErrTimedout) Then
+               Call oLog.Failed ("Timed out waiting for Reset Start event ", 88888)
+            Else
+               Call oLog.Failed ("Unable to receive for Reset Start event", 88888)
+            End If
+
+            If (oWMI.StopWaitForWMIEvent (oWMIRequest2, 1000)) Then
+               Call ProcessWMIRequestData(oWMIRequest1, PRINT_DATA, 0)
+            ElseIf (oWMI.LastWMIError = wbemErrTimedout) Then
+               Call oLog.Failed ("Timed out waiting for Reset End event ", 88888)
+            Else
+               Call oLog.Failed ("Unable to receive for Reset End event", 88888)
+            End If
+
+         Else
+            Call oLog.Failed ("Unable to wait for Reset Start/End event", 88888)
+         End If
+      End If
+      
+      oLog.Variation ("Testing WMI event Media Disconnect and Media Connect")
+
+      oWMIRequest1.ClearRequest
+      oWMIRequest2.ClearRequest
+
+      Set oWMIBuffer1 = New CWMIBuffer
+      Set oWMIBuffer2 = New CWMIBuffer
+
+      oWMIRequest1.ClassName = "MSNdis_StatusMediaDisconnect"
+      oWMIBuffer1.PropertyName = "InstanceName"
+      oWMIBuffer1.Data = m_strAdapterName
+      oWMIBuffer1.DataType = wbemCimtypeString
+      oWMIRequest1.PushInBuffer(oWMIBuffer1)
+
+      oWMIRequest2.ClassName = "MSNdis_StatusMediaConnect"
+      oWMIBuffer2.PropertyName = "InstanceName"
+      oWMIBuffer2.Data = m_strAdapterName
+      oWMIBuffer2.DataType = wbemCimtypeString
+      oWMIRequest2.PushInBuffer(oWMIBuffer2)
+
+      bResult1 = oWMI.StartWaitForWMIEvent(oWMIRequest1)
+      bResult2 = oWMI.StartWaitForWMIEvent(oWMIRequest2)
+
+      If (bResult1 And bResult2) Then
+         oLog.Variation "Waiting for Media Disconnect/Connect event"
+
+         Call wsfDisconnectReConnectPopup
+
+         If (oWMI.StopWaitForWMIEvent (oWMIRequest1, 1000)) Then
+            Call ProcessWMIRequestData(oWMIRequest1, PRINT_DATA, 0)
+         ElseIf (oWMI.LastWMIError = wbemErrTimedout) Then
+            Call oLog.Failed ("Timed out waiting for Media Disconnect event ", 88888)
+         Else
+            Call oLog.Failed ("Unable to receive for Media Disconnect event", 88888)
+         End If
+
+         If (oWMI.StopWaitForWMIEvent (oWMIRequest2, 1000)) Then
+            Call ProcessWMIRequestData(oWMIRequest1, PRINT_DATA, 0)
+         ElseIf (oWMI.LastWMIError = wbemErrTimedout) Then
+            Call oLog.Failed ("Timed out waiting for Media Connect event ", 88888)
+         Else
+            Call oLog.Failed ("Unable to receive for Media Connect event", 88888)
+         End If
+
+      Else
+         Call oLog.Failed ("Unable to wait for Media Disconnect/Connect event", 88888)
+      End If
+
+
+      oLog.Variation ("Testing WMI events Adapter Removal and Adapter Arrival")
+
+      oWMIRequest1.ClearRequest
+      oWMIRequest2.ClearRequest
+
+      Set oWMIBuffer1 = New CWMIBuffer
+      Set oWMIBuffer2 = New CWMIBuffer
+
+      oWMIRequest1.ClassName = "MSNdis_NotifyAdapterRemoval"
+      oWMIBuffer1.PropertyName = "InstanceName"
+      oWMIBuffer1.Data = m_strAdapterName
+      oWMIBuffer1.DataType = wbemCimtypeString
+      oWMIRequest1.PushInBuffer(oWMIBuffer1)
+
+      oWMIRequest2.ClassName = "MSNdis_NotifyAdapterArrival"
+      oWMIBuffer2.PropertyName = "InstanceName"
+      oWMIBuffer2.Data = m_strAdapterName
+      oWMIBuffer2.DataType = wbemCimtypeString
+      oWMIRequest2.PushInBuffer(oWMIBuffer2)
+
+      bResult1 = oWMI.StartWaitForWMIEvent(oWMIRequest1)
+      bResult2 = oWMI.StartWaitForWMIEvent(oWMIRequest2)
+
+      If (bResult1 And bResult2) Then
+         oLog.Variation "Generating Adapter Removal/Arrival event"
+
+         ' Need to close open instance before attempting to halt driver
+         oTestOpen.vbNdisClose
+         Set oTestOpen = Nothing
+
+         Call wsfStopStartDriver
+
+         If (oWMI.StopWaitForWMIEvent (oWMIRequest1, 1000)) Then
+            Call ProcessWMIRequestData(oWMIRequest1, PRINT_DATA, 0)
+         ElseIf (oWMI.LastWMIError = wbemErrTimedout) Then
+            Call oLog.Failed ("Timed out waiting for Adapter removal event ", 88888)
+         Else
+            Call oLog.Failed ("Unable to receive for Adapter removal event", 88888)
+         End If
+
+         If (oWMI.StopWaitForWMIEvent (oWMIRequest2, 1000)) Then
+            Call ProcessWMIRequestData(oWMIRequest1, PRINT_DATA, 0)
+         ElseIf (oWMI.LastWMIError = wbemErrTimedout) Then
+            Call oLog.Failed ("Timed out waiting for Adapter arrival event ", 88888)
+         Else
+            Call oLog.Failed ("Unable to receive for Adapter arrival event", 88888)
+         End If
+
+         ' We do not have an open on the test adapter anymore
+      Else
+         Call oLog.Failed ("Unable to wait for Adapter Removal/Arrival event", 88888)
+      End If
+
+
+   End Function
+
+   Private Function wsfDisconnectReConnectPopup()
+      Dim sDisconnectMsg, sConnectMsg
+      Dim PopupResponse, PopupTimeout
+      Dim oWshShell
+
+      PopupTimeout = oNdtSession.Variable ("PopupTimeout")
+      Set oWshShell = Wscript.CreateObject("WScript.Shell")
+
+      If (oWshShell is Nothing) Then
+         Call oLog.Failed ("Unable to create WScript.Shell object", 88888)
+         Exit Function
+      End If
+
+      sDisconnectMsg = "Disconnect test card from the network, then click OK."
+      sConnectMsg = "Re-connect test card to the network, then click OK."
+
+      If (PopupTimeout = 0) Then
+         ' Disconnect cable
+         oWshShell.Popup sDisconnectMsg, PopupTimeout, "NDIS Tester - Media Disconnect Event", vbSystemModal
+
+         WScript.Sleep 1000      ' wait for a second
+         ' Reconnect cable
+         oWshShell.Popup sConnectMsg, PopupTimeout, "NDIS Tester - Media Connect Event", vbSystemModal
+
+      Else
+
+         ' Disconnect cable
+         PopupResponse = oWshShell.Popup (sDisconnectMsg, PopupTimeout, "Media Disconnect Event (timeout after " & PopupTimeout & " seconds)", vbSystemModal)
+         If (PopupResponse = -1) Then
+            oLog.Write("Popup timedout.  Pressing on.")
+         End If
+
+         ' Reconnect cable
+         PopupResponse = oWshShell.Popup (sConnectMsg, PopupTimeout, "Media Connect Event (timeout after " & PopupTimeout & " seconds)", vbSystemModal)
+         If (PopupResponse = -1) Then
+            oLog.Write("Popup timedout.  Pressing on.")
+         End If
+      End If
+
+      Set oWshShell = Nothing
+   End Function
+
+   Private Function wsfStopStartDriver()
+      Dim sUninstallMsg, sInstallMsg
+      Dim PopupResponse, PopupTimeout
+      Dim oWshShell
+
+      ' Do this until we get the programmatic way working
+      wsfStopStartDriver = FALSE
+
+      Dim nResult
+
+      nResult = oPNPPower.StopDriver(TestCardGUID)
+      If (nResult = 0) Then
+         nResult = oPNPPower.StartDriver(TestCardGUID)
+         If (nResult = 0) Then
+            If (oTestCard.vbWaitForLinkWithDelay(90, glWaitForLinkExtraDelay)) Then     ' wait for link to be established
+               wsfStopStartDriver = TRUE
+            End If
+         Else
+            oLog.Write ("StartDriver failed : Unable to restart driver!!!")
+         End If
+      Else
+         oLog.Write ("StopDriver failed : Unable to unload driver!!!")
+      End If
+   End Function
+
+
+End Class
+
+'============================================================================================='
+'/**
+' Class that holds list of information about all the GUIDs
+'*/
+Class CWmiList
+   Dim m_arrList           ' Holds the array of entries
+   Dim m_lNumElems         ' Actual number of entries held in the above array
+   Dim m_lAllocatedSize    ' Allocated size of the array
+
+   Private Sub Class_Initialize
+      m_lNumElems = 0
+      m_lAllocatedSize = 40
+      ReDim m_arrList(m_lAllocatedSize)
+   End Sub
+
+   Private Sub Class_Terminate
+      Dim iIndex
+
+      For iIndex = 0 To m_lNumElems-1
+         Set m_arrList(iIndex) = Nothing
+      Next
+
+      Erase m_arrList
+      m_lNumElems = 0
+   End Sub
+
+   Public Function TagRegExp (KeyName)
+      TagRegExp = KeyName & "([=|!])=(\S+[^ ;\]])+"
+   End Function
+
+   Public Function EntryRegExp (NumEntries)
+      ' All the fields should always be present: Oid, strOid, Length, DataType,
+      ' (WMI) strClassName, strPropertyName, strGUID, ReqType, FailureType
+      EntryRegExp = "^(&H[0-9A-F]{8}),\s?""([A-Z0-9_]+)"",\s?([-\d]+),\s?([A-Z0-9_]+),\s?[A-Z0-9_]+,\s?[A-Z0-9_]+,\s?""([A-Z0-9_]+)"",\s?""([A-Z0-9_#]*)"",\s?""([\{A-F0-9-\}]+)"",\s?([A-Z0-9_]+),\s?([A-Z0-9_]+),\s?(&H[0-9A-F]{8})"
+      NumEntries = 10
+   End Function
+
+   Private Function ObtainDataType (strVal)
+      Select Case (strVal)
+         Case "STRINGDATA":
+            ObtainDataType = STRINGDATA
+         Case "ARRAYDATA":
+            ObtainDataType = ARRAYDATA
+         Case "STATDATA":
+            ObtainDataType = STATDATA
+         Case "ADDRESS":
+            ObtainDataType = ADDRESS
+         Case "LONGDATA":
+            ObtainDataType = LONGDATA
+         Case "OTHER":
+            ObtainDataType = OTHER
+         Case Else:
+            ObtainDataType = INVALID
+      End Select
+
+   End Function
+
+   Private Function ObtainRequestType (strVal)
+      Select Case (strVal)
+         Case "QUERY_REQUEST":
+            ObtainRequestType = QUERY_REQUEST
+         Case "SET_REQUEST":
+            ObtainRequestType = SET_REQUEST
+         Case "QUERYSET":
+            ObtainRequestType = QUERYSET
+         Case Else:
+            ObtainRequestType = INVALID
+      End Select
+   End Function
+
+   Private Function ObtainFaultSeverity (strVal)
+      Select Case (strVal)
+         Case "LOG_AS_FAIL":
+            ObtainFaultSeverity = LOG_AS_FAIL
+         Case "LOG_AS_WARN":
+            ObtainFaultSeverity = LOG_AS_WARN
+         Case "LOG_AS_WRITE":
+            ObtainFaultSeverity = LOG_AS_WRITE
+         Case Else:
+            ObtainFaultSeverity = INVALID
+      End Select
+
+   End Function
+
+   Public Function CreateEntry (ArrMatches, ArrLength)
+      Dim AddGuid
+      Dim NewEntry
+
+      CreateEntry = False
+
+      AddGuid = False
+
+      Set NewEntry = New CDBEntry
+
+      ' Oid
+      NewEntry.Oid = CLng(ArrMatches(0))
+
+      ' OidStr
+      NewEntry.OidName = ArrMatches(1)
+
+      ' Length
+      NewEntry.Length = CInt(ArrMatches(2))
+
+      ' DataType
+      NewEntry.DataType = ObtainDataType (ArrMatches(3))
+
+      ' WMIReqType
+      NewEntry.RequestType = ObtainRequestType (ArrMatches(7))
+
+      If (NewEntry.RequestType <> INVALID) Then
+
+         ' WMIClassName
+         NewEntry.ClassName = ArrMatches(4)
+
+         ' WMIPropertyName
+         NewEntry.PropertyName = ArrMatches(5)
+
+         ' StrGuid
+         NewEntry.Guid = ArrMatches(6)
+
+         ' WMIFailure
+         NewEntry.FaultSeverity = ObtainFaultSeverity (ArrMatches(8))
+
+         NewEntry.Flags = ArrMatches(9)
+
+         AddGuid = True
+      End If
+
+      ' Do we want to add the guid??
+      If (AddGuid) Then
+         AddEntry(NewEntry)
+         CreateEntry = True
+      Else
+         Set NewEntry = Nothing
+      End If
+
+   End Function
+
+   ' Add a new DBEntry into the WmiList
+   Public Function AddEntry(oNewEntry)
+      If (m_lNumElems = m_lAllocatedSize) Then
+         m_lAllocatedSize = m_lAllocatedSize + 10
+         ReDim Preserve m_arrList(m_lAllocatedSize)
+      End If
+
+      Set m_arrList (m_lNumElems) = oNewEntry
+
+      m_lNumElems = m_lNumElems + 1
+   End Function
+
+   ' No of elements in the array
+   Public Property Get Size
+      Size = m_lNumElems
+   End Property
+
+   ' CDBEntry object at index
+   Function EntryAt(ulIndex)
+      If (ulIndex >= m_lNumElems) Then
+         Call oLog.Failed ("Overflow in accessing elements of list", 88888)
+         Set EntryAt = Nothing
+      Else
+         Set EntryAt = m_arrList(ulIndex)
+      End If
+   End Function
+
+   ' Oid at index
+   Function OidAt(ulIndex)
+      If (ulIndex >= m_lNumElems) Then
+         Call oLog.Failed ("Overflow in accessing elements of list", 88888)
+         OidAt = Null
+      Else
+         OidAt = m_arrList(ulIndex).Oid
+      End If
+   End Function
+
+   ' Get index of this guid
+   Function GetGuidIndex(ulSearchGuid)
+      Dim iIndex
+      Dim iFoundIndex
+
+      iFoundIndex = -1
+      iIndex = CLng(0)
+      Do While (iIndex < m_lNumElems)
+         If (m_arrList(iIndex).Guid = ulSearchGuid) Then
+            iFoundIndex = iIndex
+            Exit Do
+         End If
+         iIndex = iIndex + 1
+      Loop
+      GetGuidIndex = iFoundIndex
+   End Function
+
+   ' Wrapper for obtaining characteristics of a particular oid
+   Function Length(iIndex)
+      If (iIndex >= m_lNumElems) Then
+         Call oLog.Failed ("Overflow in accessing elements of list", 88888)
+         Length = Null
+      Else
+         Length = m_arrList(iIndex).Length
+      End If
+   End Function
+
+   Function DataType(iIndex)
+      If (iIndex >= m_lNumElems) Then
+         Call oLog.Failed ("Overflow in accessing elements of list", 88888)
+         DataType = Null
+      Else
+         DataType = m_arrList(iIndex).DataType
+      End If
+   End Function
+
+   Function OidName(iIndex)
+      If (iIndex >= m_lNumElems) Then
+         Call oLog.Failed ("Overflow in accessing elements of list", 88888)
+         OidName = Null
+      Else
+         OidName = m_arrList(iIndex).OidName
+      End If
+   End Function
+
+   Function ClassName(iIndex)
+      If (iIndex >= m_lNumElems) Then
+         Call oLog.Failed ("Overflow in accessing elements of list", 88888)
+         ClassName = Null
+      Else
+         ClassName = m_arrList(iIndex).ClassName
+      End If
+   End Function
+
+   Function PropertyName(iIndex)
+      If (iIndex >= m_lNumElems) Then
+         Call oLog.Failed ("Overflow in accessing elements of list", 88888)
+         PropertyName = Null
+      Else
+         PropertyName = m_arrList(iIndex).PropertyName
+      End If
+   End Function
+
+   Function Guid(iIndex)
+      If (iIndex >= m_lNumElems) Then
+         Call oLog.Failed ("Overflow in accessing elements of list", 88888)
+         Guid = Null
+      Else
+         Guid = m_arrList(iIndex).Guid
+      End If
+   End Function
+
+   Function RequestType(iIndex)
+      If (iIndex >= m_lNumElems) Then
+         Call oLog.Failed ("Overflow in accessing elements of list", 88888)
+         RequestType = Null
+      Else
+         RequestType = m_arrList(iIndex).RequestType
+      End If
+   End Function
+
+   Function FaultSeverity(iIndex)
+      If (iIndex >= m_lNumElems) Then
+         Call oLog.Failed ("Overflow in accessing elements of list", 88888)
+         FaultSeverity = Null
+      Else
+         FaultSeverity = m_arrList(iIndex).FaultSeverity
+      End If
+   End Function
+
+   'Various flags in the oids database
+   '
+   'Value of bits in each nibble (MSBit to LSBit)
+   'Second   : 0 | Multival | Generic | Not Settable
+   'First    : Ndis Only | Co Ndis | Allow Write | Allow Read
+   'Lowermost: Array | Ansi | Status | Guid To Oid
+   '
+   Function Flags (iIndex)
+      If (iIndex >= m_lNumElems) Then
+         Call oLog.Failed ("Overflow in accessing elements of list", 88888)
+         Flags = Null
+      Else
+         Flags = m_arrList(iIndex).Flags
+      End If
+   End Function
+
+End Class
+
+'============================================================================================='
+'/**
+' Holds an oid and its related information
+'*/
+Class CDBEntry
+   Dim Oid              'm_ulOid : OID value
+   Dim OidName          'm_strOid : Oid string
+   Dim Length           'm_nLength : Length of data associated with this oid
+   Dim DataType         'm_nDataType : The type of data needed to do a NdisRequest on this oid
+
+   Dim ClassName        'm_strClassName : Class to use for guid
+   Dim PropertyName     'm_strPropertyName : Property to use to obtain value
+   Dim Guid             'm_strGuid : Guid value
+   Dim RequestType      'm_nGuidRequestType : Guid Query/Set
+   Dim FaultSeverity    'm_nGuidFaultSeverity : Fail/Warn, etc when error occurs
+
+   Dim Flags            'm_fFlags : Flag that talks about permissions, etc
+
+   Private Sub Class_Initialize
+      Oid = &H00000000
+      OidName = "UNDEFINED OID"
+      Length = -1
+      DataType = OTHER
+
+      ClassName = "INVALID"
+      PropertyName = "INVALID"
+      Guid = "{FFFFFFFF-FFFF-FFFF-FF-FF-FF-FF-FF-FF-FF-FF}"
+      RequestType = INVALID
+      FaultSeverity = INVALID
+
+      Flags = &H00000111      ' Not settable, allow read, guid to oid
+   End Sub
+
+   Function AllowsAllRead
+      AllowsAllRead = False
+      If ((Flags And &H10) <> 0) Then
+         AllowsAllRead = True
+      End If
+   End Function
+
+   Function AllowsAllWrite
+      AllowsAllWrite = False
+      If ((Flags And &H20) <> 0) Then
+         AllowsAllWrite = True
+      End If
+   End Function
+
+   Function IsSettable
+      IsSettable = True
+      If ((Flags And &H100) = 0) Then
+         IsSettable = False
+      End If
+   End Function
+
+
+End Class
+
+      </script>
+   </job>
+</package>
+
+
+
+
+
+
+<!--- CRC = 0xb3dd0378 --->

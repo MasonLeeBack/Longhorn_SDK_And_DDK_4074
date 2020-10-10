@@ -1,0 +1,766 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, FDDI
+</MEDIA>
+<WHQL>
+802_3, FDDI
+</WHQL>
+<CARDMACH>
+2C,1M,2M
+</CARDMACH>
+<RUNORDER>
+1500
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[
+<!--
+This script tests the ability of NDIS and the driver to override the
+adapter's current MAC address by writing a new address into the driver's
+registry with registry value NetworkAddress. The driver should receive
+the new address when it calls NdisReadNetworkAddress during initialization.
+
+Sequence of events
+1) read current NetworkAddress parameter in registry so it can be restored at the end
+2) query the card to find it's current and permanent ethernet address
+3) stop the driver
+4) write the new ethernet address into registry
+5) start the driver
+6) query the card to find it's current and compare to expected setting
+7) query the card to find it's permanent address and make sure it hasn't changed
+8) have the server send 100 packets to the new current address
+9) have the server send 100 packets to the original current address (expecting 0 pkts received)
+10) stop the driver
+11) put the original NetworkAddress into the registry
+12) start the driver
+13) query the card to find it's current and permanent ethernet address
+    and make sure they are the same as at the start
+-->
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="2c_AddressChange" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oPNPPower" progid="NDTSupp.Setup.1" events="true"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+
+      <!-- Begin Wireless Specific Includes -->
+      <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	   <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	   <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	   <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	   <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+      <!-- End Wireless Specific Includes -->
+
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script language="VBScript" src="..\inc\ConstLAN.vbs"/>
+      <script id="2c_AddressChange" language="VBScript">
+'==========================================================================
+' Script Name:    2c_AddressChange
+'==========================================================================
+Option Explicit
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0), GetSupportAdapterIndex (oNDInfo.AdapterList, 0))
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Dim oTestCard, oTestOpen
+   Dim oSuppCard, oSuppOpen
+   Dim m_lTestAdapterIndex, m_lSuppAdapterIndex
+   Dim TestCardGUID
+   Dim nMedium
+   Dim nAddressAdded
+   Dim OrigRegCurrAddr
+   Dim bAddressAdded      ' is true if our temp n/w address was written successfully
+                          ' into the registry and has not been removed
+
+   Dim OrigState          ' is true if a network address was present in the
+                          ' registry before start of the test
+
+   Dim OrigCurrAddr, OrigPermAddr      ' a place to save the original settings
+
+   Private Sub Class_Initialize
+      OrigRegCurrAddr = NullAddr()
+      OrigCurrAddr = NullAddr()
+      OrigPermAddr = NullAddr()
+
+      OrigState = FALSE
+      bAddressAdded = FALSE
+   End Sub
+
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+      Set oTestOpen = Nothing
+
+      Set oSuppCard = Nothing
+      Set oSuppOpen = Nothing
+
+      If (bAddressAdded) Then
+         ' At this point we know that we have added the address, but not
+         ' removed it. We have the test card guid and so can delete the
+         ' network address we added
+         Dim bResult
+
+         ' Need to replace/remove the old address
+         If (OrigState) Then
+            oLog.Variation("Restore original address in registry")
+            bResult = oNDTSupp.WriteNetworkAddress(TestCardGUID, OrigRegCurrAddr)
+            If (Not bResult) Then
+               call oLog.Failed ("Unable to restore network address in registry after test" , 88888)
+               MsgBox "A network address value has been written into the registry for your adapter.  You should remove it", vbSystemModal
+               oLog.Write("A temporary network address value has been written into the registry" )
+               oLog.Write("for your adapter.  You should go into registry and put your network")
+               oLog.Write("address back" )
+            End If
+         Else
+            oLog.Variation("Clear address in registry")
+            bResult = oNDTSupp.WriteNetworkAddress(TestCardGUID, CLng(0))
+            If (Not bResult) Then
+               call oLog.Failed ("Unable to clear network address in registry after test" , 88888)
+               MsgBox "A network address value has been written into the registry for your adapter.  You should remove it", vbSystemModal
+               oLog.Write("A network address value has been written into the registry" )
+               oLog.Write("for your adapter.  You should remove it" )
+            End If
+         End If
+      End If
+   End Sub
+
+
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+
+      If (IsIMDriver(m_lTestAdapterIndex)) Then
+         oLog.Write ("This test is not required for Intermediate Drivers. Quitting")
+         Exit Function
+      End If
+
+      If (UseIPHeaders) Then
+         Exit Function
+      End If
+
+      If (oNdtSession(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMCABLEMODEM) Then
+         oLog.Write("This test is not required for cable modems.")
+         Exit Function
+      End If
+
+      Set pAdapterList = oNDInfo.AdapterList
+
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+
+      Set oTestOpen = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpen is Nothing) Then
+         Exit Function
+      End If
+
+      oLog.Variation ("Setting up Support Adapter")
+      Set oSuppCard = New CLanCard
+      If (oSuppCard is Nothing) Then
+         Exit Function
+      End If
+
+      Set oSuppOpen = oSuppCard.vbSetupBasicTest(pAdapterList (m_lSuppAdapterIndex))
+      If (oSuppOpen is Nothing) Then
+         Exit Function
+      End If
+
+      TestCardGUID = pAdapterList(m_lTestAdapterIndex).GUID
+
+      Set pAdapterList = Nothing
+
+      nMedium = oTestCard.NdisMedium
+      If (nMedium <> NDISMEDIUM802_3 And nMedium <> NDISMEDIUMFDDI) Then
+         call oLog.Failed ("This test is only implemented for Ethernet and FDDI" , 21507)
+         Exit Function
+      End If
+
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then
+
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")
+         If(vbAssociateWep(oTestOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If
+
+         oLog.Variation ("Associating support device with " & NDTESTAP2 & " ...")
+         If(vbAssociateWep(oSuppOpen, NDTESTAP2) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate support device with " & NDTESTAP2, 88888
+            Exit Function
+         End If
+
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+
+      '----------------------------------------------------
+      ' Read registry here to get pretest state of NetworkAddress
+      '----------------------------------------------------
+      oLog.Variation("Obtain NetworkAddress from registry")
+      OrigState = oNDTSupp.ReadNetworkAddress(TestCardGUID, OrigRegCurrAddr)
+      oLog.Write("It is OK for the NetworkAddress to be present or not present" )
+
+      SetupTest = TRUE
+   End Function
+
+   Public Function RunTest (lTestAdapterIndex, lSuppAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      m_lSuppAdapterIndex = lSuppAdapterIndex
+
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+
+      ExecuteTestCore
+   End Function
+
+   Private Function ExecuteTestCore
+      Dim bResult, ResultSize, nResult
+      Dim lIteration
+      Dim NewMacAddr
+      Dim bValidNewAddr, strAddressType
+      Dim oOpen : Set oOpen = Nothing
+
+      Do
+         '
+         ' Before starting, obtain the original addresses
+         '
+         oLog.Variation("Obtain original current address")
+         ResultSize = 6
+         If (nMedium = NDISMEDIUM802_3) Then
+            bResult = oTestOpen.vbFastNdisRequest(OID_802_3_CURRENT_ADDRESS, OrigCurrAddr, ResultSize)
+         ElseIf (nMedium = NDISMEDIUMFDDI) Then
+            bResult = oTestOpen.vbFastNdisRequest(OID_FDDI_LONG_CURRENT_ADDR, OrigCurrAddr, ResultSize)
+         End If
+
+         If (Not bResult) Then
+            call oLog.Failed ("Unable to query current address from test card" , 21512)
+            Exit Do
+         End If
+
+         oLog.Variation("Obtain original permanent address")
+         ResultSize = 6
+         If (nMedium = NDISMEDIUM802_3) Then
+            bResult = oTestOpen.vbFastNdisRequest(OID_802_3_PERMANENT_ADDRESS, OrigPermAddr, ResultSize)
+         ElseIf (nMedium = NDISMEDIUMFDDI) Then
+            bResult = oTestOpen.vbFastNdisRequest(OID_FDDI_LONG_PERMANENT_ADDR, OrigPermAddr, ResultSize)
+         End If
+
+         If (Not bResult) Then
+            call oLog.Failed ("Unable to query permanent address from test card" , 21513)
+            Exit Do
+         End If
+
+         ' Close open
+         Call oTestOpen.vbClearEvents()
+
+         oTestOpen.vbNdisClose()
+         Set oTestOpen = Nothing
+
+         For lIteration = 1 to 5    ' 6 would check for disallowing globally administered
+            If (lIteration = 4) Then
+               ' Would it accept a multicast address?
+               oLog.Write ("Will attempt to set multicast address as network address")
+               NewMacAddr = GoodMulticastAddr
+               strAddressType = "multicast"
+               bValidNewAddr = False
+            ElseIf (lIteration = 5) Then
+               ' Would it accept a broadcast address?
+               oLog.Write ("Will attempt to set broadcast address as network address")
+               ' 802_3 and FDDI broadcast address
+               NewMacAddr = NetAddr(&HFF&, &HFF&, &HFF&, &HFF&, &HFF&, &HFF&)
+               strAddressType = "broadcast"
+               bValidNewAddr = False
+            ElseIf (lIteration = 6) Then
+               ' Test case not enabled
+               ' It should not accept a globally administered address
+               NewMacAddr = NetAddr(&H00&, &H02&, &H04&, &H06&, &H08&, lIteration)
+               strAddressType = "globally administered"
+               bValidNewAddr = False
+            Else
+               ' Attempt to set locally administered address only
+               NewMacAddr = NetAddr(&H02&, &H02&, &H04&, &H06&, &H08&, lIteration)
+               strAddressType = "valid"
+               bValidNewAddr = True
+            End If
+
+            ' Ensure we are not working with a stale registry entry
+            If (OrigState) Then
+               ' The original contents should have been an address, else we could give
+               ' out a runtime error here.
+               If (NetAddrCmpI(OrigRegCurrAddr, NewMacAddr, 0)) Then
+                  call oLog.Failed ("NetworkAddress in registry same as address to be tested with" , 21514)
+                  oLog.Write("If this address was left there by a previous test, you will" )
+                  oLog.Write("have to remove the address from the registry before proceeding" )
+                  Exit Do
+               End If
+            End If
+
+            ' Change the registry key and stop and start the registry
+            nResult = ModifyRegistryNetworkAddress(NewMacAddr, bValidNewAddr)
+            If (nResult = 0) Then
+               ' We managed to restart the driver with the new address
+
+               '-------------------- Begin 802.11 Association Routine --------------------'
+               If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then
+                  Set oOpen = oTestCard.vbOpenAdapter()
+
+                  If(vbAssociateWep(oOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+                     oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+                  End If
+
+                  Set oOpen = Nothing
+               End If
+               '-------------------- End 802.11 Association Routine --------------------'
+
+               bResult = oTestCard.vbWaitForLinkWithDelay(90, glWaitForLinkExtraDelay)     ' wait for link to be established
+
+               Wscript.Sleep 5000
+
+               oLog.Variation("Open Test adapter")
+               Set oTestOpen = oTestCard.vbOpenAdapter()
+               If(Not (oTestOpen is Nothing)) Then
+                  ' Verify that the driver is currently using the new address (if valid)
+                  Call VerifyDriverReadNewAddress(NewMacAddr, bValidNewAddr, strAddressType)
+
+                  If (bValidNewAddr) Then
+                     ' Verify that the driver works with the new address
+                     VerifyReceiveAddress(NewMacAddr)
+                  End If
+
+                  Call oTestOpen.vbClearEvents()
+                  oTestOpen.vbNdisClose()
+                  Set oTestOpen = Nothing
+               End If
+            End If
+
+            ' Restore the old registry address and stop and start the driver
+            RestoreRegistryNetworkAddress
+
+            Wscript.Sleep 5000
+
+            ' Verify that the driver restores the old address
+            oLog.Variation("Open Test adapter")
+            Set oTestOpen = oTestCard.vbOpenAdapter()
+            If (Not (oTestOpen is Nothing)) Then
+               VerifyDriverRestoredOldAddress
+
+               ' Close open
+               Call oTestOpen.vbClearEvents()
+
+               oTestOpen.vbNdisClose()
+               Set oTestOpen = Nothing
+            End If
+         Next
+      Loop While (FALSE)
+
+   End Function
+
+   Private Function ModifyRegistryNetworkAddress(NewMacAddr, bValidNewAddr)
+      Dim nResult, bResult
+
+      '------------------------------------------------------
+      ' variation:  Stop the driver, modify ethernet_address
+      ' field in registry, start driver
+      '------------------------------------------------------
+      nResult = NDIS_STATUS_SUCCESS
+      Do
+         oLog.Variation("Stop driver")
+
+         nResult = oPNPPower.StopDriver(TestCardGUID)
+         If (nResult <> 0) Then
+            call oLog.Failed ("Unable to stop driver" , 21516)
+            Exit Do
+         End If
+
+         Wscript.Sleep 5000
+
+         '----------------------------------------------------
+         ' Write registry here to set current ethernet address
+         ' different from the permanent ethernet address
+         '----------------------------------------------------
+
+         oLog.Variation("Write new network address")
+         bResult = oNDTSupp.WriteNetworkAddress(TestCardGUID, NewMacAddr)
+         If (Not bResult) Then
+            call oLog.Failed ("Unable to modify network address in registry" , 21517)
+            nResult = NDIS_STATUS_FAILURE
+            ' Still fill the
+         Else
+            ' Yes we have modified the address in the registry
+            bAddressAdded = TRUE
+         End If
+
+         oLog.Variation("Start driver")
+         nResult = oPNPPower.StartDriver(TestCardGUID)
+         If (nResult <> 0) Then
+            If (bValidNewAddr) Then
+               ' We attempted to set a valid address and the driver didnt load
+               call oLog.Failed ("Unable to restart driver after stopping" , 21518)
+               oLog.Write("NOTE: A network address value has been written into the registry" )
+               oLog.Write("      for your adapter.  You might need to remove it" )
+               Exit Do
+            Else
+               ' We attempted to set an invalid address and the driver didnt load
+               ' This is acceptable. We have to clean that address and continue
+               oLog.Write ("Unable to restart driver after modifying address")
+            End If
+         End If
+      Loop While (FALSE)
+
+      ' Return the final status
+      ModifyRegistryNetworkAddress = nResult
+   End Function
+
+
+   Private Function VerifyDriverReadNewAddress(NewMacAddr, bValidNewAddr, strNewAddress)
+      Dim ResultSize, bResult
+      Dim NewCurrAddr, NewPermAddr
+      NewCurrAddr = NullAddr()
+      NewPermAddr = NullAddr()
+
+      '----------------------------------------------------
+      ' Check OID interface to see if address has been
+      ' changed then receive packets using new address
+      '----------------------------------------------------
+
+      Do
+         oLog.Variation("Obtain current address to verify that it changed")
+         ResultSize = 6
+         If (nMedium = NDISMEDIUM802_3) Then
+            bResult = oTestOpen.vbFastNdisRequest(OID_802_3_CURRENT_ADDRESS, NewCurrAddr, ResultSize)
+         ElseIf (nMedium = NDISMEDIUMFDDI) Then
+            bResult = oTestOpen.vbFastNdisRequest(OID_FDDI_LONG_CURRENT_ADDR, NewCurrAddr, ResultSize)
+         End If
+
+         If (Not bResult) Then
+            call oLog.Failed ("Unable to query current address from test card" , 21521)
+            Exit Do
+         End If
+
+         If (bValidNewAddr) Then
+            If (Not NetAddrCmpI(NewMacAddr, NewCurrAddr, 0)) Then
+               call oLog.Failed ("Current network address did not change after driver was reloaded" , 21522)
+            End If
+         Else
+            ' We did set a broadcast or multicast address, check if the driver accepted
+            ' that address
+            If (NetAddrCmpI(NewMacAddr, NewCurrAddr, 0)) Then
+               call oLog.Failed ("After driver was loaded, it is using a " & strNewAddress & " address as its current address" , 88888)
+               oLog.Write("The driver should not accept a multicast or broadcast address from the registry")
+            End If
+         End If
+
+         oLog.Variation("Obtain permanent address to check for changes")
+         ResultSize = 6
+         If (nMedium = NDISMEDIUM802_3) Then
+            bResult = oTestOpen.vbFastNdisRequest(OID_802_3_PERMANENT_ADDRESS, NewPermAddr, ResultSize)
+         ElseIf (nMedium = NDISMEDIUMFDDI) Then
+            bResult = oTestOpen.vbFastNdisRequest(OID_FDDI_LONG_PERMANENT_ADDR, NewPermAddr, ResultSize)
+         End If
+
+         If (Not bResult) Then
+            oLog.Warned("Unable to query permanent address from test card")
+         ElseIf (Not NetAddrCmpI(NewPermAddr, OrigPermAddr, 0)) Then
+            oLog.Warned("Permanent Network address changed when it should not have")
+         End If
+
+      Loop While(FALSE)
+      VerifyDriverReadNewAddress = bResult
+   End Function
+
+   Private Function VerifyReceiveAddress(NewMacAddr)
+      Dim arrSendAddr, bResult, nCount
+      Dim nMinimumPass
+      Dim nPacketSize
+      Dim nTotalPackets
+      Dim nTestId
+      Dim nPacketsSent, nReceived, nResent
+
+      ReDim arrSendAddr(glPacketsPerBurst)
+
+      ' We have set a valid address, lets try send/receive
+      oLog.Variation("Setup open instances")
+
+      nTestId = oNDTSupp.Random(1, 32765)
+      oSuppOpen.vbSetRemoteId(nTestId)
+      oTestOpen.vbSetLocalId(nTestId)
+
+      ' For functional tests, we allow the oring of this bit
+      oTestOpen.vbSetReceiveOption(RECEIVE_DEFAULT Or RECEIVE_ALLOW_BUSY_NET)
+
+      nPacketsSent = 0
+      nReceived = 0
+      nResent = 0
+
+      oLog.Variation("Prepare to receive at new address")
+      If (TRUE) Then  ' G_UseSendPackets
+         nCount = Clng(0)
+         While (nCount < glPacketsPerBurst)
+            arrSendAddr(nCount) = NewMacAddr
+            nCount = nCount + 1
+         WEnd
+         nTotalPackets = glPacketsPerBurst * glBurstsToSend
+      Else
+         arrSendAddr(0) = NewMacAddr
+         nTotalPackets = glPacketsToSend
+      End If
+
+      '------------------------------------------------
+      ' variation:   send directed packets to new
+      '              ethernet address
+      '------------------------------------------------
+
+      '
+      ' first set the packet filter for the test card
+      '
+      Call oTestOpen.vbSetPacketFilter(DIRECTED)
+
+      nPacketSize = glMinimumPacketSize
+
+      '
+      ' start receives, send packets, check send results, then check
+      ' receive results
+      '
+
+      oTestOpen.vbStartReceive()
+
+      If (TRUE) Then 'G_UseSendPackets
+         oLog.Variation("Send packets")
+         Call oSuppOpen.vbVerifiedSendPackets(arrSendAddr, glPacketsPerBurst, nPacketSize, glBurstsToSend, 0, Null)
+      Else
+         oLog.Variation("Send")
+         Call oSuppOpen.vbVerifiedSend(arrSendAddr(0), nPacketSize, glPacketsToSend, 0, Null)
+      End If
+
+      oLog.Variation("Receive results")
+      '
+      ' the test card should receive all packets
+      '
+      nMinimumPass = (glPercentToPass * nTotalPackets) / 100
+
+      bResult = oTestOpen.vbStopReceive
+      If (bResult) Then
+         bResult = oTestOpen.vbVerifyReceiveResend(nTotalPackets, nMinimumPass, 0, 0)
+      End If
+
+      '------------------------------------------------
+      ' variation:   send directed packets to original
+      '              current ethernet address
+      '------------------------------------------------
+
+      nPacketsSent = 0
+      nReceived = 0
+      nResent = 0
+
+      oLog.Variation("Prepare to receive at old address")
+      If (TRUE) Then  ' G_UseSendPackets
+         nCount = Clng(0)
+         While (nCount < glPacketsPerBurst)
+            arrSendAddr(nCount) = OrigCurrAddr
+            nCount = nCount + 1
+         WEnd
+         nTotalPackets = glPacketsPerBurst * glBurstsToSend
+      Else
+         arrSendAddr(0) = OrigCurrAddr
+         nTotalPackets = glPacketsToSend
+      End If
+
+      '------------------------------------------------
+      ' variation:   send directed packets to new
+      '              ethernet address
+      '------------------------------------------------
+
+      '
+      ' first set the packet filter for the test card
+      '
+      oTestOpen.vbSetPacketFilter(DIRECTED)
+
+      nPacketSize = glMinimumPacketSize
+
+      '
+      ' start receives, send packets, check send results, then check
+      ' receive results
+      '
+
+      oTestOpen.vbStartReceive()
+
+      If (TRUE) Then 'G_UseSendPackets
+         oLog.Variation("Send packets")
+         Call oSuppOpen.vbVerifiedSendPackets(arrSendAddr, glPacketsPerBurst, nPacketSize, glBurstsToSend, 0, Null)
+      Else
+         oLog.Variation("Send")
+         Call oSuppOpen.vbVerifiedSend(arrSendAddr(0), nPacketSize, glPacketsToSend, 0, Null)
+      End If
+
+      oLog.Variation("Receive results")
+      '
+      ' the test card should receive all packets
+      '
+      bResult = oTestOpen.vbStopReceive
+      If (bResult) Then
+         bResult = oTestOpen.vbVerifyReceiveResend(0, 0, 0, 0)
+      End If
+
+      ' End of send receive test
+   End Function
+
+
+   Private Function RestoreRegistryNetworkAddress
+      Dim nResult, bResult
+
+      Do
+         '
+         ' Now stop the driver to reset the registry to the pretest state
+         '
+         oLog.Variation("Stop driver")
+         nResult = oPNPPower.StopDriver(TestCardGUID)
+         If (nResult <> 0) Then
+            call oLog.Failed ("Unable to stop driver" , 21531)
+            Exit Do
+         End If
+
+         Wscript.Sleep 5000
+
+         '----------------------------------------------------
+         ' Write registry here to reset current ethernet address
+         ' to what it was before the test started
+         '----------------------------------------------------
+         If (OrigState) Then
+            '
+            ' The Network Address is stored in the registry as a null terminated string.
+            ' The address can be in at least two formats 000102030405 or 00-01-02-03-04-05.
+            ' The script netaddr variable is an array of 6 bytes.  When the address is read
+            ' it is converted from one of the two forms above to a 6 byte array.  When it is
+            ' written back out it is always written in the first format example above.  It
+            ' will look different in the registry but it should function exactly the same.
+            '
+            oLog.Variation("Restore original address in registry")
+            bResult = oNDTSupp.WriteNetworkAddress(TestCardGUID, OrigRegCurrAddr)
+            If (Not bResult) Then
+               call oLog.Failed ("Unable to restore network address in registry after test" , 21532)
+               oLog.Write("You will need to go into registry and put your network address back" )
+            Else
+               ' Address in registry has been restored to the original one
+               bAddressAdded = FALSE
+            End If
+         Else
+            oLog.Variation("Clear address in registry")
+            bResult = oNDTSupp.WriteNetworkAddress(TestCardGUID, CLng(0))
+            If (Not bResult) Then
+               call oLog.Failed ("Unable to clear network address in registry after test" , 21533)
+               ' No popup, as we automatically cleanup
+               ' MsgBox "You will need to go into registry and delete the network address", vbSystemModal
+               oLog.Write("You will need to go into registry and delete the network address" )
+            Else
+               ' Address in registry has been deleted
+               bAddressAdded = FALSE
+            End If
+         End If
+
+         oLog.Variation("Start driver")
+         nResult = oPNPPower.StartDriver(TestCardGUID)
+         If (nResult <> 0) Then
+            call oLog.Failed ("Unable to restart driver after stopping" , 21534)
+            Exit Do
+         Else
+            '-------------------- Begin 802.11 Association Routine --------------------'
+            If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then
+               Set oOpen = oTestCard.vbOpenAdapter()
+               If(vbAssociateWep(oOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+                  oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+               End If
+               Set oOpen = Nothing
+            End If
+            '-------------------- End 802.11 Association Routine --------------------'
+            Call oTestCard.vbWaitForLinkWithDelay(90, glWaitForLinkExtraDelay)
+         End If
+
+      Loop While(FALSE)
+   End Function
+
+   Private Function VerifyDriverRestoredOldAddress
+      Dim bResult, ResultSize
+      Dim NewCurrAddr, NewPermAddr
+      NewCurrAddr = NullAddr()
+      NewPermAddr = NullAddr()
+
+      Do
+         '
+         ' check that pretest values are in place
+         '
+         oLog.Variation("Obtain current address to check if restored")
+         ResultSize = 6
+         If (nMedium = NDISMEDIUM802_3) Then
+            bResult = oTestOpen.vbFastNdisRequest(OID_802_3_CURRENT_ADDRESS, NewCurrAddr, ResultSize)
+         ElseIf (nMedium = NDISMEDIUMFDDI) Then
+            bResult = oTestOpen.vbFastNdisRequest(OID_FDDI_LONG_CURRENT_ADDR, NewCurrAddr, ResultSize)
+         End If
+
+         If (Not bResult) Then
+            call oLog.Failed ("Unable to query current address from test card" , 21537)
+            Exit Do
+         End If
+
+         If (Not NetAddrCmpI(OrigCurrAddr, NewCurrAddr, 0)) Then
+            call oLog.Failed ("Unable to reset Network address to pretest state" , 21538)
+         End If
+
+         oLog.Variation("Obtain permanent address to check if restored")
+         ResultSize = 6
+         If (nMedium = NDISMEDIUM802_3) Then
+            bResult = oTestOpen.vbFastNdisRequest(OID_802_3_PERMANENT_ADDRESS, NewPermAddr, ResultSize)
+         ElseIf (nMedium = NDISMEDIUMFDDI) Then
+            bResult = oTestOpen.vbFastNdisRequest(OID_FDDI_LONG_PERMANENT_ADDR, NewPermAddr, ResultSize)
+         End If
+
+         If (Not bResult) Then
+            oLog.Warned("Unable to query permanent address from test card" )
+         ElseIf (Not NetAddrCmpI(NewPermAddr, OrigPermAddr,0)) Then
+            oLog.Warned("Permanent Network address changed when it should not have" )
+         End If
+      Loop While(FALSE)
+   End Function
+End Class
+
+</script>
+</job>
+</package>
+
+
+<!--- CRC = 0xf1ab7413 --->

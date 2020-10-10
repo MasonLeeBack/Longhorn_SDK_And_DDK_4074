@@ -1,0 +1,227 @@
+'************************************* TCP_OutOfOrder.wsf ***********************
+'*                                                                             *
+'* Author            :    Sandeep Prabhu                                       *
+'* Revision history  :                                                         *
+'*    10/09/2000     sandeep        Created                                    *
+'*                                                                             *
+'* This script will test the following scenario (Bug #228339)                   
+'*      0. Post a receive
+'*      1. Send segment 0
+'*      2. Send segment 2
+'*      3. Send segment 1,2,F
+'*      4. Send the first segment
+'*                                                                             *
+'************************************* TCP_OutOfOrder.wsf ***********************
+
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="TCPLib.vbs"/>                  
+      <script id="TCP_OutOfOrder" language="VBScript">
+
+
+option explicit
+    
+Dim Core, Sparta, Autosrv, MediaType, AutoArpObject, IFace, pControllerObj
+Const usTCPDestPort = 5000
+Const usMSS = 1460
+ 
+'
+' Start the script
+'           
+StartScript "TCP_OutOfOrder", g_szLogDirectory, "Tests for ConnectEx" 
+
+
+
+' ==================================================================================================
+' Main routine
+' ==================================================================================================
+Sub Main
+   Dim ulStatus, ulWindowSize
+
+   Core.SetAssertionTracking "30200"
+   '/**
+   ' @area name="Offload Compliance Test Assertions"
+   ' @group name="TCP Miscellaneous Test Assertions"
+   ' @group name="TCP Out Of Order Test Assertions" 
+   ' @define name="Offload" Offload Compliance Test Assertions
+   ' @define name="TCPMisc" TCP Miscellaneous Test Assertions
+   ' @define name="OOO" TCP Out Of Order Test Assertions
+   ' @hierarchy Offload TCPMisc OOO
+   ' @key Reference="WLP# - x.x.x.x; RFC-793 Section 3.9; RFC-1122 Section 4.2.2.20"
+   ' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+   ' @key TestName="Out of Order Data Packets Tests"
+   ' @key TestLog="TCP_OutOfOrder.log"
+   '*/
+
+
+   '/**
+   ' @test name="The stack must receive Out of order data packets."
+   ' Verify stack will receive the out of order data. First stack Post a receive , then sparta send segment 0, 
+   ' send segment 2, send segment 1,2,F, send the first segment.
+   '*/  
+     
+   IFace.StartListening
+   Core.StartTest "Out of order segments"
+   OutOfOrderProcessing 
+   Core.EndTest   
+   Core.Sleep 2000   
+   IFace.StopListening
+      
+End Sub
+
+
+Sub OutOfOrderProcessing
+   Dim ulStatus, pTCPPacket, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim ulCWnd, ulWindowSize, pDataPacket, fFound, ReceiveTimer, ulStartSeqNumber
+   Dim ulBytesSent, ulBytesRcvd
+   
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 5000
+   usDestPort = 5000
+   ulWindowSize = CLng(10*usMSS)
+   
+   
+   Core.StartVariation
+   ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+   
+
+   '
+   ' Establish a connection
+   '
+   ulStatus = EstablishConnection(usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "OutOfOrderProcessing: EstablishConnection - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+
+   ulStartSeqNumber = ulSeqNumber + 100
+   Set pDataPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK or TCP_PUSH, 100)
+   
+   '
+   ' Ask Autosrv to post a receive
+   '
+   ulStatus = pControllerObj.Receive(ulSessionId, 0, 0, 65535, ulTID)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "OutOfOrderProcessing: Receive - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+
+   '
+   ' Send segment x
+   '
+   pDataPacket.TCPHeader.SeqNumber = ulStartSeqNumber
+   IFace.Send(pDataPacket)
+   '
+   ' Send segment x+2
+   '
+   pDataPacket.TCPHeader.SeqNumber = ulStartSeqNumber + 2*100
+   IFace.Send(pDataPacket)
+   '
+   ' Send segment x+1
+   '
+   pDataPacket.TCPHeader.SeqNumber = ulStartSeqNumber + 100
+   IFace.Send(pDataPacket)
+   '
+   ' Send segment x+2
+   '
+   pDataPacket.TCPHeader.SeqNumber = ulStartSeqNumber + 2*100
+   IFace.Send(pDataPacket)
+   '
+   ' Send FIN segment
+   '
+   Set pDataPacket = MakeTCPPacket(usSrcPort, usDestPort, ulStartSeqNumber + 3*100, ulAckNumber, TCP_FIN or TCP_ACK, 0)
+   IFace.Send(pDataPacket)
+   
+   '
+   ' Send the first segment
+   '
+   Set pDataPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK or TCP_PUSH, 100)
+   IFace.Send(pDataPacket)
+
+   ulStatus = pControllerObj.GetSessionStats(ulSessionId, ulBytesSent, ulBytesRcvd)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "OutOfOrderProcessing: GetSessionStats - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+   
+   Core.Sleep 300
+
+   if (ulBytesRcvd <> 400) then
+      Core.FailSev1Variation "OutOfOrderProcessing: Didn't receive the data - " & ulBytesRcvd
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+   
+   ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId   
+End Sub
+
+
+'
+' Function to make the stack establish a connection
+'
+Function EstablishConnection(usSrcPort, usDestPort, ByRef ulSessionId, ByRef ulSeqNumber, ByRef ulAckNumber)
+   Dim ulStatus, ulTID, pTCPPacket, ulBytesRcvd
+
+   '
+   ' Ask AutoSrv to create a socket, bind it & issue a connect 
+   '   
+   ulStatus = pControllerObj.CreateAndConnect(SOCK_STREAM, g_szRemoteIpAddress, usDestPort, g_szLocalSpoofIp, usSrcPort, ulTID, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.Log "EstablishConnection: CreateAndConnect - " & ulStatus
+      EstablishConnection = ulStatus
+      exit Function
+   end if
+      
+   
+   '
+   ' Receive the SYN
+   '   
+   Set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_SYN, 20000)
+   if (pTCPPacket is Nothing) then
+      Core.log "EstablishConnection: Didn't receive a SYN"
+      EstablishConnection = 1
+      exit Function
+   end if
+   
+   
+   '
+   ' Send the SYN-ACK
+   '
+   Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, (TCP_SYN or TCP_ACK), 0)
+   pTCPPacket.TCPHeader.TCPOption(0).AddMSS(usMSS)
+   IFace.Send(pTCPPacket)
+
+         
+   '
+   ' Receive the ACK
+   '   
+   Set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 500)
+   if (pTCPPacket is Nothing) then
+      Core.log "EstablishConnection: Didn't receive a ACK"
+      EstablishConnection = 1
+      exit Function
+   end if
+   
+   If Not IsConnectionOffloaded(usSrcPort, usDestPort, ulSessionId) and g_fTestOffload And g_fTOENic Then
+      Core.Log "EstablishConnection : Failed to offload the connection"
+      EstablishConnection = 3
+      Exit function
+   End If
+
+   EstablishConnection = 0
+
+End Function
+                                         
+
+      </script>
+   </job>
+</package>

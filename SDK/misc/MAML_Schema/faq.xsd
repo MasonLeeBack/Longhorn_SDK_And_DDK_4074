@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<schema xmlns="http://www.w3.org/2001/XMLSchema" 
+		xmlns:maml="http://schemas.microsoft.com/maml/2003/5" 
+		xmlns:doc="http://schemas.microsoft.com/maml/internal"
+		targetNamespace="http://schemas.microsoft.com/maml/2003/5" 
+		elementFormDefault="qualified"
+        attributeFormDefault="unqualified"
+        >
+	
+	<!-- Schema documentation -->
+	<annotation>
+		<documentation>
+			This schema definition defines question and answer types for the CS Schema.
+			This schema is part of the base layer.			
+		</documentation>
+	</annotation>
+
+	<!-- include and import declarations -->
+	<include schemaLocation="hierarchy.xsd"/>
+	
+	<element name="faq" type="maml:faqType">
+		<annotation>
+			<documentation>
+				The faq element describes a set of frequently asked questions and 
+				associated answers.
+			</documentation>
+		</annotation>
+	</element>
+
+	<element name="faqDiv">
+		<annotation>
+			<documentation>
+				The faqDiv element describes a titled division within a faqSet.
+			</documentation>
+		</annotation>
+		<complexType>
+			<sequence>
+				<element ref="maml:title"/>
+				<element ref="maml:subTitle" minOccurs="0"/>
+				<element ref="maml:introduction" minOccurs="0"/>
+				<element ref="maml:faqEntry" minOccurs="1" maxOccurs="unbounded"/>
+				<element ref="maml:transition" minOccurs="0"/>
+			</sequence>
+			<attributeGroup ref="maml:contentIdentificationSharingAndConditionGroup"/>
+		</complexType>
+	</element>
+	<element name="faqEntry">
+		<annotation>
+			<documentation>
+				The faqEntry element describes an entry within a faqSet.
+			</documentation>
+		</annotation>
+		<complexType>
+			<sequence>
+				<element ref="maml:title" minOccurs="0" maxOccurs="1"/>
+				<element ref="maml:question" minOccurs="1" maxOccurs="1"/>
+				<element ref="maml:answer" minOccurs="1" maxOccurs="1"/>
+				<element ref="maml:crossReference" minOccurs="0" maxOccurs="unbounded"/>
+			</sequence>
+			<attributeGroup ref="maml:contentIdentificationSharingAndConditionGroup"/>
+		</complexType>
+	</element>
+	<element name="question" type="maml:structureSimpleType">
+		<annotation>
+			<documentation>
+				The question element descibes a question within a frequently asked questions structure.
+			</documentation>
+		</annotation>
+	</element>
+	<element name="answer" type="maml:structureSimpleType">
+		<annotation>
+			<documentation>
+				The answer element describes a answer to a frequently asked question.
+			</documentation>
+		</annotation>
+	</element>
+
+	<complexType name="faqType">
+		<sequence>
+			<element ref="maml:title"/>
+			<element ref="maml:subTitle" minOccurs="0"/>
+			<element ref="maml:summary" minOccurs="0"/>
+			<element name="byLine" type="maml:structureSimpleType" minOccurs="0"/>
+			<element ref="maml:introduction" minOccurs="0"/>
+			<element ref="maml:crossReference" minOccurs="0" maxOccurs="unbounded"/>
+			<choice>
+				<element ref="maml:faqDiv" maxOccurs="unbounded"/>
+				<element ref="maml:faqEntry" maxOccurs="unbounded"/>
+			</choice>
+			<element ref="maml:transition" minOccurs="0"/>
+			<element ref="maml:alertSet" minOccurs="0"/>
+			<element ref="maml:relatedTopics" minOccurs="0"/>
+			<element ref="maml:reusableContent" minOccurs="0"/>
+			<element ref="maml:copyright" minOccurs="0"/>
+		</sequence>
+		<attribute name="contentType" type="token"/>
+	</complexType>
+
+</schema>

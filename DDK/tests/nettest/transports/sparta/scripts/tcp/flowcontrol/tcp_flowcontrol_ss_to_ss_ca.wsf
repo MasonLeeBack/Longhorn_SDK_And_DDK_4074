@@ -1,0 +1,226 @@
+'************************************* TCP_FlowControl_SS_TO_SS_CA.wsf ***********
+'*                                                                               *
+'* Author            :    Sandeep Prabhu                                         *
+'* Revision history  :                                                           *
+'*    10/06/2000     sandeep        Created                                      *
+'*                                                                               *
+'* This script will test the flow control algorithms                             *
+'*                                                                               *
+'************************************* TCP_FlowControl_SS_TO_SS_CA.wsf ***********
+
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\TCPLib.vbs"/>
+      <script language="VBScript" src="TCPFlowControlLib.vbs"/>
+      <script id="TCP_FlowControl_SS_TO_SS_CA" language="VBScript">
+
+
+option explicit
+
+Dim Core, Sparta, Autosrv, MediaType, AutoArpObject, IFace, pControllerObj
+Const usTCPDestPort = 5000
+Const usMSS = 1460
+
+'
+' Start the script
+'
+StartScript "TCP_FlowControl_SS_TO_SS_CA", g_szLogDirectory, "Tests for TCP flow control algorithms"
+
+
+
+' ==================================================================================================
+' Main routine
+' ==================================================================================================
+Sub Main
+   Core.SetAssertionTracking "80400"
+   Dim ulStatus, ulWindowSize
+
+'/**
+   ' @area name="Offload Compliance Test Assertions"
+   ' @group name="TCP Flow Control Test Assertions"
+   ' @group name="Slow Start, Time Out, Slow Start and Congestion Avoidance Assertions" 
+   ' @define name="Offload" Offload Compliance Test Assertions
+   ' @define name="TCPFC" TCP Flow Control Test Assertions
+   ' @define name="STSC" Slow Start, Time Out, Slow Start and Congestion Avoidance Assertions
+   ' @hierarchy Offload TCPFC STSC
+   ' @key Reference="WLP# - x.x.x.x; RFC-1122 Sections 4.2.2.15, 4.2.2.21; RFC-793 Section 3.9"
+   ' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+   ' @key TestName="TCP Flow Control Slow Start, Time Out, Slow Start and Congestion Avoidance Tests"
+   ' @key TestLog="TCP_FlowControl_SS_TO_SS_CA.log"	 
+   '*/
+
+
+   '/**
+   ' @test name="The stack must do Slow Start, Time Out, Slow Start and Congestion Avoidance in TCP ESTABLISHED State"
+   ' Verify TCP start with slow start:When a new connection is established with a host on another network, the congestion window is initialized .
+   ' Each time an ACK is received, the congestion window is increased by one segment.  
+   ' Verify if a rexmit happens because of TO expiring, window size drops to 2*MSS.
+   ' Verify then TCP will do the slow start till the window size becomes 1/2 of previous window.
+   ' Verify TCP followed with congestion avoidance.
+   '*/
+   
+   '
+   ' Test to ensure that in established state, we
+   '    - start with slow start
+   '    - if a rexmit happens because of TO expiring, window size drops to 2*MSS
+   '    - we then do slow start till the window size becomes 1/2 of previous window
+   '    - we then do congestion avoidance
+   '
+   IFace.StartListening
+   Core.StartTest "ESTD: Slow start and congestion avoidance after rexmit on TO"
+   SlowStart_Timeout_SlowStart_CongestionAvoidance(TRUE)
+   Core.EndTest
+   Core.Sleep(2000)
+   IFace.StopListening
+
+
+   '/**
+   ' @test name="The stack must do Slow Start, Time Out, Slow Start and Congestion Avoidance in TCP CLOSED_WAIT State"
+   ' Verify TCP start with slow start:When a new connection is established with a host on another network, the congestion window is initialized .
+   ' Each time an ACK is received, the congestion window is increased by one segment.  
+   ' Verify if a rexmit happens because of TO expiring, window size drops to 2*MSS.
+   ' Verify then TCP will do the slow start till the window size becomes 1/2 of previous window.
+   ' Verify TCP followed with congestion avoidance.
+   '*/
+   
+   '
+   ' Test to ensure that in CLOSE_WAIT state, we
+   '    - start with slow start
+   '    - if a rexmit happens because of TO expiring, window size drops to 2*MSS
+   '    - we then do slow start till the window size becomes 1/2 of previous window
+   '    - we then do congestion avoidance
+   '
+   IFace.StartListening
+   Core.StartTest "CLOSE_WAIT: Slow start and congestion avoidance after rexmit on TO"
+   SlowStart_Timeout_SlowStart_CongestionAvoidance(FALSE)
+   Core.EndTest
+   Core.Sleep(2000)
+   IFace.StopListening
+
+End Sub
+
+
+
+'
+' Routine to test the following
+'      - slow start
+'      - After a timeout & rexmit, window is dropped to 2
+'      - we then do slow start upto half of previous window
+'      - this is followed by congestion avoidance
+'
+Sub SlowStart_Timeout_SlowStart_CongestionAvoidance(bEstd)
+   Dim ulStatus, pTCPPacket, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim ulCWnd, ulWindowSize, fConnectType
+
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 5000
+   usDestPort = 6000
+
+   for each fConnectType in Array(true, false)
+      ulWindowSize = CLng(10*usMSS)
+      ulCWnd = 2*usMSS
+      Core.StartVariation
+
+      '
+      ' Establish a TCP connection
+      '
+      ulStatus = ConnectTo(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, ulWindowSize, usMSS, fConnectType)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "SlowStart_Timeout_SlowStart_CongestionAvoidance: ConnectTo - " & ulStatus
+         exit sub
+      end if
+
+      if (bEstd = FALSE) then
+         Dim ulBytesRcvd
+         '
+         ' Send a FIN
+         '
+         Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, (TCP_FIN or TCP_ACK), 0)
+         pTCPPacket.TCPHeader.WindowSize = ulWindowSize
+         IFace.Send(pTCPPacket)
+
+
+         '
+         ' Receive an ACK
+         '
+         Set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 200)
+         if (pTCPPacket is Nothing) then
+            Core.BlockVariation "SlowStart_FastRexmit_CongestionAvoidance: Didn't receive the ACK"
+            ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+            exit sub
+         end if
+      end if
+
+      '
+      ' Check the slow start behavior and open up the window to 10*MSS
+      '
+      ulStatus = SlowStartAndOpenWin(ulCWnd, ulWindowSize, ulWindowSize, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "SlowStart_Timeout_SlowStart_CongestionAvoidance: SlowStartAndOpenWin - " & ulStatus
+         ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+         exit sub
+      end if
+      ulCWnd = Clng(10*usMSS)
+
+      '
+      ' Have a rexmit happen on timeout
+      '
+      ulStatus = TimeoutAndRexmit(ulWindowSize, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "SlowStart_Timeout_SlowStart_CongestionAvoidance: TimeoutAndRexmit - " & ulStatus
+         ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+         exit sub
+      end if
+      ulCWnd = 2*usMSS
+
+      '
+      ' Check the slow start behavior upto 1/2 the window size
+      '
+      ulStatus = SlowStartAndOpenWin(ulCWnd, ulWindowSize/2, ulWindowSize, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "SlowStart_Timeout_SlowStart_CongestionAvoidance: SlowStartAndOpenWin - " & ulStatus
+         ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+         exit sub
+      end if
+      ulCWnd = Clng(ulWindowSize/2)
+
+      '
+      ' Check the congestion avoidance
+      '
+      ulStatus = CongestionAvoidance(ulCWnd, ulWindowSize, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "SlowStart_FastRexmit_CongestionAvoidance: CongestionAvoidance - " & ulStatus
+         ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+         exit sub
+      end if
+      ulCWnd = ulWindowSize
+
+      'Msgbox("Verified congestion avoidance. CWin = " & ulCWnd)
+
+      '
+      ' Verify the window is fully open
+      '
+      ulStatus = TestWindowSize(ulCWnd, ulWindowSize, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "SlowStart_FastRexmit_CongestionAvoidance: TestWindowSize - " & ulStatus
+         ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+         exit sub
+      end if
+
+      '
+      ' Reset the connection
+      '
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+   next
+End Sub
+
+
+      </script>
+   </job>
+</package>

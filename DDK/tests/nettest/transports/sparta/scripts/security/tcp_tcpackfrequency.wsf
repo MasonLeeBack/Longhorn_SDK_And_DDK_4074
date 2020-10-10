@@ -1,0 +1,361 @@
+
+' A script to test the TcpAckFrequency registry configuration. This reg key
+' controls the number of packets whose receipt would trigger an immediate 
+' ACK. An ACK is sent if
+' - TcpAckFrequency segments have been received
+' - TcpDelAckTicks timer has fired since the receipt of the first 
+'   unacknowledged segment
+' The test will try to avoid the 2nd condition so the 1st can be tested
+'
+' module   TCP_TcpAckFrequency.wsf
+' author   Sandeep Prabhu
+' alias    sandeep@microsoft.com
+' date     10/02/02
+'
+
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\common\Common.Lib"/>
+      <script language="VBScript" src="..\common\TCPHelper.Lib"/>
+      <script id="TCP_TcpAckFrequency" language="VBScript">
+
+
+option explicit
+
+                                                                                
+dim Core, Sparta, Autosrv, pController, MediaType, IFace, ExceptionStatus
+
+
+StartScript "TCP_TcpAckFrequency", g_szLogDirectory, "Test for TcpAckFrequency"
+
+
+sub Main
+   Core.SetAssertionTracking "40500"
+   dim ValueArray
+   ValueArray = Array(false, false, false, false)
+   ParseArguments array("-v6", "-offload", "-nocap", "-popup"), array(vbBoolean, vbBoolean, vbBoolean, vbBoolean), ValueArray
+   
+   '/**
+   ' @area name="Offload Compliance Test Assertions"
+   ' @group name="TCP Delayed ACK Test Assertions"
+   ' @group name="TcpAckFrequency Assertions"
+   ' @define name="Offload" Offload Compliance Test Assertions
+   ' @define name="TCPDA" TCP Delayed ACK Test Assertions
+   ' @define name="AF" TcpAckFrequency Assertions
+   ' @hierarchy Offload TCPDA AF
+   ' @key Reference="WLP# - x.x.x.x; RFC-813, RFC-1122 Section 4.2.3.2"
+   ' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+   ' @key TestName="TCP TcpAckFrequency Functionality Tests"
+   ' @key TestParam="-v6: uses IPv6 [Default: IPv4]"   
+   ' @key TestLog="Security_TCP_AckFrequency.log"
+   '*/
+
+   ' area name="TCP"   
+   ' group name="TcpAckFrequency functionality
+   '              Set TcpAckFrequency to different values and ensure the ACKs 
+   '              sent acknowledge at least that many segments (unless it's a 
+   '              window update)"
+   '
+   ' !Note   
+   ' v6 stack doesn't support this registry key
+
+   '/**
+   ' @test name="Set TcpAckFrequency to 0 (should use 2), stack does active connect"
+   ' Verify that stack obeys the TcpAckFrequency setting when sending ACKs for data.
+   '*/
+   if (ShouldExecuteTest("Active0")) then
+      core.starttest "TcpAckFrequency is set to 0, active connect"
+      DoTest ValueArray(0), true, 0
+      core.endtest   
+   end if
+   
+   '/**
+   ' @test name="Set TcpAckFrequency to 0 (should use 2), stack does passive connect"
+   ' Verify that stack obeys the TcpAckFrequency setting when sending ACKs for data.
+   '*/                      
+   if (ShouldExecuteTest("Passive0")) then
+      core.starttest "TcpAckFrequency is set to 0, passive connect"
+      DoTest ValueArray(0), false, 0
+      core.endtest
+   end if
+   
+   '/**
+   ' @test name="Set TcpAckFrequency to 4, stack does active connect"
+   ' Verify that stack obeys the TcpAckFrequency setting when sending ACKs for data.
+   '*/                      
+   if (ShouldExecuteTest("Active4")) then
+      core.starttest "TcpAckFrequency is set to 4, active connect"
+      DoTest ValueArray(0), true, 4
+      core.endtest
+   end if
+
+   '/**
+   ' @test name="Set TcpAckFrequency to 4, stack does passive connect"
+   ' Verify that stack obeys the TcpAckFrequency setting when sending ACKs for data.
+   '*/                      
+   if (ShouldExecuteTest("Passive4")) then
+      core.starttest "TcpAckFrequency is set to 4, passive connect"
+      DoTest ValueArray(0), false, 4
+      core.endtest
+   end if
+   
+   '/**
+   ' @test name="Set TcpAckFrequency to 1, stack does active connect"
+   ' Verify that stack obeys the TcpAckFrequency setting when sending ACKs for data.
+   '*/                      
+   if (ShouldExecuteTest("Active1")) then
+      core.starttest "TcpAckFrequency is set to 1, active connect"
+      DoTest ValueArray(0), true, 1
+      core.endtest
+   end if
+
+   '/**
+   ' @test name="Set TcpAckFrequency to 1, stack does passive connect"
+   ' Verify that stack obeys the TcpAckFrequency setting when sending ACKs for data.
+   '*/                      
+   if (ShouldExecuteTest("Passive1")) then
+      core.starttest "TcpAckFrequency is set to 1, passive connect"
+      DoTest ValueArray(0), false, 1
+      core.endtest
+   end if
+   
+   '/**
+   ' @test name="Remove TcpAckFrequency (should use 2), stack does active connect"
+   ' Verify that stack obeys the TcpAckFrequency setting when sending ACKs for data.
+   '*/                      
+   if (ShouldExecuteTest("ActiveNull")) then
+      core.starttest "TcpAckFrequency is not set, active connect"
+      DoTest ValueArray(0), true, null
+      core.endtest
+   end if
+
+   '/**
+   ' @test name="Remove TcpAckFrequency (should use 2), stack does passive connect"
+   ' Verify that stack obeys the TcpAckFrequency setting when sending ACKs for data.
+   '*/                      
+   if (ShouldExecuteTest("PassiveNull")) then
+      core.starttest "TcpAckFrequency is not set, passive connect"
+      DoTest ValueArray(0), false, null
+      core.endtest
+   end if
+
+end sub
+
+'
+'/**
+' Routine to ensure that stack obeys the TcpAckFrequency setting when sending
+' ACKs for data
+'
+' @params
+' !fVersion6         - TRUE/FALSE depending on whether TCPv6/TCPv4
+' !usSrcPort         - Source port (SPARTA side)
+' !usDestPort        - Destination port (Stack side) 
+' !szSrcAddress      - Source address (SPARTA side)
+' !szDestAddress     - Destination address (Stack side) 
+' !ulSeqNumber       - Sequence number  
+' !ulAckNumber       - Ack number 
+' !pIFace            - Interface to receive the data on
+' !ulTcpAckFrequency - The expected ACK frequency 
+'
+' @returns  nothing
+'*/
+'            
+function VerifyTcpAckFrequency(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, pIFace, ulTcpAckFrequency)
+   dim ulStartSeqNumber, ulLastSeqNumber, ulLastAckNumber, ulWindowSize, ulExpectedSize
+   dim pPacket, ulTimeout, ulSentSize, ulUnackedSize, ulTotalSendSize, ulBytesRcvd
+   dim pDataPacket
+   
+   
+   ulTotalSendSize = 20*ulTcpAckFrequency*EthernetMss(fVersion6)
+   
+   '
+   ' This is the sequence number of the 1st data segment sent by the script
+   '
+   ulStartSeqNumber = ulSeqNumber                                  
+   
+   '
+   ' This is the sequence number of the next data segment to be sent by the script 
+   '
+   ulLastSeqNumber = ulSeqNumber  
+   
+   '
+   ' This is the window size advertised in the last ACK sent by the stack
+   '
+   ulWindowSize = DefaultTcpWindowSize(fVersion6) 
+   
+   '
+   ' This the ACK number in the last ACK sent by teh stack
+   '
+   ulLastAckNumber = ulSeqNumber
+   
+   
+   set pDataPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulLastSeqNumber, ulAckNumber, TCP_ACK or TCP_PUSH, EthernetMss(fVersion6))
+    
+   do
+      '
+      ' This is the minimum size of data that should be ACKed by the stack
+      '   
+      ulExpectedSize = ulTcpAckFrequency*EthernetMss(fVersion6)
+      
+      '
+      ' We expect the ACK to be received within this timeout
+      '
+      ulTimeout = 50
+        
+      '
+      ' Receive an ACK
+      '
+      ulSentSize = ulLastSeqNumber - ulStartSeqNumber
+      if (ulSentSize > 0) then
+      
+         '
+         ' If there are < ulTcpAckFrequency segments outstanding, the ACK
+         ' will fire after TcpDelAckTicks. We expect this scenario to be
+         ' hit only by the last ACK but keeping it generic
+         '      
+         if ((ulLastSeqNumber - ulLastAckNumber) < ulExpectedSize) then
+            ulExpectedSize = ulLastSeqNumber - ulLastAckNumber
+            ulTimeout = 230
+         end if
+         
+         set pPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, ulTimeout, pIFace)
+         if (pPacket is nothing) then
+            Sev1 "VerifyTcpAckFrequency: Failed to receive ACK"
+            exit function
+         end if
+      
+         '
+         ' Ensure that the ACK acknowledges at least TcpAckFrequency segments 
+         ' unless it's a window update
+         '            
+         if ((ulSeqNumber - ulLastAckNumber) < ulExpectedSize) then
+            if (ulWindowSize >= pPacket.TcpHeader.WindowSize) then
+               Sev1 "VerifyTcpAckFrequency: Premature ACK, acks only " & (ulSeqNumber - ulLastAckNumber) & " bytes"
+               exit function
+            end if      
+         end if
+                         
+         'Shout "Received ACK which acks " & (ulSeqNumber - ulLastAckNumber) & " bytes" 
+         
+         '
+         ' Update the last ack number, last window advertised and the unacked byte count
+         '      
+         ulLastAckNumber = ulSeqNumber
+         ulWindowSize = pPacket.TcpHeader.WindowSize
+         ulUnackedSize = ulLastSeqNumber - ulSeqNumber
+      
+      end if
+      
+      '
+      ' If there is more data to send and the advertised window permits us to send
+      ' more then send data to fill up that window
+      '
+      if (ulSentSize < ulTotalSendSize) then
+         do while ((ulUnackedSize + EthernetMss(fVersion6)) <= ulWindowSize) 
+            if ((ulSentSize + EthernetMss(fVersion6)) > ulTotalSendSize) then
+               exit do
+            end if
+            
+            'Shout "Sending next segment" 
+            pDataPacket.TcpHeader.SeqNumber = ulLastSeqNumber
+            pDataPacket.TcpHeader.AckNumber = ulAckNumber
+            pIFace.Send(pDataPacket)
+            
+            ulLastSeqNumber = ulLastSeqNumber + EthernetMss(fVersion6)
+            ulUnackedSize = ulUnackedSize + EthernetMss(fVersion6)
+            ulSentSize = ulSentSize + EthernetMss(fVersion6)
+         loop
+      end if
+   loop while ((ulLastAckNumber - ulStartSeqNumber) < ulTotalSendSize)  
+       
+            
+end function
+
+                       
+'
+'/**
+' Main routine to launch the specific test
+'
+' @params
+' !fVersion6         - TRUE/FALSE for TCPv6/TCPv4
+' !fActive           - TRUE/FALSE depending on whether stack initiates/accepts connection
+' !ulTcpAckFrequency - Configured value of TcpAckFrequency (NULL if not present)
+'
+' @return nothing
+'*/
+'
+sub DoTest(fVersion6, fActive, ByVal ulTcpAckFrequency)
+   dim usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber
+   dim ulSessionId, pIFace, pPacket, pAutoDisc, ulBytesRcvd, ulTID, ulStatus, ulLastAckNumber
+   
+   randomize
+   usSrcPort = clng(60534*rnd)+5000
+   usDestPort = null   
+   StartVariation
+   
+   '
+   ' Start off auto discovery and create the interfaces
+   '   
+   if (fVersion6) then
+      szSrcAddress = g_szLocalSpoofIp6Address
+      szDestAddress = g_szRemoteIp6Address
+      set pAutoDisc = sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, szSrcAddress, FALSE)
+   else
+      szSrcAddress = g_szLocalSpoofIp
+      szDestAddress = g_szRemoteIpAddress
+      set pAutoDisc = sparta.AutoArp(g_szLocalMacAddress, g_szLocalMacAddress, szSrcAddress)
+   end if
+   set pIFace = CreateInterface(fVersion6, TRUE, g_szRemoteMacAddress, g_szLocalMacAddress, szDestAddress, szSrcAddress)
+   pIFace.StartListening
+   
+   if (fVersion6 and not(IsNull(ulTcpAckFrequency))) then
+      Warn "DoTest: v6 stack doesn't support TcpAckFrequency registry key"
+      exit sub
+   else
+      ulStatus = SetRegKeys(g_szRemoteIpAddress, TcpParamPath(fVersion6), array("TcpAckFrequency"), array(ulTcpAckFrequency))
+      if (ulStatus <> 0) then
+         Block "DoTest: SetRegKeys - " & ulStatus
+         exit sub
+      end if
+   end if
+             
+   '
+   ' Establish a connection
+   '
+   ulStatus = Connect(fVersion6, fActive, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+   if (ulStatus <> 0) then
+      Block "DoTest: ActiveConnect - " & ulStatus
+      exit sub
+   end if
+   
+   '
+   ' Post a receive
+   '
+   ulStatus = pController.Receive(ulSessionId, 0, 0, 65535, ulTID)
+   if (ulStatus <> 0) then
+      Block "DoTest: Receive - " & ulStatus
+      ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+      exit sub
+   end if 
+   Core.Sleep 3000
+   
+   if IsNull(ulTcpAckFrequency) then
+      ulTcpAckFrequency = 2   
+   elseif (ulTcpAckFrequency = 0) then
+      ulTcpAckFrequency = 2
+   end if
+   
+   VerifyTcpAckFrequency fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, pIFace, ulTcpAckFrequency
+   
+   ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+
+end sub
+
+      </script>
+   </job>
+</package>

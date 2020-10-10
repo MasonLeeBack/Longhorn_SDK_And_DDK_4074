@@ -1,0 +1,27 @@
+TARGETNAME=GfxSwap
+TARGETTYPE=DRIVER
+TARGETPATH=obj
+
+TARGETLIBS = $(DDK_LIB_PATH)\ksguid.lib  \
+             $(DDK_LIB_PATH)\ks.lib      \
+             $(DDK_LIB_PATH)\wdm.lib     \
+             $(DDK_LIB_PATH)\drmk.lib
+
+INCLUDE = ..\inc
+
+##
+## Defaults to NT build
+##
+
+C_DEFINES = $(CFASTFLAGS) $(C_DEFINES) -DUNICODE -D_UNICODE -DUNDER_NT
+
+!ifdef USE_SPLIT_HEADERS
+USE_SPLIT_HEADERS=1
+C_DEFINES=$(C_DEFINES) -DUSE_SPLIT_HEADERS=1
+!endif
+
+SOURCES = gfx.rc      \
+          device.cpp  \
+          filter.cpp  \
+          pin.cpp
+

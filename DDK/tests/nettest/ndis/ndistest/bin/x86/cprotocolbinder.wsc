@@ -1,0 +1,347 @@
+<?xml version="1.0"?>
+<component>
+	<registration progid="CProtocolBinder.wsc" classid="{5dd0206e-a27b-4563-b87d-e3c58076750c}" description="CProtocolBinder" version="1.00">
+	</registration>
+	<public>
+		<method name="Initialize">
+			<parameter name="oAdapterObj"/>
+			<parameter name="strProtoList"/>
+		</method>
+		<method name="GetSupportedProtocols">
+		</method>
+		<method name="ChangeBinding">
+			<parameter name="strProtocol, nNewState, nCurrentState"/>
+		</method>
+		<method name="ChangeAllBindings">
+			<parameter name="bEnable"/>
+		</method>		
+		<method name="RememberChangeInStatus">
+			<parameter name="strProtocol, nStateToSave"/>
+		</method>
+		<method name="SetUserSpecifiedBindings">
+		</method>
+		<method name="TakeSnapshot">
+		</method>
+		<method name="RestoreSnapshot">
+		</method>		
+		<method name="RestoreBindings">
+		</method>
+		<method name="Terminate">
+		</method>
+		<property name="PB_PROTOCOL_BIND">
+		</property>
+		<property name="PB_PROTOCOL_UNBIND">
+		</property>
+		<property name="PB_PROTOCOL_BOUND">
+		</property>
+		<property name="PB_PROTOCOL_NOTBOUND">
+		</property>
+		<property name="PB_PROTOCOL_NOT_BINDABLE">
+		</property>
+		<property name="STATUS_ERROR">
+		</property>
+		<property name="m_oLogRef">
+		</property>
+		<property name="m_nConnectionID">
+		</property>
+		<property name="m_strUIProtocolList">
+		</property>
+		<property name="m_nDllNumProtocols">
+		</property>
+		<property name="m_strDllProtocolList">
+		</property>
+		<property name="m_nChangedProtocolStatus">
+		</property>
+		<property name="m_strChangedProtocolName">
+		</property>
+		<property name="m_nChangedProtocolIndex">
+		</property>
+		<property name="m_oBindCtrl">
+		</property>
+		<property name="m_strDeviceGUID">
+		</property>
+	</public>	
+	<script language="VBScript">
+		<![CDATA[
+   Dim m_oLogRef		' Pointer to Log Object
+   Dim m_nConnectionID          ' Adapter ID needed to initialize and stop server
+   Dim m_strUIProtocolList      ' The list of protocols NOT set to ignore in UI
+   Dim m_nDllNumProtocols       ' The total number of protocols known to NDTSupp
+   Dim m_strDllProtocolList     ' Store name of all protocols known to NDTSupp
+   Dim m_Snapshot		' Store the current protocol binding state for later restoration
+   
+   Dim m_nChangedProtocolStatus    ' Store status of each protocol at launch time
+   Dim m_strChangedProtocolName    ' Stores the name of each protocol whose name is changed
+   Dim m_nChangedProtocolIndex     ' Count of how many protocol status have been changed
+   Dim m_oBindCtrl              ' The Bind ctrl object
+   Dim m_strDeviceGUID          ' The GUID of this adapter
+   
+   Dim PB_PROTOCOL_BIND
+   Dim PB_PROTOCOL_UNBIND
+   Dim PB_PROTOCOL_BOUND
+   Dim PB_PROTOCOL_NOTBOUND
+   Dim PB_PROTOCOL_NOT_BINDABLE
+   Dim PB_STATUS_ERROR
+
+   Public Function Terminate ()
+      Set m_oLogRef = Nothing   
+      Set m_strUIProtocolList = Nothing
+      Set m_oBindCtrl = Nothing
+   End Function
+
+
+   Public Function Initialize (oAdapterObj, strProtoList)
+      PB_PROTOCOL_BIND = 1
+      PB_PROTOCOL_UNBIND = 2
+      PB_PROTOCOL_BOUND = 1
+      PB_PROTOCOL_NOTBOUND = 2
+      PB_PROTOCOL_NOT_BINDABLE = 3
+      PB_STATUS_ERROR = 0
+
+      Initialize = True    ' Assume Success
+      If (Not oAdapterObj Is Nothing) Then
+         m_strDeviceGUID = oAdapterObj.GUID
+         Set m_strUIProtocolList = strProtoList
+
+	 m_nDllNumProtocols = 0
+	 
+         If (oAdapterObj.AdapterType = ADAPTERTYPE_TEST) Then
+            m_nConnectionID = 0
+         Else
+            m_nConnectionID = oAdapterObj.ConnectionID
+         End If
+      Else
+         call m_oLogRef.Failed ("The adapter object for this card is null", 22940)
+         Initialize = False
+      End If
+   End Function
+
+   
+   Public Function ChangeAllBindings (bEnable)
+      Dim protocol, NewBindStatus, OldBindStatus, bResult
+      
+      ChangeAllBindings = True
+      
+      If (bEnable) Then
+         NewBindStatus = PB_PROTOCOL_BIND
+      Else
+	 NewBindStatus = PB_PROTOCOL_UNBIND
+      End If
+
+      For each protocol in m_strDLLProtocolList
+         If (Not ChangeBinding (protocol, NewBindStatus, OldBindStatus)) Then
+	    ChangeAllBindings = False
+	    Exit Function		' bail out
+	 End If
+      Next
+   End Function
+
+
+   Public Function GetSupportedProtocols
+      GetSupportedProtocols = True ' Assume Success
+      
+      Dim nNumProtos, nBufferSizeNeeded, strProtocolString
+      nBufferSizeNeeded = CLng (nBufferSizeNeeded)
+      nNumProtos = CLng (nNumProtos)
+      If (Not m_oBindCtrl.GetProtocolInfo (m_strDeviceGUID, nBufferSizeNeeded, nNumProtos)) Then
+	 m_oLogRef.SafeWarned ("GetProtocolInfo call failed on Bind Ctrl Object")
+	 GetSupportedProtocols = False
+	 Exit Function
+      End If
+      
+      If (nNumProtos <> 0) Then
+	 If (m_nDllNumProtocols = 0) Then   ' means we have never been in the loop
+	    Dim bResult, nIndex, thisProtocol
+	    m_nDllNumProtocols = nNumProtos
+
+            If (m_oBindCtrl.GetInstalledProtocols (strProtocolString)) Then	    
+               m_strDllProtocolList = Split (strProtocolString, "~")
+	    
+               ' Allocate mem for current protocol status and initialize 
+               ' them all to zero (signifies not changed yet by wsf script)
+	      
+	       Redim m_nChangedProtocolStatus (nNumProtos)
+	       Redim m_strChangedProtocolName (nNumProtos)
+
+               For nIndex = 0 to m_nDllNumProtocols
+                  m_nChangedProtocolStatus (nIndex) = 0
+                  m_strChangedProtocolName (nIndex) = ""
+               Next
+            Else
+               m_oLogRef.SafeWarned ("Failed to get installed protocol list")
+               GetSupportedProtocols = False
+            End If
+	 Else
+ 	    ' Note: We need to Redim so that vbscript engine handles these
+	    ' vars as array! Remember, they were made into arrays but instance
+	    ' of the engine that is going to die when first script ends
+	    
+            Redim Preserve m_nChangedProtocolStatus (m_nDllNumProtocols)
+	    Redim Preserve m_strChangedProtocolName (m_nDllNumProtocols)
+	 End If
+      Else
+        m_oLogRef.SafeWarned ("The number of supported protocols reported by NDSupp = " & nNumProtos)
+        GetSupportedProtocols = False
+      End If
+   End Function
+   
+   
+   Public Function RememberChangeInStatus (strProtocol, nStateToSave)
+      Dim nIndex
+      ' Search an see if a match already exists
+      For nIndex = 0 to m_nChangedProtocolIndex-1
+         If (m_strChangedProtocolName (nIndex) = strProtocol) Then
+            ' We already have the original state
+            Exit Function
+         End if
+      Next
+      
+      ' If here than this is the first change to the protocol status
+      m_nChangedProtocolStatus (m_nChangedProtocolIndex) = nStateToSave
+      m_strChangedProtocolName(m_nChangedProtocolIndex) = strProtocol
+      m_nChangedProtocolIndex = m_nChangedProtocolIndex + 1
+   End Function
+      
+   
+   Public Function ChangeBinding (strProtocol, nNewState, ByRef nCurrentState)
+      Dim bResult
+      
+      ChangeBinding = True      ' Assume success
+      bResult = m_oBindCtrl.GetBindStatus (m_strDeviceGUID, strProtocol, nCurrentState)
+      If (bResult) Then
+         If (nCurrentState <> PB_PROTOCOL_NOTBINDABLE) Then
+            If (nNewState = PB_PROTOCOL_BIND And nCurrentState = PB_PROTOCOL_NOTBOUND) Then
+               bResult = m_oBindCtrl.Bind (m_strDeviceGUID, strProtocol)
+               If (not bResult) then
+                  m_oLogRef.SafeWarned ("Unable to bind " & strProtocol)
+                  ChangeBinding = False
+               Else
+                  ' If successfully changed the Protocol binding then remember
+                  ' the status before the FIRST change se we can restore on exit
+		  m_oLogRef.Write (strProtocol & " has been binded")
+                  Call RememberChangeInStatus (strProtocol, nCurrentState)
+               End if
+            
+            ElseIf (nNewState = PB_PROTOCOL_UNBIND And nCurrentState = PB_PROTOCOL_BOUND) Then
+               bResult = m_oBindCtrl.UnBind (m_strDeviceGUID, strProtocol)
+               If (not bResult) then
+                  m_oLogRef.SafeWarned ("Unable to unbind " & strProtocol)
+                  ChangeBinding = False
+               Else
+                  ' If successfully changed the Protocol binding then remember
+                  ' the status before the FIRST change se we can restore on exit
+		  m_oLogRef.Write (strProtocol & " has been unbinded")
+                  Call RememberChangeInStatus (strProtocol, nCurrentState)
+               End If
+            End If
+         
+         Else
+            m_oLogRef.Warning ("Bind status of " & strProtocol & " is NOTBINDABLE")
+            ChangeBinding = False
+         End if
+      
+      Else
+         m_oLogRef.Write ("Failed to get bind status of " & strProtocol & " from NDTSupp")
+         nCurrentStatus = -1     ' To let caller know that GetBindStatus failed
+         ChangeBinding = False
+      End If
+   End Function
+   
+   
+   Public Function SetUserSpecifiedBindings
+      SetUserSpecifiedBindings = True     ' Assume success
+      If (m_strUIProtocolList is Nothing) then
+         ' This means that all protocol settings in UI
+         ' are set to ignore! We have nothing to do
+         Exit Function
+      end if
+   
+      Dim nIndex, nUINumProtocols, nNewState, nCurrentState
+      Dim strProtocol, bResult
+      nUINumProtocols = m_strUIProtocolList.count
+      For nIndex = 1 to nUINumProtocols
+         strProtocol = m_strUIProtocolList(nIndex).Protocol
+         nNewState = m_strUIProtocolList(nIndex).BindState
+         If (Not ChangeBinding (strProtocol, nNewState, nCurrentState)) Then
+            ' If any change op fails (not_bindable or erronous state), report failure
+	    If (nCurrentState = PB_STATUS_ERROR Or nCurrentState = -1) Then
+               SetUserSpecifiedBindings = False
+            End If
+         End If
+      Next
+   End Function
+   
+   
+   Public Function RestoreBindings
+      Dim nIndex, nCurrentState, bResult
+      
+      RestoreBindings = True
+      For nIndex = 0 to m_nChangedProtocolIndex-1
+         If (m_nChangedProtocolStatus (nIndex) <> 0 And Not IsEmpty (m_strChangedProtocolName(nIndex))) Then
+            ' Means that the status of this protocol was changed! Restore it!
+            bResult = ChangeBinding (m_strChangedProtocolName(nIndex),_
+                                 m_nChangedProtocolStatus (nIndex),_
+                                 nCurrentState)
+	    ' If ANY protocol state restore failed, return failure
+	    If (not bResult) Then
+		RestoreBindings = False
+	    End If
+         End If
+      Next
+   End Function
+   
+
+   ' This method will save the current bind status of each protocol for later use
+   ' We can mae snapshot a list but in the forseeable future we do not see the need
+   ' for multiple snapshots being taken by the same script
+   Public Function TakeSnapShot
+      Dim strProtocol, nCurrentState, i
+
+      TakeSnapShot = True
+      If (IsEmpty (m_SnapShot) And m_nDllNumProtocols <> 0) Then	' if first snapshot and there are protocols
+         ReDim m_SnapShot (m_nDllNumProtocols - 1, 1)
+      End If
+      
+      i = 0
+      For each strProtocol in m_strDllProtocolList
+         If (m_oBindCtrl.GetBindStatus (m_strDeviceGUID, strProtocol, nCurrentState)) Then	' Get Bind status
+	    m_SnapShot (i, 0) = strProtocol		' Store protocol name in snapshot
+	    m_SnapShot (i, 1) = nCurrentState		' and store the corresponding bind status
+            i = i + 1
+	 Else
+	    TakeSnapShot = False
+	 End If
+      Next
+   End Function
+   
+   ' This method will restore the snapshot taken earlier
+   Public Function RestoreSnapShot
+      Dim i, nUBoundRows
+      
+      RestoreSnapShot = True
+	
+      If (IsEmpty (m_SnapShot)) Then
+         m_oLogRef.SafeWarned ("INTERNAL ERROR! No snapshot available to restore.")
+	 RestoreSnapShot = False
+         Exit Function
+      End If
+      
+      nUBoundRows = UBound (m_SnapShot, 1)	' Get the number of rows
+      For i=0 to nUBoundRows	' For each protocol
+         If (m_SnapShot (i, 1) = PB_PROTOCOL_NOTBOUND) Then			' if originally unbound
+	    bResult = m_oBindCtrl.UnBind (m_strDeviceGUID, m_SnapShot (i, 0))	' unbind it
+	 ElseIf (m_SnapShot (i, 1) = PB_PROTOCOL_BOUND) Then			' if originally bound
+	    bResult = m_oBindCtrl.Bind (m_strDeviceGUID, m_SnapShot (i, 0))	' bind it
+         Else
+	    ' Do nothing as state was probably NOT_BINDABLE etc.
+         End If
+	 
+         If (Not bResult) Then
+	    RestoreSnapShot = False
+	 End If
+      Next
+   End Function
+
+		]]>
+	</script>
+</component>

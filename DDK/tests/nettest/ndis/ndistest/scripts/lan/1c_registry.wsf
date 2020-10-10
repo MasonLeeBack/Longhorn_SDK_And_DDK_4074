@@ -1,0 +1,339 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3,802_5,FDDI,ATM,COWAN,WAN,IRDA,1394
+</MEDIA>
+<WHQL>
+802_3,802_5,FDDI,ATM,COWAN,WAN,IRDA,1394
+</WHQL>
+<CARDMACH>
+1C,1M
+</CARDMACH>
+<RUNORDER>
+1275
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[This test checks the robustness of the driver to handle data in
+the registry. The test finds the values in the driver subkey that the driver
+uses to initialize itself and tests them by putting random data, changing the
+type of the value and even deleting the value. Drivers must use appropriate
+defaults to make sure their functionality is not affected.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+    <job id="1c_Registry" prompt="no">
+        <reference object="NDInfo.Info.1" version="1.0"/>
+        <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+        <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+        <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+        <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+        <object id="oPnPPower" progid="NDTSupp.Setup.1" events="true"/>
+        <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+        <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+        <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+
+         <!-- Begin Wireless Specific Includes -->
+         <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	      <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	      <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	      <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	      <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+         <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+         <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+         <!-- End Wireless Specific Includes -->
+
+        <script language="VBScript" src="..\inc\clog.vbs"/>
+        <script language="VBScript" src="..\inc\ccard.vbs"/>
+        <script language="VBScript" src="..\inc\copen.vbs"/>
+        <script language="VBScript" src="..\inc\general.vbs"/>
+        <script language="VBScript" src="..\inc\Events.vbs"/>
+        <script language="VBScript" src="..\inc\Utilities.vbs"/>
+        <script language="VBScript" src="..\inc\ConstLAN.vbs"/>
+        <script language="VBScript" src="..\inc\Constants.vbs"/>
+        <script language="VBScript" src="..\inc\DevChars.vbs"/>
+        <script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+        <script language="VBScript" src="..\inc\Registry.vbs"/>
+        <script language="VBScript" src="..\inc\Random.vbs"/>
+        <script id="1c_Registry" language="VBScript">
+'==========================================================================
+' Script Name:    1c_Registry
+'==========================================================================
+Option Explicit
+
+Dim GlobalRegistryTestObj
+Dim oGlobalRandomGen
+
+Call Initialize ()
+Call Main(GetTestAdapterIndex (oNDInfo.AdapterList, 0))
+Call Terminate ()
+
+Function Main (lTestAdapterIndex)
+   Set oGlobalRandomGen = new CRandomGenerator
+   Set GlobalRegistryTestObj = new NdisRegistryTester
+   Call GlobalRegistryTestObj.RunTest(lTestAdapterIndex)
+End Function
+
+'
+' The call back handlers registered with Registry Tester
+'
+Function OnChangingRegistry (ByRef oRegKey, ByRef oRegVal, nActionType, ByRef xNewRegData)
+
+   If (StrComp (oRegKey.FullName, GlobalRegistryTestObj.DeviceRootKey, 1) <> 0 ) Then
+      '
+      ' Ignore any subkeys of the instance id! We want to work only with Values
+      '
+      OnChangingRegistry = SKIP_SUBKEY_TEST
+
+   ElseIf (InStr (1, GlobalRegistryTestObj.ParameterList, oRegVal.SubKeyName & "\" & oRegVal.Name, 1) > 0) Then
+      '
+      ' Found a value to play with
+      '
+      oLog.Variation ("Testing " & oRegVal.Name)
+      oLog.Write("Complete Path " & oRegVal.SubKeyName & "\" & oRegVal.Name)
+
+      OnChangingRegistry = RUN_TEST_CASE  ' Most likely we will run the test
+
+      If (nActionType = TEST_RANDOM_DATA) Then
+      
+         If (oRegVal.DataType = REG_SZ) Then
+
+            ' We put negative string in
+            xNewRegData = CStr (oGlobalRandomGen.GetRandomNumber (1024, 64000) * (-1))
+            oLog.Write ("Changing data from """ & oRegVal.Value & """ to """ & xNewRegData & """")
+            
+         ElseIf (oRegVal.DataType = REG_DWORD) Then
+
+            ' We only make it negative numbers instead of testing both negative 
+            ' and positive cases
+            xNewRegData = (oGlobalRandomGen.GetRandomNumber (1024, 64000) * (-1))
+            oLog.Write ("Changing data from " & oRegVal.Value & " to " & xNewRegData)
+            
+         Else
+            Call oLog.Write ("Not testing unsupported data type: " & GetRegistryDataTypeString(oRegVal.DataType))
+            OnChangingRegistry = SKIP_VALUE_TEST          
+         End If
+         
+      ElseIf (nActionType = TEST_CHANGE_VALUE_TYPE) Then
+      
+         If (oRegVal.DataType = REG_SZ) Then             ' Is String
+
+            xNewRegData = REG_DWORD                      ' Convert to number
+            oLog.Write ("Changing type from " & GetRegistryDataTypeString(oRegVal.DataType) & " to " & GetRegistryDataTypeString(xNewRegData))
+
+         ElseIf (oRegVal.DataType = REG_DWORD) Then      ' Is Number
+
+            xNewRegData = REG_SZ                         ' Convert to string
+            oLog.Write ("Changing type from " & GetRegistryDataTypeString(oRegVal.DataType) & " to " & GetRegistryDataTypeString(xNewRegData))
+
+         Else
+            call oLog.Write ("Not testing unsupported data type: " & GetRegistryDataTypeString(oRegVal.DataType))
+            OnChangingRegistry = SKIP_VALUE_TEST
+         End If
+
+      ElseIf (nActionType = TEST_DELETE_VALUE) Then
+         ' No need to intercept! Delete and notify
+      End If
+
+   Else
+      '
+      ' Skip this value! Not a parameter
+      '
+      OnChangingRegistry = SKIP_VALUE_TEST
+   End If
+End Function
+
+
+Function OnChangedRegistry (ByRef oRegKey, ByRef oRegVal, nActionType, ByRef xNewRegData, nSuccessStatus)
+   If nSuccessStatus Then
+      call GlobalRegistryTestObj.RestartDriver ()
+   End If
+
+   OnChangedRegistry = TRUE
+End Function
+
+
+Class NdisRegistryTester
+   Dim oRegistryTester
+   Dim oRegistryTesterConfig
+   Dim nTestAdapterIndex
+   Dim mstrDeviceKey
+   Dim mstrParamList
+   Dim mRestrictedKeys
+   Dim nRestrictedKeysCount
+
+   Sub Class_Initialize
+      Set oRegistryTester = new CRegistryTester
+      Set oRegistryTesterConfig = new CRegistryConfiguration
+
+      nRestrictedKeysCount = 1
+      ReDim mRestrictedKeys(nRestrictedKeysCount)
+
+      mRestrictedKeys(0) = "BusType"   ' Driver must not read this registry key
+   End Sub
+
+
+   Sub Class_Terminate
+      Set oRegistryTester = Nothing
+      Set oRegistryTesterConfig = Nothing
+   End Sub
+
+   Function RunTest (lTestAdapterIndex)
+      nTestAdapterIndex = lTestAdapterIndex
+      '
+      ' Set the call back handlers in the config object
+      '
+      Call oRegistryTesterConfig.SetHandlers ("OnChangingRegistry", "OnChangedRegistry")
+
+      '
+      ' Initialize the Registry tester with the config object
+      '
+      oLog.Variation ("Initialize Registry object")
+      If Not oRegistryTester.Initialize (oRegistryTesterConfig) Then
+         call oLog.Failed ("Failed to initialize the registry tester object", 88888)
+         Exit Function
+      End If
+
+      oLog.Variation ("Locate Registry key for driver instance")
+      mstrDeviceKey = FindRegKeyForDriver ()
+
+      If (mstrDeviceKey <> "") Then
+         oLog.Variation ("Establish list of parameters to test")
+         call oLog.Write ("Will look for Parameters at " & mstrDeviceKey)
+         call SetupParameterList ()
+
+         oLog.VariationEx "Random data test", _
+            "Current contents of registry keys would be replaced with random data and " & _
+            "driver restarted. Driver must load correctly"
+         call oRegistryTester.RunRandomTest (HKEY_LOCAL_MACHINE, mstrDeviceKey)
+
+         oLog.VariationEx "Changing value types", _
+            "The types of existing registry keys would be changed and driver restarted. " & _
+            "Driver must load correctly"
+         call oRegistryTester.RunChangeTypeTest (HKEY_LOCAL_MACHINE, mstrDeviceKey)
+
+         oLog.VariationEx "Deleting values", _
+            "The registry values would be deleted and driver restarted. Driver must load correctly"
+         call oRegistryTester.RunDeleteValueTest (HKEY_LOCAL_MACHINE, mstrDeviceKey)
+
+         ' For cleanup purposes, restart driver
+         oLog.Variation ("Restarting device")
+         Call RestartDriver
+      Else
+         call oLog.Failed ("Could not find Reg Key associated with the miniport GUID: " & oNDInfo.AdapterList (nTestAdapterIndex).GUID, 88888)
+      End If
+
+   End Function
+
+
+   Function SetupParameterList ()
+      Dim oRegObj, arrSubKey, SubKey
+      Dim nCount, nResult
+
+      mstrParamList = ""
+      Set oRegObj = CreateRegistryObject()
+
+      nResult = oRegObj.EnumKey(HKEY_LOCAL_MACHINE, mstrDeviceKey & "\Ndi\Params", arrSubKey)
+
+      If ((nResult = 0) And (Not IsNull(arrSubKey))) Then      
+         ' Make sure the parameters exist
+         For Each SubKey in arrSubKey
+            ' Store the name of the parameter
+            mstrParamList = mstrParamList & mstrDeviceKey & "\" & SubKey
+            mstrParamList = mstrParamList & " "
+         Next
+      End If
+      
+      ' Now, add the parameters that we know are miniport specific and which
+      ' it should not be using
+      For nCount = 0 To nRestrictedKeysCount
+         mstrParamList = mstrParamList & mstrDeviceKey & "\" & mRestrictedKeys(nCount)
+         mstrParamList = mstrParamList & " "
+      Next
+
+      Trim mstrParamList
+      Set oRegObj = Nothing
+
+      call oLog.Write ("Parameter List = " & mstrParamList)
+   End Function
+
+   Function FindRegKeyForDriver ()
+
+      Dim oRegObj, arrSubKey, SubKey, strInstanceId, strGUID, nMedium
+      Dim DeviceClass, CompleteSubKeyName, nResult
+
+      strGUID = oNDInfo.AdapterList (nTestAdapterIndex).GUID
+      nMedium = CLng(oNDInfo.AdapterList (nTestAdapterIndex).NdisMedium)
+
+      Set oRegObj = CreateRegistryObject()
+
+      If (nMedium = NDISMEDIUMIRDA) Then
+      DeviceClass = "SYSTEM\CurrentControlSet\Control\Class\{6BDD1FC5-810F-11D0-BEC7-08002BE2092F}"
+      Else
+      DeviceClass = "SYSTEM\CurrentControlSet\Control\Class\{4D36E972-E325-11CE-BFC1-08002bE10318}"
+      End If
+
+      nResult = oRegObj.EnumKey(HKEY_LOCAL_MACHINE, DeviceClass, arrSubKey)
+
+      If ((nResult = 0) And (Not IsNull(arrSubKey))) Then      
+         ' arrSubKey contains the 000# list        
+         For each SubKey in arrSubKey
+            ' Get the NetCfgInstance ID and compare to stored value
+            CompleteSubKeyName = DeviceClass & "\" & SubKey
+            nResult = oRegObj.GetStringValue(HKEY_LOCAL_MACHINE, CompleteSubKeyName, "NetCfgInstanceId", strInstanceId)
+            If (nResult = 0) Then
+               If (StrComp(strInstanceId, strGUID, 1) = 0) Then
+                  ' This is the registry key for the test device driver
+                  FindRegKeyForDriver = CompleteSubKeyName
+                  Exit Function
+               End If
+            End If
+         Next
+      End If
+
+      Set oRegObj = Nothing
+
+      FindRegKeyForDriver = ""
+   End Function
+
+   Function RestartDriver ()
+      Dim lResult, TestCardGUID
+
+      TestCardGUID = oNDInfo.AdapterList (nTestAdapterIndex).GUID
+
+      lResult = oPNPPower.StopDriver(TestCardGUID)
+      If (lResult <> 0) Then
+         Call oLog.Failed ("Unable to stop driver." , 88888)
+         Exit Function
+      End If
+
+      WScript.Sleep(1000)
+
+      lResult = oPNPPower.StartDriver(TestCardGUID)
+      If (lResult <> 0) Then
+         Call oLog.Failed ("Unable to restart driver after stopping." , 88888)
+         Exit Function
+      End If
+   End Function
+
+   Property Get ParameterList ()
+      ParameterList = mstrParamList
+   End Property
+
+   Property Get DeviceRootKey ()
+      DeviceRootKey = mstrDeviceKey
+   End Property
+End Class
+
+
+        </script>
+    </job>
+</package>
+
+
+
+
+
+
+
+
+<!--- CRC = 0xdba6d497 --->

@@ -1,0 +1,242 @@
+'***************************** TCP_ZeroWindow_PassiveProbe.wsf ***********************
+'*                                                                                   *
+'* Author            :    Sandeep Prabhu                                             *
+'* Revision history  :                                                               *
+'*    09/20/2000     sandeep        Created                                          *
+'*    04/24/2003     karolys        added HCT-style comments for tst plan generation *
+'*                                                                                   *
+'* This script will test the TCP zero window probing screnarios                      *
+'*                                                                                   *
+'***************************** TCP_ZeroWindow_PassiveProbe.wsf ***********************
+
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\TCPLib.vbs"/>
+      <script language="VBScript" src="TCPZeroWindowLib.vbs"/>                  
+      <script id="TCP_ZeroWindow_PassiveProbe" language="VBScript">
+
+'/**
+' @area name="Offload Compliance Test Assertions"
+' @group name="TCP Zero Window Probing Assertions"
+' @group name="Passive Zero Window Probing Assertions" 
+' @define name="Offload" Offload Compliance Test Assertions
+' @define name="TCPZW" TCP Zero Window Probing Assertions
+' @define name="PasZW" Passive Zero Window Probing Assertions
+' @hierarchy Offload TCPZW PasZW
+' @key Reference="WLP# - x.x.x.x; RFC-793 Section 3.7, RFC-1122 Section 4.2.2.17"
+' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+' @key TestName="TCPv4 Passive Zero Window Probing Functionality Tests"
+' @key TestLog="TCP_ZeroWindow_PassiveProbe.log"
+'*/
+
+option explicit
+    
+Dim Core, Sparta, Autosrv, MediaType, AutoArpObject, IFace, pControllerObj
+Const usMSS = 1460
+ 
+'
+' Start the script
+'           
+StartScript "TCP_ZeroWindow_PassiveProbe", g_szLogDirectory, "Tests for TCP zero window probing" 
+
+
+
+' ==================================================================================================
+' Main routine
+' ==================================================================================================
+Sub Main
+   Core.SetAssertionTracking "60500"
+   Dim ulStatus, ulWindowSize
+   
+   IFace.StartListening
+   Core.StartTest "Functionality test: Passive zero window probing"
+
+   '/**
+   ' @test name="Verify that the stack responds correctly to zero window probing." 
+   ' Autosrv is requested to create a socket and post an accept on the test machine. 
+   ' The script connects to the test machine and sends data that fills up the receive window.
+   ' The stack should indicate a shrinking receive window.<br/>
+   ' variation 1: The script sends window probes to the stack and verifies that it responds with the correct
+   ' sequence number and window size (0).<br/>
+   ' variation 2: At this point the script requests autosrv to post a receive and consume the data on the test machine.
+   ' The stack must send a window update packet advertising a nonzero receive window.
+   ' When this is verified the connection is terminated.<br/>
+   '*/
+   
+   PassiveZeroWindowProbing
+   Core.EndTest
+   Core.Sleep(2500)
+   IFace.StopListening
+   
+End Sub
+
+
+
+'
+' Routine to test the basic functionality when stack responds to zero window probing
+'
+Sub PassiveZeroWindowProbing
+   Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim ulLastAck, ulBytesRcvd, ulDataLength, pTCPPacket, pACKPacket, ulCounter
+   
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 5000
+   usDestPort = 5001
+   
+   Core.StartVariation
+   
+   '
+   ' Ask AutoSrv to create a socket and post an accept 
+   '
+   For ulCounter = 1 to MAX_PORT_RETRIES    
+      '
+      ' Retry with a different port
+      '
+      usDestPort = Core.Random(10000, 20000)
+      Core.log "PassiveZeroWindowProbing: Trying a random port - " & usDestPort
+      
+      '
+      ' Issue a CreateAndAccept
+      '
+      ulStatus = pControllerObj.CreateAndAccept(SOCK_STREAM, g_szRemoteIpAddress, usDestPort, 5, ulTID, ulSessionId)
+      if (ulStatus = 0) then
+         exit for
+      end if
+   Next
+   if (ulStatus <> 0) then
+      Core.BlockVariation "PassiveZeroWindowProbing: CreateAndAccept - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+   
+   Core.Sleep(1000)
+   
+   '
+   ' Send a SYN with a zero window advertisement
+   '
+   Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_SYN, 0)
+   pTCPPacket.TCPHeader.TCPOption(0).AddMSS(usMSS)
+   pTCPPacket.TCPHeader.WindowSize = 0
+   IFace.Send(pTCPPacket)
+   
+
+   '
+   ' The SYN-ACK should be sent immediately without any zero window probing
+   '   
+   set pTCPPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulDataLength, (TCP_SYN or TCP_ACK), 200)
+   if (pTCPPacket is Nothing) then
+      Core.FailSev1Variation "PassiveZeroWindowProbing: SYN-ACK not rcvd"
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if 
+   
+   '
+   ' Send the ACK
+   '
+   Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+   IFace.Send(pTCPPacket)
+   
+   '
+   ' Check if connection is offloaded
+   '
+   If Not IsConnectionOffloaded(usSrcPort, usDestPort, ulSessionId) and g_fTestOffload And g_fTOENic Then
+      Core.FailSev1Variation  "PassiveZeroWindowProbing : Failed to offload the connection"
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   End If
+
+   '
+   ' Send packets and fill up the receive window
+   '   
+   Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, usMSS)
+   Dim ulRcvWinSize
+   do
+      '
+      ' Send the data packet 
+      '
+      pTCPPacket.TCPHeader.SeqNumber = ulSeqNumber
+      IFace.Send(pTCPPacket)
+      
+      '
+      ' Receive the ACK
+      '
+      set pACKPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulDataLength, TCP_ACK, 500)
+      if (pACKPacket is Nothing) then
+         Core.FailSev1Variation "PassiveZeroWindowProbing: ACK not rcvd"
+         ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+         exit sub
+      end if 
+      ulRcvWinSize = pACKPacket.TCPHeader.WindowSize
+   loop while (ulRcvWinSize <> 0)
+   
+   '
+   ' Send zero window probe packets and ensure the stack responds correctly
+   '
+   For ulCounter = 1 to 5 
+      Dim ulJunkSeq
+      Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 1)
+      IFace.Send(pTCPPacket)
+      
+      '
+      ' Receive the ACK
+      '
+      set pACKPacket = RecvTCPPacket(ulJunkSeq, ulAckNumber, ulDataLength, TCP_ACK, 500)
+      if (pACKPacket is Nothing) then
+         Core.FailSev1Variation "PassiveZeroWindowProbing: ACK not rcvd"
+         ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+         exit sub
+      end if 
+      if (ulSeqNumber <> ulJunkSeq) then
+         Core.FailSev1Variation "PassiveZeroWindowProbing: Incorrect seq number in probe reply " & Hex(ulJunkSeq)         
+         ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+         exit sub
+      elseif (pACKPacket.TCPHeader.WindowSize <> 0) then
+         Core.FailSev1Variation "PassiveZeroWindowProbing: Incorrect window size in probe reply " & pACKPacket.TCPHeader.WindowSize         
+         ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+         exit sub
+      end if
+   Next
+
+   Core.StartVariation
+   
+   '
+   ' Ask Autosrv to post a receive
+   '
+   ulStatus = pControllerObj.Receive(ulSessionId, 1, 0, 65535, ulTID)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "PassiveZeroWindowProbing: Receive - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+   
+   '
+   ' Check that a window update message is rcvd
+   '   
+   set pACKPacket = RecvTCPPacket(ulJunkSeq, ulAckNumber, ulDataLength, TCP_ACK, 2000)
+   if (pACKPacket is Nothing) then
+      Core.FailSev1Variation "PassiveZeroWindowProbing: Window update not rcvd"
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if 
+   if (pACKPacket.TCPHeader.WindowSize = 0) then
+      Core.FailSev1Variation "PassiveZeroWindowProbing: Window update advertizes a 0 window"
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+
+   '
+   ' Reset the connection
+   '
+   ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+End Sub
+
+
+      </script>
+   </job>
+</package>

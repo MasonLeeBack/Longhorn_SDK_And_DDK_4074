@@ -1,0 +1,60 @@
+Test Assertion_A13438
+
+Var p:Property, root:Item
+Var dt
+{
+    PrintDescriptionFromXML('13.4.3.8')
+    StartWia()
+    GetRoot(root)
+    GetDeviceType(dt)
+
+    If (dt != StiDeviceTypeScanner)
+    Then Exit Passed
+
+    #Check For New Item Tree 
+    If(!IsNewTree(root))
+    Then
+    {
+        Writeln '\tThe device does not support New Item Tree'
+        Exit Failed 
+    }
+
+    If (!GetProperty(root, p, WIA_DPS_PAD_COLOR))
+    Then Exit Passed
+
+    If ( !CheckPropertyAccessFromXML(p))
+    Then
+    {
+        Writeln '\tIncorrect access'
+        Exit Failed
+    }
+
+    If (!CheckPropertyTypeFromXML(p) )
+    Then
+    {
+        Writeln '\tIncorrect vartype'
+        Exit Failed
+    }
+
+    If( IsPropertyReadWrite(p) )
+    Then
+    {
+        If ( !CheckValueRGBQUAD(p) ) 
+        Then
+        {
+            Writeln '\tInvalid property value'
+            Exit Failed
+        }
+    }
+    Else
+    {
+        If (SetPropertyValidValue(root,p) Or SetPropertyInvalidValue(root,p) )
+        Then 
+        {
+            Writeln '\tSetting a read-only property value succeeded'
+            Exit Failed
+        }
+    }
+
+    StopWia()
+}

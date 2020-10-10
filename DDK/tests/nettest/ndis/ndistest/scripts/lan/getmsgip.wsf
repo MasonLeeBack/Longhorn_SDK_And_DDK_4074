@@ -1,0 +1,123 @@
+<package>
+    <job id="getmsgip" prompt="no">
+        <reference object="NDInfo.Info.1" version="1.0"/>
+        <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+        <reference object="NDTCore.base.1" version="1.0"/>
+        <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+        <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+        <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+        <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+        <object id="oNDTCommWS" progid="NDTCommWS.BackChannel" events="true"/>
+        <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+		<object id="oShell" progid="WScript.Shell" events="true"/>
+        <script language="VBScript" src="..\inc\clog.vbs"/>
+        <script language="VBScript" src="..\inc\ccard.vbs"/>
+        <script language="VBScript" src="..\inc\copen.vbs"/>
+        <script language="VBScript" src="..\inc\general.vbs"/>
+        <script id="getmsgip" language="VBScript">
+'==========================================================================
+' Script Name:   getmsgip 
+' Find out the IP Addresses of the BackChannl Cards.
+'==========================================================================
+Option Explicit 
+
+
+'Should not reinitialize since the variables are already initialized 
+'in the parent script
+'You only need to create CLog object seperately.
+'Call Initialize ()
+Call Main ()
+'Call Terminate ()
+
+Function Main
+
+'--------------------------------------------------------------------------
+Dim pAdapterList                 ' List obtained from oNDInfo
+Dim Adapter
+Dim oLog
+Dim IPAddress
+Dim Stmnt
+
+Dim filesys, testfile 
+Set filesys = CreateObject("Scripting.FileSystemObject") 
+Set testfile= filesys.CreateTextFile("..\ipsec\BackChannel.cmd", True) 
+
+'==========================================================================
+'++++++++++++++++++++++++++++ BEGIN TEST ++++++++++++++++++++++++++++++++++
+'==========================================================================
+
+Set oLog = new CLog
+
+oNDTCore.LogPtr = oLog.LogPtr
+
+'
+' Get Adapter collection from UI Object
+'
+Set pAdapterList = oNDInfo.AdapterList 
+
+
+' From the Collection look for the IP address matching our criteria (input) and 
+' query for the AH offload
+'
+For Each Adapter in pAdapterList
+
+	if(Adapter.AdapterType = ADAPTERTYPE_MESSAGE) then
+'		oLog.Variation("Local")
+'		oLog.Write(Adapter.IPAddress)
+		Stmnt = "SET MACHYY=" + Adapter.IPAddress
+		testfile.WriteLine Stmnt
+		
+	end if 
+
+
+	if(Adapter.IPAddress = "100.1.1.1") then
+		IPAddress = oNDTCommWS.MessageIP(Adapter.ConnectionID)		
+'		oLog.Variation ("100.1.1.1")
+'		oLog.Write(IPAddress)
+		Stmnt = "SET MACHZZ=" + IPAddress
+		testfile.WriteLine Stmnt
+
+		
+	end if 
+
+	if(Adapter.IPAddress = "150.1.1.2") then
+		IPAddress = oNDTCommWS.MessageIP(Adapter.ConnectionID)		
+
+'		oLog.Variation ("150.1.1.2")
+'		oLog.Write(IPAddress)
+		Stmnt = "SET MACHWW=" + IPAddress
+		testfile.WriteLine Stmnt
+	end if 
+
+	if(Adapter.IPAddress = "200.1.1.5") then
+		IPAddress = oNDTCommWS.MessageIP(Adapter.ConnectionID)		
+'		oLog.Variation ("200.1.1.5")
+'		oLog.Write(IPAddress)
+		Stmnt = "SET MACHXX=" + IPAddress
+		testfile.WriteLine Stmnt
+	end if 
+
+	
+Next
+
+
+testfile.Close   
+
+' cleanup
+'
+' The closing of all the open handles is taken care of by the dll.
+'
+Set pAdapterList = Nothing
+
+'
+'
+'==========================================================================
+'++++++++++++++++++++++++++++  END TEST  ++++++++++++++++++++++++++++++++++
+'==========================================================================
+End Function	'Main ()
+
+        </script>
+    </job>
+</package>
+
+<!--- CRC = 0x9cbf1d84 --->

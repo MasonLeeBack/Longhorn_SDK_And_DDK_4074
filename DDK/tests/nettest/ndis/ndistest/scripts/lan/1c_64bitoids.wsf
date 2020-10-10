@@ -1,0 +1,320 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, 802_5, FDDI
+</MEDIA>
+<WHQL>
+802_3, 802_5, FDDI
+</WHQL>
+<CARDMACH>
+1C,1M
+</CARDMACH>
+<RUNORDER>
+1140
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[This script tests OID_GEN_XMIT_OK and OID_GEN_RCV_OK.  It does not
+attempt to verify the values themselves.  It only checks that the
+queries are properly handled.  If the driver does not support 64 bit
+queries then it is warned unless it a gig adapter.  Gig adapters are
+required to support 64 bit queries.
+The oids are queried three times using:
+1. Information Buffer Length = 0 bytes
+   Expected Response:
+    BytesNeeded = 8
+    BytesWritten = 0       (Write No data in buffer)
+    NdisStatus = INVALID_LENGTH Or BUFFER_TOO_SHORT
+
+2. Information Buffer Length = 4 bytes
+   Expected Response:
+    Lower 32 bits of statistics
+    BytesWritten = 4
+    BytesNeeded = 8
+    NdisStatus = SUCCESS
+
+3. Information Buffer Length = 8 bytes
+   Expected Response:
+    64 bit statistics value
+    BytesWritten = 8
+    NdisStatus = SUCCESS
+
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="1c_64BitOIDs" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      
+      <!-- Begin Wireless Specific Includes -->
+      <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	   <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	   <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	   <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	   <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+      <!-- End Wireless Specific Includes -->
+      
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/>        
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script id="1c_64BitOIDs" language="VBScript">
+'==========================================================================
+' Script Name: 1c_64BitOIDs
+'==========================================================================
+Option Explicit 
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0)) 
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard, oTestOpen
+   Private m_lTestAdapterIndex
+   Private m_b64BitRequired
+   
+   Private Sub Class_Initialize
+      m_b64BitRequired = FALSE
+   End Sub
+   
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+      Set oTestOpen = Nothing
+   End Sub
+   
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      Dim nLinkSpeed
+      SetupTest = FALSE
+      
+      Set pAdapterList = oNDInfo.AdapterList
+      
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oTestOpen = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpen is Nothing) Then
+         Exit Function
+      End If
+      
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+               
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")           
+         If(vbAssociateWep(oTestOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If	
+                                    
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+      
+      nLinkSpeed = oTestCard.vbGetLinkSpeed
+      
+      ' If its a gigabit adapter, it must support 64 bit oids
+      If (nLinkSpeed >= 10000000) Then
+         m_b64BitRequired = TRUE
+         oLog.Write("Link speed is >= 1.0Gbps.  64-bit statistics are required." )
+      Else
+         oLog.Write("Link speed is < 1.0Gbps.  64-bit statistics are optional." )
+      End If
+      
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+   
+   Public Function RunTest (lTestAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+      
+      ExecuteTestCore
+      
+      
+      oLog.Variation ("Clear Events")
+      Call oTestOpen.vbClearEvents
+      
+   End Function
+   
+   Private Sub ExecuteTestCore
+      Dim nNumOids
+      Dim nCount
+      Dim arrOids64(2)
+      
+      nNumOids = 2
+      
+      arrOids64(0) = OID_GEN_XMIT_OK
+      arrOids64(1) = OID_GEN_RCV_OK
+      
+      nCount = 0
+      Do While (nCount < nNumOids)
+         oLog.VariationEx "Query OID 0x" & Hex(arrOids64(nCount)) & " with a 0 byte NULL buffer", _
+            "Miniport must fail request with invalid length/buffer too short and " & _
+            "return BytesNeeded = 8 and not write any data into buffer"
+         Call wsfCheckRequestResults (arrOids64(nCount), 0, FALSE, 0, 8)
+         
+         oLog.VariationEx "Query OID 0x" & Hex(arrOids64(nCount)) & " with a 4 byte buffer", _
+            "Miniport must succeed the request, return lower 32 bits of 64 bit statistics " & _
+            "and set BytesWritten = 4 and BytesNeeded = 8"
+         Call wsfCheckRequestResults (arrOids64(nCount), 4, TRUE, 4, 8)
+         
+         oLog.VariationEx "Query OID 0x" & Hex(arrOids64(nCount)) & " with a 8 byte buffer", _
+            "Miniport must succeed the request, return 64 bit statistics with BytesWritten = 8"
+         Call wsfCheckRequestResults (arrOids64(nCount), 8, TRUE, 8, 0)
+         
+         nCount = nCount + 1
+      Loop
+      
+   End Sub
+   
+   
+   ' All warnings are just to indicate that the adapter/driver does not support 64 bits
+   ' OIDs.
+   Private Function wsfCheckRequestResults(lOID, BufferLength, bMustSucceed, ExpBytesWritten, ExpBytesNeeded)
+      
+      Dim BytesNeeded, BytesWritten, NdisStatus
+      Dim bResult
+      Dim arrLongs(8)
+      Dim nInitValue 
+      nInitValue  = CLng(&Hffffffff&)
+      
+      BytesNeeded    = 1024
+      BytesWritten   = 2048
+      NdisStatus     = 0
+      arrLongs(0)    = nInitValue   'Fill data in buffer to detect inappropriate writes
+      arrLongs(1)    = nInitValue
+      
+      ' Perform a ndisrequest not allowing change of buffer size
+      bResult = oTestOpen.vbNdisRequest ( _
+            lOID, _
+            arrLongs, _
+            BufferLength, _
+            REQUEST_QUERY_INFO, _
+            BytesWritten, _
+            BytesNeeded, _
+            NdisStatus, _
+            FALSE)           ' Do not resize buffer
+      
+      oLog.Write("Returned Values:" )
+      oLog.Write("BytesWritten: " & BytesWritten )
+      oLog.Write("BytesNeeded: " & BytesNeeded )
+      oLog.Write("NdisStatus: " & hex(NdisStatus) )
+      
+      If (Not bResult) Then
+         ' NDISTest internally found a problem with driver and did not send the OID
+         ' down
+         Call oLog.Failed ("Unable to query OID" , 21907)
+      Else
+         If (bMustSucceed) Then
+            ' Miniport should have succeeded the OID
+            If (NdisStatus <> NDIS_STATUS_SUCCESS) Then
+               Call oLog.Failed ("The NdisRequest should have returned status NDIS_STATUS_SUCCESS." , 88888)
+            End If
+         Else
+            ' Should fail with buffer size error
+            If (NdisStatus <> NDIS_STATUS_BUFFER_TOO_SHORT AND NdisStatus <> NDIS_STATUS_INVALID_LENGTH) Then
+               Call oLog.Failed ("The miniport should have returned status NDIS_STATUS_BUFFER_TOO_SHORT or NDIS_STATUS_INVALID_LENGTH." , 88888)
+            End If
+         End If
+
+         ' For success case, we expect BytesWritten to be expected value
+         If (bMustSucceed) Then
+            If (BytesWritten <> ExpBytesWritten) Then
+               If (m_b64BitRequired) Then
+                  ' the nic is required to support 64 bit oid and must have written 8 bytes
+                  Call oLog.Failed ("The miniport should have set BytesWritten to " & ExpBytesWritten & " not " & BytesWritten , 88888)
+               Else
+                  ' Non 64bit miniport can write in 4 bytes
+                  oLog.Warned("The miniport should have set BytesWritten to " & ExpBytesWritten & " not " & BytesWritten)
+
+                  If (BufferLength < 8) Then
+                     ' For < 8 bytes buffer, miniport should alway return expected value
+                     Call oLog.Failed ("The miniport should have set BytesWritten to " & ExpBytesWritten & " not " & BytesWritten , 88888)
+                  End If                  
+               End If
+            End If
+         End If
+
+         ' BytesNeeded is important only on failure, except for BufferLength = 4, 
+         ' where we need correct BytesNeeded even if request succeded
+         If ((Not bMustSucceed) Or (BufferLength = 4)) Then
+            If (BytesNeeded <> ExpBytesNeeded) Then            
+               ' if were are expected to support 64 bit oids, we must set bytes needed correctly
+               If (m_b64BitRequired) Then
+                  Call oLog.Failed ("The miniport should have set BytesNeeded to " & ExpBytesNeeded & " not " & BytesNeeded , 21910)
+               Else
+                  oLog.Warned("The miniport should have set BytesNeeded to " & ExpBytesNeeded & " not " & BytesNeeded)
+               End If
+            End If         
+         End If
+         
+         ' Check if the buffer has been modified
+         If (bMustSucceed) Then
+            oLog.Write("Buffer: " & arrLongs(0) )
+            If (arrLongs(0) = nInitValue) Then
+               Call oLog.Failed ("The buffer was not modifed when it should have been." , 88888)
+               oLog.Write("(This is assuming the real value was not the same as the initial value.)" )
+            End If
+            
+            ' If we had used buffer size 8, also check the upper DWORD
+            If ((BufferLength > 4) And (arrLongs(1) = nInitValue)) Then
+               If (m_b64BitRequired) Then
+                  ' but fail only if nic is required to support 64 bits
+                  Call oLog.Failed ("The buffer was not modifed when it should have been." , 88888)
+                  oLog.Write("(This is assuming the real value was not the same as the initial value.)" )
+               Else
+                  ' else just warn that to show that it does not support the oid in 64 bits
+                  oLog.Warned ("The buffer was not modifed when it should have been.")
+                  oLog.Write("(This is assuming the real value was not the same as the initial value.)" )
+               End If
+               
+            End If
+         End If
+         
+      End If
+      
+      
+   End Function
+   
+End Class
+
+</script>
+</job>
+</package>
+
+
+
+
+<!--- CRC = 0x9973dcd0 --->

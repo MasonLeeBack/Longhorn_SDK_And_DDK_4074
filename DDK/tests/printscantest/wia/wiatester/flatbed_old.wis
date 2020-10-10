@@ -1,0 +1,15 @@
+.\Scripts\OldTree\DPS\TestDPSHorizontalBedSize.wia
+.\Scripts\OldTree\DPS\TestDPSVerticalBedSize.wia
+.\Scripts\OldTree\DPS\TestDPSPages.wia
+.\Scripts\OldTree\DPS\TestDPSPreview.wia
+.\Scripts\OldTree\DPS\TestDPSHorizontalBedRegistration.wia
+.\Scripts\OldTree\DPS\TestDPSVerticalBedRegistration.wia
+.\Scripts\OldTree\IPS\TestIPSXExtent.wia
+.\Scripts\OldTree\IPS\TestIPSYExtent.wia
+.\Scripts\OldTree\IPS\TestIPSYPOS.wia
+.\Scripts\OldTree\IPS\TestIPSXPOS.wia
+.\Scripts\OldTree\Interdep\TestInterdepIPSYPOS.wia
+.\Scripts\OldTree\Interdep\TestInterdepIPSYEXTENT.wia
+.\Scripts\OldTree\Interdep\TestInterdepIPSXEXTENT.wia
+.\Scripts\OldTree\Interdep\TestInterdepIPSXRES.wia
+.\Scripts\OldTree\Interdep\TestInterdepIPSYRES.wia

@@ -1,0 +1,445 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, 802_5, FDDI, Irda
+</MEDIA>
+<WHQL>
+802_3, 802_5, FDDI, Irda
+</WHQL>
+<CARDMACH>
+1C,1M
+</CARDMACH>
+<RUNORDER>
+1300
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[This script verifies that the lookahead length on your card can be set
+to everything up to -- but NOT exceeding -- the value returned from
+OID_GEN_MAXIMUM_LOOKAHEAD. Note that this script is not verifying that
+the card is actually using this value correctly.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="1c_SetLookahead" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      
+      <!-- Begin Wireless Specific Includes -->
+      <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	   <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	   <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	   <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	   <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+      <!-- End Wireless Specific Includes -->
+      
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/> 
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CIrdaCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CIrdaOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script id="1c_SetLookahead" language="VBScript">
+'==========================================================================
+' Script Name:    1c_SetLookahead
+'==========================================================================
+Option Explicit 
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0)) 
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard
+   Private oOpenOne, oOpenTwo     ' Two open instances of the test card
+   Private m_lTestAdapterIndex
+   Private m_lMaxLookahead
+   
+   Private Sub Class_Initialize
+      
+   End Sub
+   
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+      Set oOpenOne  = Nothing
+      Set oOpenTwo  = Nothing
+   End Sub
+   
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+      
+      Set pAdapterList = oNDInfo.AdapterList
+      
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = CreateCardObject(pAdapterList (m_lTestAdapterIndex))
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oOpenOne = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oOpenOne is Nothing) Then
+         Exit Function
+      End If
+      
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+ 
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")           
+         If(vbAssociateWep(oOpenOne, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If	
+                   
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+      
+      Set oOpenTwo = oTestCard.vbOpenAdapter
+      If (oOpenTwo is Nothing) Then
+         Exit Function
+      End If
+      
+      Set pAdapterList = Nothing
+      
+      oLog.Variation("Obtaining max lookahead")
+      
+      If (oOpenOne.vbGetMaxLookahead(m_lMaxLookahead) <> 0) Then
+         Exit Function
+      End If
+      oLog.Write("Lookahead = " & m_lMaxLookahead & vbLf)   
+      
+      SetupTest = TRUE
+   End Function
+   
+   Public Function RunTest (lTestAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+      
+      ExecuteTestCore
+      
+      oLog.Variation("Clear Events")
+      
+      Call oOpenOne.vbClearEvents()
+      Call oOpenTwo.vbClearEvents()
+      
+   End Function
+   
+   
+   Private Function ExecuteTestCore
+      Dim nCurLookahead
+      Dim nNewLookahead
+      
+      Dim SizeOfLong
+      Dim nNewLookahead1, nNewLookahead2
+      
+      Dim tmpMaxLookahead
+      Dim nCurLookahead1, nCurLookahead2
+      
+      Dim bResult, nResult
+      
+      Dim nLogMask
+      
+      '-----------------------------------------------------
+      ' single-open stest:
+      ' variation:   check setting lookahead to less than maxlookahead
+      '-----------------------------------------------------
+      
+      nCurLookahead = CLng(1)
+      
+      nNewLookahead = CLng(0)
+      
+      oLog.Variation("Testing full range of legal lookahead values")
+      
+      Do While (TRUE)
+         oLog.Variation("Setting lookahead for first instance")
+         
+         Call oOpenOne.vbSetLookahead(nCurLookahead)
+         
+         SizeOfLong = CLng(4)
+         oLog.Variation("Querying first instance for current lookahead")
+         bResult = oOpenOne.vbFastNdisRequest(OID_GEN_CURRENT_LOOKAHEAD, nNewLookahead, SizeOfLong)
+         
+         If (Not bResult) Then
+            Call oLog.Failed ("Unable to query current lookahead" , 21106)
+         ElseIf (nNewLookahead < nCurLookahead) Then
+            Call oLog.Failed ("NdisRequest returned 0x" & Hex(nNewLookahead) & ", expected 0x" & Hex(nCurLookahead), 21107)
+         ElseIf (nNewLookahead > nCurLookahead) Then
+            oLog.Warned("NdisRequest returned 0x" & Hex(nNewLookahead) & ", expected 0x" & Hex(nCurLookahead) )
+         End If
+         nCurLookahead = 2 * nCurLookahead
+         If (nCurLookahead >= m_lMaxLookahead) Then
+            Exit Do
+         End If
+      Loop
+      
+      '----------------------------------------------------
+      ' variation:   check setting lookahead to the maximum
+      '----------------------------------------------------
+      
+      oLog.Variation("Setting lookahead to maximum")
+      
+      Call oOpenOne.vbSetLookahead(m_lMaxLookahead)
+      
+      oLog.Variation("Querying for current lookahead")
+      SizeOfLong = CLng(4)
+      bResult = oOpenOne.vbFastNdisRequest(OID_GEN_CURRENT_LOOKAHEAD, nNewLookahead, SizeOfLong)
+      If (Not bResult) Then
+         Call oLog.Failed ("Unable to query current lookahead" , 21109)
+      ElseIf (nNewLookahead <> m_lMaxLookahead) Then
+         Call oLog.Failed ("NdisRequest returned 0x" & Hex(nNewLookahead) & ", expected 0x" & Hex(m_lMaxLookahead), 21110)
+      End If
+      
+      '----------------------------------------------------
+      ' variation:   check on setting lookahead to the maximum+1
+      '----------------------------------------------------
+      
+      oLog.Variation("Testing out of range lookahead values")
+      
+      nCurLookahead = m_lMaxLookahead + 1
+      
+      nLogMask = oLog.Mask    ' Save the mask 
+      oLog.Mask = DO_NOTHING
+      nResult = oOpenOne.vbSetLookahead(nCurLookahead)
+      oLog.Mask = nLogMask
+      
+      If (nResult = 0) Then
+         Call oLog.Failed ("Should not be able to set the lookahead to 0x" & Hex(nCurLookahead), 21111)
+      End If
+      
+      SizeOfLong = CLng(4)
+      bResult = oOpenOne.vbFastNdisRequest(OID_GEN_CURRENT_LOOKAHEAD, nNewLookahead, SizeOfLong)
+      If (Not bResult) Then
+         Call oLog.Failed ("Unable to query current lookahead" , 21112)
+      ElseIf (nNewLookahead <> m_lMaxLookahead) Then
+         Call oLog.Failed ("NdisRequest returned 0x" & Hex(nNewLookahead) & ", expected 0x" & Hex(m_lMaxLookahead), 21113)
+      End If
+      
+      '--------------------------------------------------
+      ' multiple open instances
+      ' variation:   set lookahead to same value for both open instances
+      '--------------------------------------------------
+      
+      nCurLookahead = CLng(1)
+      nNewLookahead1 = CLng(0)
+      nNewLookahead2 = CLng(0)
+      tmpMaxLookahead = CLng(1)
+      
+      oLog.Variation("Set lookahead to same value on two open instances")
+      Do While (TRUE)
+         oLog.Variation("Setting same lookaheads for both instances")
+         
+         nLogMask = oLog.Mask    ' Save the mask 
+         oLog.Mask = DO_NOTHING
+         nResult = oOpenOne.vbSetLookahead(nCurLookahead)
+         oLog.Mask = nLogMask
+         
+         If (nCurLookahead > m_lMaxLookahead) Then
+            If (nResult = 0) Then
+               Call oLog.Failed ("Should not be able to set lookahead to " & nCurLookahead , 21114)
+            End If
+         ElseIf (nResult) Then
+            Call oLog.Failed ("Unable to set lookahead to " & nCurLookahead , 21115)
+         End If
+         
+         nLogMask = oLog.Mask    ' Save the mask
+         oLog.Mask = DO_NOTHING
+         nResult = oOpenTwo.vbSetLookahead(nCurLookahead)
+         oLog.Mask = nLogMask
+         
+         If (nCurLookahead > m_lMaxLookahead) Then
+            If (nResult = 0) Then
+               Call oLog.Failed ("Should not be able to set lookahead to " & nCurLookahead , 21116)
+            End If
+         ElseIf (nResult) Then
+            Call oLog.Failed ("Unable to set lookahead to " & nCurLookahead , 21117)
+         End If
+         
+         oLog.Variation("Querying for current lookahead")
+         SizeOfLong = CLng(4)
+         bResult = oOpenOne.vbFastNdisRequest(OID_GEN_CURRENT_LOOKAHEAD, nNewLookahead1, SizeOfLong)
+         If (Not bResult) Then
+            Call oLog.Failed ("Unable to query current open 1 lookahead" , 21118)
+         End If
+         
+         SizeOfLong = CLng(4)
+         bResult = oOpenTwo.vbFastNdisRequest(OID_GEN_CURRENT_LOOKAHEAD, nNewLookahead2, SizeOfLong)
+         If (Not bResult) Then
+            Call oLog.Failed ("Unable to query current open 2 lookahead" , 21119)
+         End If
+         
+         If (nCurLookahead <= m_lMaxLookahead) Then
+            If (nNewLookahead1 < nCurLookahead) Then
+               Call oLog.Failed ("Open 1 NdisRequest returned " & nNewLookahead1 & ", expected " & nCurLookahead , 21120)
+            End If            
+            If (nNewLookahead2 < nCurLookahead) Then
+               Call oLog.Failed ("Open 2 NdisRequest returned " & nNewLookahead2 & ", expected " & nCurLookahead , 21121)
+            End If            
+            
+            If (nCurLookahead < m_lMaxLookahead) Then
+               nCurLookahead = nCurLookahead * 2
+               tmpMaxLookahead = tmpMaxLookahead * 2
+               If (nCurLookahead = m_lMaxLookahead) Then
+                  tmpMaxLookahead = m_lMaxLookahead * 2
+               ElseIf (nCurLookahead > m_lMaxLookahead) Then
+                  nCurLookahead = m_lMaxLookahead
+               End If
+            Else     ' nCurLookahead == m_lMaxLookahead
+               nCurLookahead = tmpMaxLookahead
+            End If
+         Else        ' nCurLookahead > m_lMaxLookahead
+            If (nNewLookahead1 <>  m_lMaxLookahead) Then
+               Call oLog.Failed ("Open 1 NdisRequest returned " & nNewLookahead1 & ", expected " & m_lMaxLookahead , 21122)
+            End If
+            If (nNewLookahead2 <>  m_lMaxLookahead) Then
+               Call oLog.Failed ("Open 2 NdisRequest returned " & nNewLookahead2 & ", expected " & m_lMaxLookahead , 21123)
+            End If
+            Exit Do
+         End If
+      Loop
+      
+      '---------------------------------------------
+      ' variation:   set two open instances to different lookaheads
+      '---------------------------------------------
+      
+      nCurLookahead1 = CLng(1)
+      nCurLookahead2 = tmpMaxLookahead
+      
+      oLog.Variation("Set lookahead to different values on two open instances" & vblf)
+      Do While (TRUE)
+         oLog.Variation("Setting different lookaheads")
+         
+         nLogMask = oLog.Mask    ' Save the mask 
+         oLog.Mask = DO_NOTHING
+         nResult = oOpenOne.vbSetLookahead(nCurLookahead1)
+         oLog.Mask = nLogMask
+         
+         If (nCurLookahead1 > m_lMaxLookahead) Then
+            If (nResult = 0) Then
+               Call oLog.Failed ("Should not be able to set lookahead to " & nCurLookahead1 , 21124)
+            End If
+         ElseIf (nResult) Then
+            Call oLog.Failed ("Unable to set lookahead to " & nCurLookahead1 , 21125)
+         End If
+         
+         
+         nLogMask = oLog.Mask    ' Save the mask 
+         oLog.Mask = DO_NOTHING
+         nResult = oOpenTwo.vbSetLookahead(nCurLookahead2)
+         oLog.Mask = nLogMask
+         
+         If (nCurLookahead2 > m_lMaxLookahead) Then
+            If (nResult = 0) Then
+               Call oLog.Failed ("Should not be able to set lookahead to " & nCurLookahead2 , 21126)
+            End If
+         ElseIf (nResult) Then
+            Call oLog.Failed ("Unable to set lookahead to " & nCurLookahead2 , 21127)
+         End If
+         
+         oLog.Variation("Querying for current lookahead")
+         
+         SizeOfLong = CLng(4)
+         bResult = oOpenOne.vbFastNdisRequest(OID_GEN_CURRENT_LOOKAHEAD, nNewLookahead1, SizeOfLong)
+         If (Not bResult) Then
+            Call oLog.Failed ("Unable to query current open 1 lookahead" , 21128)
+         End If
+         
+         SizeOfLong = CLng(4)
+         bResult = oOpenTwo.vbFastNdisRequest(OID_GEN_CURRENT_LOOKAHEAD, nNewLookahead2, SizeOfLong)
+         If (Not bResult) Then
+            Call oLog.Failed ("Unable to query current open 2 lookahead" , 21129)
+         End If
+         
+         If (nCurLookahead1 <= m_lMaxLookahead) Then
+            If (nNewLookahead1 < nCurLookahead1) Then
+               Call oLog.Failed ("Open 1 NdisRequest returned " & nNewLookahead1 & ", expected " & nCurLookahead1 , 21130)
+            End If            
+            
+            If (nCurLookahead1 < m_lMaxLookahead) Then
+               nCurLookahead1 = nCurLookahead1 * 2
+               If (nCurLookahead1 > m_lMaxLookahead) Then
+                  nCurLookahead1 = m_lMaxLookahead
+               End If
+            Else     ' nCurLookahead1 == m_lMaxLookahead
+               nCurLookahead1 = tmpMaxLookahead
+            End If
+         Else        ' nCurLookahead1 > m_lMaxLookahead
+            If (nNewLookahead1 <>  m_lMaxLookahead) Then
+               Call oLog.Failed ("Open 1 NdisRequest returned " & nNewLookahead1 & ", expected " & m_lMaxLookahead , 21131)
+            End If
+         End If
+         
+         If (nCurLookahead2 = tmpMaxLookahead) Then
+            If (nNewLookahead2 <>  m_lMaxLookahead) Then
+               Call oLog.Failed ("Open 2 NdisRequest returned " & nNewLookahead2 & ", expected " & m_lMaxLookahead , 21132)
+            End If
+            nCurLookahead2 = m_lMaxLookahead
+         ElseIf (nCurLookahead2 = m_lMaxLookahead) Then
+            If (nNewLookahead2 <>  m_lMaxLookahead) Then
+               Call oLog.Failed ("Open 2 NdisRequest returned " & nNewLookahead2 & ", expected " & m_lMaxLookahead , 21133)
+            End If
+            ' Need to ensure integer division
+            nCurLookahead2 = tmpMaxLookahead \ 2
+            If (nCurLookahead2 = m_lMaxLookahead) Then
+               nCurLookahead2 = nCurLookahead2 \2
+            End If
+         Else
+            If (nNewLookahead2 < nCurLookahead2) Then
+               Call oLog.Failed ("Open 2 NdisRequest returned " & nNewLookahead2 & ", expected " & nCurLookahead2 , 21134)
+            End If
+            If (nCurLookahead2 = 1) Then
+               Exit Do
+            End If
+            nCurLookahead2 = nCurLookahead2 \ 2
+         End If
+      Loop
+      
+      '----------------------------------------------------
+      ' set both back to the maximum before exiting 
+      '----------------------------------------------------
+      oLog.Variation("Re-setting both lookaheads to maximum")
+      
+      Call oOpenOne.vbSetLookahead(m_lMaxLookahead)
+      
+      Call oOpenTwo.vbSetLookahead(m_lMaxLookahead)
+      
+   End Function
+End Class
+
+</script>
+</job>
+</package>
+
+
+
+
+<!--- CRC = 0x5875303d --->

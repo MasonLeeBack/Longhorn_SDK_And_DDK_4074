@@ -1,0 +1,234 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3
+</MEDIA>
+<WHQL>
+802_3
+</WHQL>
+<CARDMACH>
+2C,1M,2M
+</CARDMACH>
+<RUNORDER>
+1520
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[
+This script verifies the ability of NDIS to withstand potential deadlock situations.
+While the miniport is receiving packet indications from ndis, ndis request to
+set multicast address is done by ndistest driver for the test miniport. The support
+card is sending packets and the test card is receiving packets with special receive
+option to set multicast address during receive indication.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="2c_Deadlock" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      
+      <!-- Begin Wireless Specific Includes -->
+      <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	   <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	   <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	   <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	   <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+      <!-- End Wireless Specific Includes -->
+      
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/> 
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script id="2c_Deadlock" language="VBScript">
+'==========================================================================
+' Script Name:    2c_Deadlock
+'
+' 
+'==========================================================================
+Option Explicit 
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0), GetSupportAdapterIndex (oNDInfo.AdapterList, 0)) 
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard, oTestOpen
+   Private oSuppCard, oSuppOpen
+   Private m_lTestAdapterIndex, m_lSuppAdapterIndex
+   Private TestCardGUID
+   
+   Private Sub Class_Initialize
+      
+   End Sub
+   
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+      Set oTestOpen = Nothing
+      
+      Set oSuppCard = Nothing
+      Set oSuppOpen = Nothing
+   End Sub
+   
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+
+      If (UseIPHeaders) Then
+         Exit Function
+      End If      
+      
+      Set pAdapterList = oNDInfo.AdapterList
+      
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oTestOpen = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpen is Nothing) Then
+         Exit Function
+      End If
+      
+      oLog.Variation ("Setting up Support Adapter")
+      Set oSuppCard = New CLanCard
+      If (oSuppCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oSuppOpen = oSuppCard.vbSetupBasicTest(pAdapterList (m_lSuppAdapterIndex))
+      If (oSuppOpen is Nothing) Then
+         Exit Function
+      End If
+      
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+               
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")           
+         If(vbAssociateWep(oTestOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If	
+         
+         oLog.Variation ("Associating support device with " & NDTESTAP2 & " ...")       
+         If(vbAssociateWep(oSuppOpen, NDTESTAP2) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate support device with " & NDTESTAP2, 88888
+            Exit Function
+         End If	
+                           
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+      
+      TestCardGUID = pAdapterList(m_lTestAdapterIndex).GUID
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+   
+   Public Function RunTest (lTestAdapterIndex, lSuppAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      m_lSuppAdapterIndex = lSuppAdapterIndex
+      
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+      
+      ExecuteTestCore
+      
+      oLog.Variation("Clear Events on the Test adapter." & vblf)
+      If (Not oTestOpen.vbClearEvents()) Then
+         Call oLog.Failed ("Unable to get events from test adapter." , 21041)
+      End If
+      
+   End Function
+   
+   Private Function ExecuteTestCore
+      Dim bResult
+      Dim TestAddr, nTestId
+      Dim nPacketsSent, nPacketsToSend
+      Dim nPacketSize, nReceived, nResent
+      
+      TestAddr = oTestOpen.vbGetCardAddress()
+      
+      oLog.Variation("Setup Instances")
+      
+      oTestOpen.vbSetReceiveOption(RECEIVE_ALLOW_BUSY_NET Or DEADLOCK_REPRO_FLAG)
+      
+      nTestId = oNDTSupp.Random(1, 32765)
+      oTestOpen.vbSetChannelId(nTestId)
+      oSuppOpen.vbSetChannelId(nTestId)
+      
+      nPacketsSent   = 0
+      nPacketSize    = 10
+      nPacketsToSend = 100
+      nReceived      = 0
+      nResent        = 0
+      
+      If(Not oTestOpen.vbSetPacketFilter(DIRECTED)) Then
+         Exit Function
+      End If
+      
+      bResult = oTestOpen.vbStartReceive()
+      If (Not bResult) Then
+         Exit Function
+      End If
+      
+      '
+      ' Send data from the remote card into the test card
+      '
+      oLog.Variation("Send from the support to the test adapter." & vblf)
+      
+      If (oSuppOpen.vbVerifiedSend(TestAddr, nPacketSize, nPacketsToSend, 0, NULL) <> 0) Then  
+         Dim nMinimumPass
+         '
+         ' get receive results from "receiving" open instance
+         '
+         nMinimumPass = (glPercentToPass * nPacketsToSend) / 100
+         
+         oLog.Variation("Checking receive results" & vblf)
+         
+         bResult = oTestOpen.vbStopReceive
+         If (bResult) Then
+            bResult = oTestOpen.vbVerifyReceiveResend(nPacketsToSend, nMinimumPass, 0, 0)
+         End If
+      Else
+         Call oLog.Failed ("Send command failed on the support adapter." , 21040)
+      End If
+      
+   End Function
+   
+End Class
+
+</script>
+</job>
+</package>
+
+
+
+<!--- CRC = 0x688c192b --->

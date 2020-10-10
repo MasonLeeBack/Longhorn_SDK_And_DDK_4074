@@ -1,0 +1,580 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, 802_5, FDDI
+</MEDIA>
+<CARDMACH>
+2C,1M,2M
+</CARDMACH>
+<RUNORDER>
+9833
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[This is a fourteen day long test for NIC's that need to be logoed for
+Data Center machines
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+    <job id="2c_14DayTest" prompt="no">
+        <reference object="NDInfo.Info.1" version="1.0"/>
+        <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+        <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+        <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+        <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+        <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+        <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+        <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      
+        <!-- Begin Wireless Specific Includes -->
+        <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	     <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	     <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	     <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	     <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+        <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+        <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+        <!-- End Wireless Specific Includes -->
+      
+        <script language="VBScript" src="..\inc\ccard.vbs"/>
+        <script language="VBScript" src="..\inc\copen.vbs"/>
+        <script language="VBScript" src="..\inc\clog.vbs"/>
+        <script language="VBScript" src="..\inc\general.vbs"/>
+        <script language="VBScript" src="..\inc\offload.vbs"/>
+        <script language="VBScript" src="..\inc\Events.vbs"/>
+        <script language="VBScript" src="..\inc\Utilities.vbs"/>
+        <script language="VBScript" src="..\inc\Constants.vbs"/>
+        <script language="VBScript" src="..\inc\DevChars.vbs"/>
+        <script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+        <script id="2c_14DayTest" language="VBScript">
+
+
+Option Explicit 
+
+Call Initialize ()
+Call Main(GetTestAdapterIndex (oNDInfo.AdapterList, 0), GetSupportAdapterIndex (oNDInfo.AdapterList, 0))
+Call Terminate ()
+
+Function Main(lTestAdapterIndex, lSupportAdapterIndex)
+
+    Dim oLongHaulTest
+    
+    Set oLongHaulTest = new CDTCLongHaulTest
+    
+    ' This is NOT the last script even if it is the only one selected
+    ' from the UI. The reason is that this script launches other scripts
+    ' and, therefore, is not the last test run
+    oNDTSession ("LastScript") = False
+    
+    call oLongHaulTest.Run (lTestAdapterIndex, lSupportAdapterIndex)
+    
+    ' Now it is the last script. This will make the Terminate do the cleanup properly
+    oNDTSession ("LastScript") = True
+    
+End Function
+
+
+
+Class CDTCLongHaulTest
+
+    Private nDaysToRun, nHoursToRun
+    Private oTestCard, oSuppCard
+    Private oTestOpen, oSuppOpen
+    Private TestCardGUID
+    Private MASK_RESTORE_LOG_MASK
+    Private nTestAdapterIndex, nSupportAdapterIndex
+    Private bCanRunCheckSumTest, bCanRunLargeSendTest
+    
+    ' Some class level constants
+    Private MAX_SIMPLE_SEND_PACKETS         ' Max number of packet simple send tries to send
+    Private MAX_SIMPLE_SEND_PACKET_SIZE     ' Max size of a simple send packet
+    Private MINIMUM_PERCENT_TO_PASS_SIMPLE_SEND ' Min percentage of simple send traffic that needs to pass    
+    Private MASK_SILENCE_LOG
+    
+    ' All the stats that need to be collected
+    Private nStartDate
+    Private nNumCommunicationTestFailed     ' The number of ommunication test that failed for any reason
+    Private nNumSendOperationsFailed        ' The number of times we dropped one or more packets while sending
+    Private nNumReceiveOperationsFailed     ' The number of time we received less than expected
+    Private nNumTotalSendsFailed            ' The total number of packets that could not be sent
+    Private nNumTotalReceiveFailed          ' The total number of packets that could not be received
+    Private nNumUnexpectedResets
+    Private nMaxResetsAllowed, nMaxConnectsAllowed, nMaxDisconnectsAllowed
+
+    Sub Class_Initialize
+        
+        ' Run the test for 14 days
+        nDaysToRun = 14
+        
+        ' The number of seconds the whole test runs for
+        ' Makes working with VB easier
+        nHoursToRun = nDaysToRun * 24
+                
+        ' Initialize class level consts
+        MAX_SIMPLE_SEND_PACKETS             = 100
+        MAX_SIMPLE_SEND_PACKET_SIZE         = 400
+        MINIMUM_PERCENT_TO_PASS_SIMPLE_SEND = 100       ' Need all to pass for now
+        
+        ' Allowed number of events
+        nMaxResetsAllowed = 100
+        nMaxConnectsAllowed = 100
+        nMaxDisconnectsAllowed = 100
+        
+        ' Mask off all failures and force direct all log output to debugger
+        MASK_SILENCE_LOG = LOG_FORBID_FAILURES Or LOG_FORBID_WARNINGS Or DEBUGWRITE
+        
+        ' Save the current log output verbosity information
+        MASK_RESTORE_LOG_MASK = oNDInfo.ScriptOutputControl
+        
+    End Sub        ' Initialize class level consts
+    
+
+    Sub Class_Terminate
+        
+        ' Restore the log mask
+        oNDInfo.ScriptOutputControl = MASK_RESTORE_LOG_MASK
+        
+    End Sub
+
+
+    Sub WriteToLog (stmt)              
+       ' Set the log mask to accept writes
+       oNDInfo.ScriptOutputControl = MASK_RESTORE_LOG_MASK
+           oLog.Write (stmt)
+       oNDInfo.ScriptOutputControl = MASK_SILENCE_LOG
+    End Sub
+
+
+    Sub FailureToLog (stmt)
+       ' Set the log mask to accept failures
+       oNDInfo.ScriptOutputControl = MASK_RESTORE_LOG_MASK
+           call oLog.Failed (stmt, 88888)
+       oNDInfo.ScriptOutputControl = MASK_SILENCE_LOG
+    End Sub
+    
+    Sub VariationToLog (stmt)
+       ' Set the log mask to accept failures
+       oNDInfo.ScriptOutputControl = MASK_RESTORE_LOG_MASK
+           call oLog.Variation (stmt)
+       oNDInfo.ScriptOutputControl = MASK_SILENCE_LOG
+    End Sub
+    
+
+    Public Function TestIsRunnable ()
+        Dim SystemSKU
+        
+        TestIsRunnable = True        
+    End Function
+
+
+    Sub Run (lTestAdapterIndex, lSupportAdapterIndex)
+        
+        ' Do all the required setup before launching the test
+        ' Include creating adapter and open instances
+        If (Not SetupTest(lTestAdapterIndex, lSupportAdapterIndex)) Then
+            Exit Sub
+        End If
+
+        ' Check if this test can be run. Should be data center etc.
+        If (Not TestIsRunnable ()) Then
+            oLog.Write ("This test could not be run on the system.")
+            Exit Sub
+        End If
+
+        ' Assume no offload support
+        bCanRunCheckSumTest = False
+        bCanRunLargeSendTest = False
+
+        ' Check for Offload capabilities of the NIC's
+        If (Not oTestOpen.GetTaskOffloadInfo()) Then
+            oLog.Write ("Will not run offload test! This NIC does not support task offloading")
+        Else
+            ' Check for Task Offload Support
+            If (Not GlobTaskOffloadSupport) Then
+                call oLog.Write("Will run offload test, OID_TCP_TASK_OFFLOAD not supported by miniport" & vblf)
+            Else
+                ' Check for Checksum Task Offload Support
+                If (GlobCksumTasks = 0) Then
+                    call oLog.Write("Will not run checksum test! Checksum task offload not supported" & vblf)
+                Else
+                    bCanRunChecksumTest = True
+                End If
+
+                ' Check for global large send offload support                
+                If (GlobLargeSendTasks = 0) Then
+                    call oLog.Write ("Will not run Largesend test! LargeSend task offload not supported")
+                Else
+                    bCanRunLargeSendTest = True
+                End If
+                
+            End If            
+        End If
+                        
+        '
+        ' Launch the actual test
+        '
+        oLog.Write (vblf & "Test launched at : " & Now & vblf)
+        
+        call LaunchTest ()
+        
+        oLog.Write (vblf & "Test ended at : " & Now & vblf)
+        
+    End Sub
+
+
+    Public Function SetupTest (lTestAdapterIndex, lSupportAdapterIndex)
+        
+        SetupTest = False
+    
+        ' Create test and support cards and opens
+        oLog.Variation ("Create Test Card and Open")
+        Set oTestCard = new CCard
+        Set oTestOpen = oTestCard.SetupBasicTest (oNDInfo.AdapterList (lTestAdapterIndex))
+        If (oTestOpen Is Nothing) Then
+            oLog.Write ("Could not create test card or open")
+            Exit Function
+        End If
+        
+        TestCardGUID = oNDInfo.AdapterList(lTestAdapterIndex).GUID
+        
+        oLog.Variation ("Create Support Card and Open")
+        Set oSuppCard = new CCard
+        Set oSuppOpen = oSuppCard.SetupBasicTest (oNDInfo.AdapterList (lSupportAdapterIndex))
+        If (oSuppOpen Is Nothing) Then
+            oLog.Write ("Could not create Support card or open")
+            Exit Function
+        End If
+        
+        '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+               
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")           
+         If(vbAssociateWep(oTestOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If	
+         
+         oLog.Variation ("Associating support device with " & NDTESTAP2 & " ...")       
+         If(vbAssociateWep(oSuppOpen, NDTESTAP2) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate support device with " & NDTESTAP2, 88888
+            Exit Function
+         End If	
+                           
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+      
+        SetupTest = True
+        
+    End Function
+    
+    
+    Public Function CanEndTest ()
+        
+        ' End test if nHoursToRun have elapsed                
+        If ( DateDiff ("h", nStartDate, Date) >= nHoursToRun) Then
+            CanEndTest = True
+        Else
+            CanEndTest = False
+        End If
+        
+    End Function
+
+
+    Public Function OneDayOver (nOldDate)
+
+        ' If one day has been since the 
+        If ( DateDiff ("h", nOldDate, Date) >= 24) Then
+            OneDayOver = True
+        Else
+            OneDayOver = False
+        End If
+        
+    End Function
+    
+    
+    Public Function LaunchTest ()
+        
+        Dim nTestIndex, nYesterdayDate
+        Dim WshShell, strScriptToRun
+        Dim nSilentPasses, nVerbosePasses
+        
+        nTestIndex = 1
+        
+        ' Get the start data and time of the test
+        nStartDate = Date
+        nYesterdayDate = Date
+        
+        ' Get reference to the Wsh shell object
+        Set WshShell = CreateObject("WScript.Shell")
+
+        '
+        ' Setup the log object so writes from dll are ignored!
+        ' This is necessary to stop the log file from becoming huge        
+        ' From this point on ONLY WriteToLog method will put any comments to the log
+        ' oLog.Write commands and even DLLWrite commands from script will not go
+        ' Any failures and warnings will also not be counted or put in the log
+        '
+        oNDInfo.ScriptOutputControl = MASK_SILENCE_LOG
+        
+        '
+        ' Run the load unload test for a while right at the start
+        ' After that, we will not  want to load or unload the the
+        ' driver till the end of the test. Loading and unloading the
+        ' driver may hide any problems like growing leaks etc. in the 
+        ' driver
+        '
+        call oTestOpen.Close ()
+        call WshShell.Run("wscript.exe 2c_LoadUnload.wsf", 10, True)
+        
+        ' ReOpen the instance! This also prevents driver from unloading
+        oTestOpen.ReOpen (oTestCard.GetNdisMedium)
+        
+        ' For verification after load/unload test
+        Call RunCommunicationTest
+
+        nSilentPasses = 0
+        nVerbosePasses = 0
+        
+        '
+        ' Enter the loop and keep doing this till almost time to end the test
+        '
+        While (Not CanEndTest ())
+
+            ' Do any preparatory work here
+            VariationToLog ("Silent/Verbose Runs completed (" & nSilentPasses & "/" & nVerbosePasses & ")")
+            strScriptToRun = ""
+
+            Select Case nTestIndex
+                case 1
+                    If bCanRunChecksumTest Then
+                        strScriptToRun = "2c_OffloadChecksum.wsf"
+                    End if
+                    
+                Case 2
+                    If bCanRunLargeSendTest Then
+                        strScriptToRun = "2c_OffloadLargeSend.wsf"
+                    End If
+                Case 3                    
+                    strScriptToRun = "2c_Simultaneous.wsf"                    
+                Case Else
+                    ' Wrap over for another pass to occur
+                    nTestIndex = 0
+                    nSilentPasses = nSilentPasses + 1
+            End Select
+                        
+            If strScriptToRun <> "" Then
+                WriteToLog ("Launching " & strScriptToRun)
+                call WshShell.Run("wscript.exe " & strScriptToRun, 10, True)
+            Else
+                WriteToLog ("Running verbose communication test to verify NIC works")
+                call RunCommunicationTest
+                
+                ' If one day of testing has been over then
+                ' run a verbose pass of the test above
+                if (OneDayOver (nYesterdayDate)) Then
+                    VariationToLog ("Executing verbose test run: " & nVerbosePasses + 1)
+                    ' Set yesterday to today
+                    nYesterdayDate = Date
+                    
+                    ' Restore the log output level
+                    oNDInfo.ScriptOutputControl = MASK_RESTORE_LOG_MASK
+                    
+                    ' Run the tests with silent mode off
+                    If (bCanRunChecksumTest) Then
+                        call WshShell.Run("wscript.exe 2c_OffloadChecksum.wsf", 10, True)
+                    End If                    
+                    If (bCanRunLargeSendTest) Then
+                        call WshShell.Run("wscript.exe 2c_OffloadLargeSend.wsf", 10, True)
+                    End If
+                    
+                    call WshShell.Run("wscript.exe 2c_Simultaneous.wsf", 10, True)
+                    
+                    nVerbosePasses = nVerbosePasses + 1
+                    
+                    oNDInfo.ScriptOutputControl = MASK_SILENCE_LOG
+                End If
+            End If
+
+            nTestIndex = nTestIndex + 1
+            
+        Wend
+        
+        ' Restore the log output level
+        oNDInfo.ScriptOutputControl = MASK_RESTORE_LOG_MASK
+        
+        ' Run the tests above once to make sure its all working!
+        ' The silent log could have been masking errors
+        If (bCanRunChecksumTest) Then
+            call WshShell.Run("wscript.exe 2c_OffloadChecksum.wsf", 10, True)
+        End If                    
+        If (bCanRunLargeSendTest) Then
+            call WshShell.Run("wscript.exe 2c_OffloadLargeSend.wsf", 10, True)
+        End If
+        
+        call WshShell.Run("wscript.exe 2c_Simultaneous.wsf", 10, True)
+        
+        ' call the LoadUnload test at the end
+        call oTestOpen.Close()
+        call WshShell.Run("wscript.exe 2c_LoadUnload.wsf", 10, True)
+        
+    End Function
+        
+    
+    Function RunCommunicationTest ()
+        Dim lTotalPackets, lPacketSize, lTestID, lPacketsToSend, nPacketsSent
+        Dim lReceived, lResent, lResentExpected, lMinResendRequired, lMinRecvRequired, lRecvExpected
+        
+        ' Set send packets stats
+        lPacketsToSend = oNDTSupp.Random (glPacketsToSend, MAX_SIMPLE_SEND_PACKETS)
+        lPacketSize = oNDTSupp.Random (glMinimumPacketSize, MAX_SIMPLE_SEND_PACKET_SIZE)
+        lMinRecvRequired = (lPacketsToSend * MINIMUM_PERCENT_TO_PASS_SIMPLE_SEND) / 100
+        lRecvExpected = lPacketsToSend                  ' Receive all sent
+        lResentExpected = lPacketsToSend                ' Resend all that you receive
+        lMinResendRequired = (lPacketsToSend * MINIMUM_PERCENT_TO_PASS_SIMPLE_SEND) / 100
+        
+        ' Assign channel id        
+        lTestId = oNDTSupp.Random(1, 32765)
+        oTestOpen.SetChannelId(lTestId)
+        oSuppOpen.SetChannelId(lTestId)
+        
+        ' For functional tests, we allow the oring of this bit
+        oTestOpen.SetReceiveOption(RECEIVE_DEFAULT Or RECEIVE_ALLOW_BUSY_NET)
+
+        ' Set packet filters
+        Call oTestOpen.SetPacketFilter(DIRECTED)
+        Call oSuppOpen.SetPacketFilter(DIRECTED)
+    
+        oTestOpen.StartReceive()
+        oSuppOpen.StartReceive()
+
+        ' Send and verify send from the support open
+        If (oSuppOpen.Send(oTestOpen.MACAddress, lPacketSize, lPacketsToSend, 0, oSuppOpen.MACAddress)) Then
+            If (oSuppOpen.WaitSend ()) Then
+                If (oSuppOpen.GetSendResults (nPacketsSent, SEND_FAILURES_FORBIDDEN)) Then            
+                    If (nPacketsSent <> lPacketsToSend) Then
+                        nNumCommunicationTestFailed = nNumCommunicationTestFailed + 1
+                        nNumTotalSendsFailed = nNumTotalSendsFailed + (lPacketsToSend - nPacketsSent)                    
+                    End If            
+                Else
+                    FailureToLog ("Failed to GetSendResults from Support Open")
+                    nNumCommunicationTestFailed = nNumCommunicationTestFailed + 1
+                    Exit Function                
+                End If
+            End If
+        Else
+            FailureToLog ("Failed to send packets from Support Open")
+            nNumCommunicationTestFailed = nNumCommunicationTestFailed + 1
+            Exit Function
+        End If
+
+        ' Stop receiving on the Test Open
+        If (Not oTestOpen.StopReceive ()) Then
+            WriteToLog ("Could not stop receiving on test adapter")
+            nNumCommunicationTestFailed = nNumCommunicationTestFailed + 1
+        End If
+
+        If (oTestOpen.GetReceiveResults(lReceived, lResent)) Then
+            If (lResent <> lResentExpected) Then
+                if (lResent < lMinResendRequired) Then
+                    FailureToLog ("Resent less than the required minimum of " & lMinResendRequired)
+                    nNumCommunicationTestFailed = nNumCommunicationTestFailed + 1
+                Else
+                    if (lResentExpected = lMinResendRequired) Then
+                        FailureToLog ("Did not resend expected number of packets")
+                        nNumCommunicationTestFailed = nNumCommunicationTestFailed + 1
+                    Else
+                        WriteToLog ("Resent acceptable but less than expected number of packets")
+                    End If
+                End If
+            End If
+            
+            If (lReceived <> lRecvExpected) Then
+                if (lRecvExpected = 0) Then
+                    FailureToLog ("Should not have received any packets")
+                    nNumCommunicationTestFailed = nNumCommunicationTestFailed + 1
+                Else
+                    if (lReceived < lMinRecvRequired) Then
+                        FailureToLog ("Received less than the required minimum of " & lMinRecvRequired)
+                        nNumCommunicationTestFailed = nNumCommunicationTestFailed + 1
+                    Else
+                        if (lRecvExpected = lMinRecvRequired) Then
+                            FailureToLog ("Did not receive expected number of packets")
+                            nNumCommunicationTestFailed = nNumCommunicationTestFailed + 1
+                        Else
+                            WriteToLog ("Received acceptable but less than expected number of packets")
+                        End If
+                    End If
+                End If
+            End If
+        End If
+        
+        ' Stop receiving on the Test Open
+        If (Not oSuppOpen.StopReceive ()) Then
+            WriteToLog ("Could not stop receiving on support adapter")
+            nNumCommunicationTestFailed = nNumCommunicationTestFailed + 1
+        End If
+
+        If (oSuppOpen.GetReceiveResults(lReceived, lResent)) Then
+            if (lResent <> 0) Then
+                FailureToLog ("Support card should not have resent any packets")
+                nNumCommunicationTestFailed = nNumCommunicationTestFailed + 1
+            End If
+            
+            If (lReceived <> lRecvExpected) Then
+                if (lRecvExpected = 0) Then
+                    FailureToLog ("Should not have received any packets")
+                    nNumCommunicationTestFailed = nNumCommunicationTestFailed + 1
+                Else
+                    if (lReceived < lMinRecvRequired) Then
+                        FailureToLog ("Received less than the required minimum of " & lMinRecvRequired)
+                        nNumCommunicationTestFailed = nNumCommunicationTestFailed + 1
+                    Else
+                        if (lRecvExpected = lMinRecvRequired) Then
+                            FailureToLog ("Did not receive expected number of packets")
+                            nNumCommunicationTestFailed = nNumCommunicationTestFailed + 1
+                        Else
+                            WriteToLog ("Received acceptable but less than expected number of packets")
+                        End If
+                    End If
+                End If
+            End If
+        End If        
+        
+        ' Make sure not resets, disconnects or connects occurred
+        Do
+            Dim lResets, lDisconnects, lConnects
+            
+            If (Not oTestOpen.GetEvents(lResets, lDisconnects, lConnects)) Then
+                WriteToLog ("Failed to get events information from the NIC")
+                Exit Do
+            End If
+    
+            If (lResets > nMaxResetsAllowed) Then
+                WriteToLog ("Too many resets (" & lResets & ") occured")
+                nNumUnexpectedResets = nNumUnexpectedResets + (lResets - nMaxResetsAllowed)
+            End If           
+                
+            If (lDisconnects > nMaxDisconnectsAllowed) Then
+                call oLog.SafeFailed ("Too many disconnects (" & lDisconnects & ") occured")
+                nNumUnexpectedDisconnects = nNumUnexpectedDisconnects + (lDisconnects - nMaxDisconnectsAllowed)
+            End If
+                
+            If (lConnects > nMaxConnectsAllowed) Then
+                WriteToLog ("Too many connects (" & lConnects & ") occured")
+                nNumUnexpectedConnects = nNumUnexpectedConnects + (lConnects - nMaxConnectsAllowed)
+            End if
+        
+        Loop While (False)
+        
+        ' Clear out support Open events counters
+        Call oSuppOpen.ClearEvents()
+            
+    End Function
+
+End Class
+
+
+</script>
+</job>
+</package>
+
+<!--- CRC = 0x08850f5f --->

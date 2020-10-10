@@ -1,0 +1,332 @@
+<package>
+<SCRIPTDEF>
+<RUNORDER>
+1903
+</RUNORDER>
+<MEDIA>
+802_3
+</MEDIA>
+<PHYMEDIA>
+WIRELESSLAN
+</PHYMEDIA>
+<WHQL>
+802_3
+</WHQL>
+<CARDMACH>
+1C,1M
+</CARDMACH>
+<DESCRIPTION>
+<![CDATA[]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+	<job id="Job" prompt="no">
+		<?job error="true" debug="true"?>
+		<reference guid="{97B1B574-D0D4-4896-93B6-A2679336A8E1}" version="1.0"/>
+		<reference object="NDInfo.Info.1" version="1.0"/>
+		<reference object="NDTCore.base.1" version="1.0"/>
+		<object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+		<object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+		<object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+		<object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+		<object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+		<!-- Begin Wireless Specific Includes -->
+		<script language="VBScript" src="..\inc\CNDTStructMngr.vbs"/>
+		<script language="VBScript" src="..\inc\WlanConstants.vbs"/>
+		<script language="VBScript" src="..\inc\WlanLibrary.vbs"/>
+		<script language="VBScript" src="..\inc\CNDT1XSupp.vbs"/>
+		<script language="VBScript" src="..\inc\CWlanOpen.vbs"/>
+		<script language="VBScript" src="..\inc\CWlanCard.vbs"/>
+		<!-- End Wireless Specific Includes -->
+		<script language="VBScript" src="..\inc\Events.vbs"/>
+		<script language="VBScript" src="..\inc\clog.vbs"/>
+		<script language="VBScript" src="..\inc\Constants.vbs"/>
+		<script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+		<script language="VBScript" src="..\inc\utilities.vbs"/>
+		<script language="VBScript" src="..\inc\devchars.vbs"/>
+		<script language="VBScript" src="..\inc\general.vbs"/>
+		<script language="VBScript">
+Option Explicit 
+Dim oTest : Set oTest = Nothing
+
+Initialize()
+
+Do
+
+   Set oTest = New CTest
+   If(oTest.SetupTest(GetTestAdapterIndex(oNDInfo.AdapterList, 0)) = False) Then
+      Exit Do
+   End If
+   
+   oTest.RunTest()
+   
+Loop While(False)
+
+oTest.CleanupTest()
+Set oTest = Nothing
+
+Terminate()
+
+Class CTest
+   
+   Private m_testCard
+   Private m_testOpen
+   Private m_testIndex
+   Private m_testGUID
+   Private m_adapterList
+      
+   '================================================================================================='
+   Private Sub Class_Initialize
+      
+      Set m_adapterList = oNDInfo.AdapterList
+     
+   End Sub
+   
+   '================================================================================================='
+   Private Sub Class_Terminate
+   
+      Set m_testCard       = Nothing
+      Set m_testOpen       = Nothing
+      
+   End Sub
+   
+   '================================================================================================='
+   Public Function SetupTest(byval testIndex)
+   Dim result        : result       = -1
+   Dim ndisStatus    : ndisStatus   = -1
+   
+      SetupTest = False
+
+      m_testIndex = testIndex
+      m_testGUID  = m_adapterList(m_testIndex).GUID
+
+      '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+      oLog.VariationEx "Setup test", Null
+      Do
+      
+         Set m_testCard = New CWlanCard
+         If (m_testCard is Nothing) Then
+            oLog.FailedEx "Failed to create CWlanCard class", Null, 88888
+            Exit Do
+         End If
+                  
+         Set m_testOpen = m_testCard.vbSetupBasicTest(m_adapterList(m_testIndex))
+         If (m_testOpen is Nothing) Then
+            Exit Do
+         End If
+               
+      Loop While(False)
+                 
+      SetupTest = True
+      
+   End Function
+   
+   '================================================================================================='
+   Public Function CleanupTest()
+   Dim ndisStatus    : ndisStatus   = -1
+	  
+	   m_testOpen.vbWlanReset(True)
+	   
+      oLog.Write ""
+	   oLog.Write "<b>TEST DEVICE TYPE: " & vbDeviceTypeToString(m_testOpen.vbDeviceType) & "</b>"  
+	   oLog.Write ""
+	        
+   End Function
+  
+   '================================================================================================='
+   Function RunTest()
+               
+      ' 802.11b Only
+      If(m_testOpen.vbDeviceType = WLAN_DEVICE_TYPE_802_11B) Then
+        
+         If(ExecuteTest(WLAN_WEP_AP1) = False) Then
+         End If
+        
+      End If
+      
+      ' 802.11g Only
+      If(m_testOpen.vbDeviceType = WLAN_DEVICE_TYPE_802_11G) Then
+        
+        If(ExecuteTest(WLAN_WEP_AP1) = False) Then
+        End If
+        
+        If(ExecuteTest(WLAN_WEP_AP2) = False) Then
+        End If
+        
+      End If
+      
+      ' 802.11a/b
+      If(m_testOpen.vbDeviceType = WLAN_DEVICE_TYPE_802_11AB) Then
+        
+        If(ExecuteTest(WLAN_WEP_AP1) = False) Then
+        End If
+        
+        If(ExecuteTest(WLAN_WEP_AP2) = False) Then
+        End If
+        
+      End If
+      
+      ' 802.11a/g
+      If(m_testOpen.vbDeviceType = WLAN_DEVICE_TYPE_802_11AG) Then
+        
+        If(ExecuteTest(WLAN_WEP_AP1) = False) Then
+        End If
+        
+        If(ExecuteTest(WLAN_WEP_AP2) = False) Then
+        End If
+        
+        If(ExecuteTest(WLAN_WEP_AP3) = False) Then
+        End If
+        
+      End If
+      
+   End Function
+   
+   '================================================================================================='
+   Function ExecuteTest(byval ssid)   
+   Dim configuration       : configuration      = Null
+   Dim configurationFH     : configurationFH    = Null
+   Dim bRetval             : bRetval            = False  	
+   Dim ndisStatus          : ndisStatus         = -1
+   Dim networkTypeInUse    : networkTypeInUse   = 0
+   Dim authentication      : authentication     = Ndis802_11AuthModeOpen
+   Dim encryption          : encryption         = Ndis802_11Encryption1Enabled
+     
+      Set configuration = oNDTStruct.vbCreateStructure("Ndis80211Configuration")
+      If(configuration Is Nothing) Then
+         Exit Function
+      End If
+  
+      If(m_testOpen.vbWlanReset(True) = False) Then
+         oLog.Failed "vbWlanReset() failed", 88888
+         Exit Function
+      End If 
+      
+      '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+      oLog.VariationEx "Querying OID_802_11_NETWORK_TYPE_IN_USE for current value", Null
+      ndisStatus = m_testOpen.vbGetWlanNetworkTypeInUse(networkTypeInUse)
+      If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+         oLog.Failed "Failed to query OID_802_11_NETWORK_TYPE_IN_USE", 88888
+         Exit Function
+      End If
+      
+      '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+      oLog.VariationEx "Querying OID_802_11_CONFIGURATION", Null
+      ndisStatus = m_testOpen.vbGetWlanConfiguration(configuration)
+      If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+         oLog.Failed "Failed to query OID_802_11_CONFIGURATION", 88888
+         Exit Function
+      End If
+           
+      '~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~'
+      oLog.VariationEx  "Set OID_802_11_CONFIGURATION with new BeaconPeriod", _
+                        "This test will set OID_802_11_CONFIGURATION and specify a new beacon period, it will then query OID_802_11_CONFIGURATION " & _
+                        "and verify the beacon period is returned"
+      Do
+         
+          
+         configuration.BeaconPeriod = 2048
+         
+         ndisStatus = m_testOpen.vbSetWlanConfiguration(configuration)
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.FailedEx "Failed to set OID_802_11_CONFIGURATION", _
+                           "Driver must support setting OID_802_11_CONFIGURATION", 88888
+            Exit Do
+         End If
+    
+         ndisStatus = m_testOpen.vbGetWlanConfiguration(configuration)
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to query OID_802_11_CONFIGURATION", 88888
+            Exit Do
+         End If
+         
+         If(configuration.BeaconPeriod <> 2048) Then
+            oLog.FailedEx  "Invalid BeaconPeriod returned (Returned: " & configuration.BeaconPeriod & ", Expected: 2048)", _
+                           "Driver should have returned the new BeaconPeriod previously set", 88888
+            Exit Do
+         End If
+         
+      Loop While(False)
+                 
+      oLog.VariationEx  "Query OID_802_11_CONFIGURATION and verify fields", _
+                        "This test will query OID_802_11_CONFIGURATION and verify the data in the structure returned"
+      Do
+         
+         ndisStatus = m_testOpen.vbAssociate(Ndis802_11Infrastructure,  _
+                                             Ndis802_11AuthModeOpen,    _
+                                             Ndis802_11WEPEnabled,      _
+                                             &H80000000&,               _
+                                             WLAN_KEY_WEP,              _
+                                             Null,                      _
+                                             ssid,                  _
+                                             WLAN_ASSOCIATE_TIMEOUT)     
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.FailedEx "Failed to associate with " & ssid, Null, 88888
+            Exit Do
+         End If
+      
+         ndisStatus = m_testOpen.vbGetWlanConfiguration(configuration)
+         If(ndisStatus <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to query OID_802_11_CONFIGURATION", 88888
+            Exit Do
+         End If
+    	
+         If(configuration.Length <> configuration.SizeOf) Then
+            oLog.Failed "Length field was not equal to sizeof(NDIS_802_11_CONFIGURATION)!", 88888
+         End If
+            
+         If(configuration.BeaconPeriod <> 0) Then
+            oLog.Failed "BeaconPeriod field should be zero when not associated and not in IBSS mode!", 88888
+         End If
+         
+         If(configuration.ATIMWindow < 0 Or configuration.ATIMWindow > 65535) Then
+            oLog.Failed "ATIMWindow field should be between 1 and 65535!", 88888
+         End If
+         
+         Select Case networkTypeInUse
+            Case Ndis802_11DS
+               If(configuration.DSConfig < 2412000 Or configuration.DSConfig > 2484000) Then
+                  oLog.Failed "DSConfig should be between 2412000 and 2484000 for network type NDIS802_11DS", 88888
+               End If
+            
+            Case Ndis802_11OFDM24
+                If(configuration.DSConfig < 2412000 Or configuration.DSConfig > 2484000) Then
+                  oLog.Failed "DSConfig should be between 2412000 and 2484000 for network type NDIS802_11OFDM24", 88888
+               End If
+            
+            Case Ndis802_11OFDM5
+               If(configuration.DSConfig < 5000000 Or configuration.DSConfig > 6000000) Then
+                  oLog.Failed "DSConfig should be between 5000000 and 6000000 for network type NDIS802_11OFDM5", 88888
+               End If
+         End Select
+       
+         If(configuration.FHConfig.Length <> configuration.FHConfig.SizeOf) Then
+            oLog.Failed "Length field was not equal to sizeof(NDIS_802_11_CONFIGURATION_FH", 88888
+         End If
+         
+         If(Not networkTypeInUse = Ndis802_11FH) Then
+         
+         Else
+            If(configuration.FHConfig.HopPattern <> 0) Then
+               oLog.Failed "HopPattern should be zero when using network type other than NDIS802_11FH", 88888
+            End If
+               
+            If(configuration.FHConfig.HopSet <> 0) Then
+               oLog.Failed "HopSet should be zero when using network type other than NDIS802_11FH", 88888
+            End If
+               
+            If(configuration.FHConfig.DwellTime <> 0) Then
+               oLog.Failed "HopSet should be zero when using network type other than NDIS802_11FH", 88888
+            End If
+         End If
+      
+      Loop While(False)
+                    
+   End Function
+
+End Class
+ 
+		</script>
+	</job>
+</package>
+
+<!--- CRC = 0xec6d5a25 --->

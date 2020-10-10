@@ -1,0 +1,246 @@
+'
+' File          : TCPv6_SeqNumberWrapping.wsf
+' Author        : Sandeep Prabhu [5/15/01]
+'
+' A script to test seq number wrapping
+'
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\common\IPv6Common.Lib"/>
+      <script language="VBScript" src="..\common\TCPv6Helper.Lib"/>
+      <script id="TCPv6_SeqNumberWrapping" language="VBScript">
+
+
+option explicit
+    
+Dim Core, Sparta, Autosrv, MediaType, AutoNDObject, IFace, pControllerObj, ExceptionStatus
+
+ 
+'
+' Start the script
+'    
+'/**
+' @area name="Offload Compliance Test Assertions"
+' @group name="TCP Miscellaneous Test Assertions"
+' @group name="Sequence Number Wrapping Assertions for TCP/IP v6"
+' @define name="Offload" Offload Compliance Test Assertions
+' @define name="TCPMisc" TCP Miscellaneous Test Assertions
+' @define name="SequenceNumber6" Sequence Number Wrapping Assertions for TCP/IP v6
+' @hierarchy Offload TCPMisc SequenceNumber6
+' @key Reference="WLP# - x.x.x.x; RFC-793 Section 3.3; RFC-1323 Section 4"
+' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+' @key TestName="TCPv6 Sequence Number Wrapping"
+' @key TestParam=""
+' @key TestLog="TCPv6_SeqNumberWrapping.log"
+'*/
+       
+StartScript "TCPv6_SeqNumberWrapping", g_szLogDirectory, "Tests for seq number wrapping"
+
+' ==================================================================================================
+' Main routine
+' ==================================================================================================
+Sub Main
+   Dim ulStatus, ulWindowSize
+   
+   Core.SetAssertionTracking "30400"
+   '/**
+   ' @test name="The stack must handle Seq number wrapping in SYN"
+   ' The SYN is sent to the stack with Seq Number FFFFFFF and Ack number 
+   ' received from stack in SYN-ACK is expected to be wrapped around
+   '*/
+   Core.StartTest "Seq number wrapping in SYN"
+   SeqNumberWrapping FALSE, &HFFFFFFFF
+   Core.EndTest
+   Core.Sleep 2500
+
+   '/**
+   ' @test name="The stack must handle Seq number wrapping in SYN-ACK"
+   ' Stack Initiates the connection and receives FFFFFFFF as Seq Number in SYN-ACK.
+   ' Then stack must send ACK with wrapped around Ack Number
+   '*/
+   Core.StartTest "Seq number wrapping in SYN-ACK"
+   SeqNumberWrapping TRUE, &HFFFFFFFF
+   Core.EndTest
+   Core.Sleep 2500
+
+   '/**
+   ' @test name="The stack must handle Seq number wrapping in data packet"
+   ' The connection is established in such a way that data received by the stack
+   ' contains Seq. Number high enough to elicit the ACK number from stack
+   ' containing wrapped Seq. Number.
+   '*/
+   Core.StartTest "Seq number wrapping in data packet"
+   SeqNumberWrapping FALSE, &HFFFFFFF0
+   Core.EndTest
+   Core.Sleep 2500
+
+   '/**
+   ' @test name="The stack must handle Seq number wrapping in FIN"
+   ' The connection is established. The data is received by the stack till the Seq.
+   ' Number is FFFFFFFF. The stack receives FIN and must respond with it's FIN-ACK
+   ' containing wrapped Ack. Number.
+   '*/
+   Core.StartTest "Seq number wrapping in FIN"
+   SeqNumberWrapping FALSE, &HFFFFFFFF-(1+1000)
+   Core.EndTest
+   Core.Sleep 2500
+
+      
+End Sub
+
+'
+' Routine to test the seq number wrapping
+'
+Sub SeqNumberWrapping(fActive, ulSeqNumberToUse)
+   Dim ulStatus, ulAckNumber, ulSeqNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim ulBytesRcvd, pPacket, AutoNDObject, pIFace, pSYNPacket, ulTmpSeqNumber, ulCounter
+
+   ulAckNumber = Clng(1)
+   usSrcPort = 5000
+   usDestPort = 5001
+
+   Core.StartVariation
+
+   Set AutoNDObject = Sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, g_szLocalSpoofIp6Address, FALSE)    
+   Set pIFace = CreateInterface(TRUE, g_szRemoteMacAddress, g_szRemoteIp6Address, g_szLocalSpoofIp6Address)
+   pIFace.StartListening
+
+   '
+   ' Make the stack do a connection establishment
+   '
+   if (fActive) then
+      '
+      ' Ask Autosrv to issue a connect and grab the SYN
+      '   
+      Set pPacket=RecvSyn(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId, pIFace, ulTID)
+   else   
+      Set pSYNPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumberToUse, ulAckNumber, TCP_SYN, 0)
+      Set pPacket=RecvSynAck(pSYNPacket, usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, pIFace, ulTID)      
+   end if
+   if (pPacket is Nothing) then
+      Core.BlockVariation "SeqNumberWrapping: Failed to receive SYN/SYN-ACK"
+      exit sub
+   end if
+   
+   '
+   ' do loop used to get around using goto
+   '
+   do   
+      '
+      ' Complete the handshake and validate the seq number in the ACK
+      '
+      if (fActive) then
+         Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumberToUse, ulAckNumber, TCP_SYN or TCP_ACK, 0)
+         pIFace.Send(pPacket)
+         
+         Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 200, pIFace) 
+         if (pPacket is Nothing) then
+            Core.FailSev1Variation "SeqNumberWrapping: Failed to receive an ACK for SYN-ACK"
+            exit do
+         elseif (ulSeqNumber <> (ulSeqNumberToUse+1)) then
+            Core.FailSev1Variation "SeqNumberWrapping: Incorrect ack number in ACK for SYN-ACK - " & Hex(ulSeqNumber) & " <> " & Hex(ulSeqNumberToUse+1)
+            exit do
+         end if
+      else
+         if (ulSeqNumber <> (ulSeqNumberToUse+1)) then
+            Core.FailSev1Variation "SeqNumberWrapping: Incorrect ack number in SYN-ACK - " & Hex(ulSeqNumber) & " <> " & Hex(ulSeqNumberToUse+1)
+            exit do
+         end if
+         
+         Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+         pIFace.Send(pPacket)
+      end if
+      
+      '
+      ' Check if connection is offloaded
+      '
+      If Not IsConnectionOffloaded(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, g_szRemoteIp6Address, ulSessionId) and g_fTestOffload And g_fTOENic Then
+          Core.FailSev1Variation "SeqNumberWrapping : Failed to offload the connection"
+          Exit do
+      End If
+      
+      '
+      ' Do data exchange and validate the seq numbers are as expected
+      '
+      For ulCounter = 1 to 5
+         '
+         ' Send data
+         '
+         Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_PUSH or TCP_ACK, 0)
+         pPacket.UserData 200, "This is a test"
+         pIFace.Send(pPacket)
+         
+         '
+         ' Receive ACK and validate the seq number
+         '                                            
+         Set pPacket = RecvTCPPacketEx(ulTmpSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 500, pIFace) 
+         if (pPacket is Nothing) then
+            Core.FailSev1Variation "SeqNumberWrapping: Failed to receive an ACK for data"
+            exit do
+         elseif (ulTmpSeqNumber <> (ulSeqNumber+200)) then
+            Core.FailSev1Variation "SeqNumberWrapping: Incorrect ack number in ACK for data - " & Hex(ulTmpSeqNumber) & " <> " & Hex(ulSeqNumber+200)
+            exit do
+         end if
+         ulSeqNumber = ulTmpSeqNumber
+      Next
+      
+      '
+      ' Ask Autosrv to issue a shutdown
+      '
+      Core.StartVariation
+      ulStatus = pControllerObj.Shutdown(ulSessionId, ulTID)
+      if (ulStatus <> 0) then
+         Core.FailSev1Variation "SeqNumberWrapping: Shutdown - " & ulStatus
+         exit do
+      end if
+      
+      '
+      ' Receive the FIN
+      '      
+      Set pPacket = RecvTCPPacketEx(ulTmpSeqNumber, ulAckNumber, ulBytesRcvd, TCP_FIN or TCP_ACK, 5000, pIFace) 
+      if (pPacket is Nothing) then
+         Core.FailSev1Variation "SeqNumberWrapping: Failed to receive the FIN-ACK"
+         exit do
+      elseif (ulTmpSeqNumber <> ulSeqNumber) then
+         Core.FailSev1Variation "SeqNumberWrapping: Incorrect ack number in FIN-ACK - " & Hex(ulTmpSeqNumber) & " <> " & Hex(ulSeqNumber)
+         exit do
+      end if
+      
+      '
+      ' Send the FIN
+      '
+      Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_FIN or TCP_ACK, 0)
+      pIFace.Send(pPacket)
+      
+      '
+      ' Receive ACK and validate the seq number
+      '                                            
+      Set pPacket = RecvTCPPacketEx(ulTmpSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 200, pIFace) 
+      if (pPacket is Nothing) then
+         Core.FailSev1Variation "SeqNumberWrapping: Failed to receive an ACK for FIN-ACK"
+         exit do
+      elseif (ulTmpSeqNumber <> (ulSeqNumber+1)) then
+         Core.FailSev1Variation "SeqNumberWrapping: Incorrect ack number in ACK for FIN-ACK - " & Hex(ulTmpSeqNumber) & " <> " & Hex(ulSeqNumber+1)
+         exit do
+      end if
+      ulSeqNumber = ulTmpSeqNumber
+   loop while (FALSE)
+
+   '
+   ' Reset the connection
+   '
+   ulStatus = ResetConnectionEx(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.log "ERROR: SeqNumberWrapping: ResetConnectionEx - " & ulStatus
+   end if
+   
+End Sub
+
+      </script>
+   </job>
+</package>

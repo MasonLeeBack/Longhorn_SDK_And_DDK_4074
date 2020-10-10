@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<schema xmlns="http://www.w3.org/2001/XMLSchema" 
+		xmlns:maml="http://schemas.microsoft.com/maml/2003/5" 
+		xmlns:doc="http://schemas.microsoft.com/maml/internal"
+		targetNamespace="http://schemas.microsoft.com/maml/2003/5" 
+		elementFormDefault="qualified"
+        attributeFormDefault="unqualified"
+        >
+
+	<!-- Schema documentation -->
+	<annotation>
+		<documentation>
+			This schema aggregates inline elements from other inline
+			schemas.
+		</documentation>
+	</annotation>
+	
+	<!-- include and import declarations -->
+	<include schemaLocation="inlineCommon.xsd"/>		
+	<include schemaLocation="inlineUi.xsd"/>	
+	<include schemaLocation="inlineSoftware.xsd"/>	
+	<include schemaLocation="base.xsd"/>
+
+    <group name="inlineBasicGroup">
+        <choice>
+    		<group ref="maml:inlineCommonGroup"/>
+        </choice>
+    </group>
+    
+    <group name="inlineGroup">
+        <choice>
+            <group ref="maml:inlineBasicGroup"/>
+            <group ref="maml:inlineUiGroup"/>
+			<group ref="maml:inlineSoftwareGroup"/>
+        </choice>
+    </group>
+    
+	<!-- complexType declarations -->
+	<complexType name="inlineType" mixed="true">
+		<annotation>
+			<documentation>
+				The inlineType complexType describes a simple inline-only
+				content model. It provides both text and elements with
+				similarly simple content models.
+			</documentation>
+		</annotation>
+		<choice minOccurs="0" maxOccurs="unbounded">
+		    <group ref="maml:inlineGroup"/>
+		</choice>
+		<attributeGroup ref="maml:contentIdentificationSharingAndConditionGroup"/>
+	</complexType>
+	
+	<complexType name="inlineBasicType" mixed="true">
+		<choice minOccurs="0" maxOccurs="unbounded">
+		    <group ref="maml:inlineBasicGroup"/>
+		</choice>
+		<attributeGroup ref="maml:contentIdentificationSharingAndConditionGroup"/>
+	</complexType>
+
+	<complexType name="contentParameterType" mixed="true">
+		<choice minOccurs="0" maxOccurs="unbounded">
+			<group ref="maml:inlineGroup"/>
+		</choice>
+		<attribute name="name" type="token"/>
+	</complexType>
+	<element name="contentParameter" type="maml:contentParameterType">
+		<annotation>
+			<documentation>
+			</documentation>
+			<appinfo>
+				<doc:localizable>true</doc:localizable>
+			</appinfo>
+		</annotation>
+	</element>
+
+
+	<complexType name="parameterizedContentType">
+		<sequence>
+			<element ref="maml:contentParameter" maxOccurs="unbounded"/>
+		</sequence>
+		<attributeGroup ref="maml:contentIdentificationSharingAndConditionGroup"/>
+	</complexType>
+	
+	<element name="parameterizedContent" type="maml:parameterizedContentType">
+		<annotation>
+			<documentation>
+			</documentation>
+			<appinfo>
+				<doc:localizable>n/a</doc:localizable>
+			</appinfo>
+		</annotation>
+	</element>
+
+	<complexType name="linkType" >
+		<annotation>
+			<documentation>abstracts href attribute and linkText and summary elements</documentation>
+		</annotation>
+		<sequence>
+			<element name="linkText" type="maml:textType">
+			</element>
+			<element name="summary" type="maml:textType">
+			</element>
+		</sequence>
+		<attribute name="href" type="anyURI"/>
+		<attributeGroup ref="maml:contentIdentificationSharingAndConditionGroup"/>
+	</complexType>
+	
+	<attributeGroup name="embedLinkAttributeGroup">
+		<attribute name="targetVerification" type="boolean" default="false"/>
+		<attribute name="mimeType" type="token"/>
+		<attribute name="class" type="token"/>
+		<attribute name="width" type="token"/>
+		<attribute name="height" type="token"/>
+		<attribute name="presentation" default="inline">
+			<annotation>
+				<documentation>
+					The class attribute is used to select the type of link presentation.
+				</documentation>
+			</annotation>
+			<simpleType>
+				<restriction base="token">
+					<enumeration value="inline"/>
+					<enumeration value="thumbnail"/>
+					<enumeration value="popup"/>
+				</restriction>
+			</simpleType>
+		</attribute>
+	</attributeGroup>
+
+	<complexType name="embedLinkType">
+		<annotation>
+			<documentation>
+				The embedLink element is the multimedia hosting element in MAML, 
+				intended to produce a hosting environment for the appropriate multimedia player.
+			</documentation>
+		</annotation>
+		<complexContent>
+			<extension base="maml:linkType">
+				<sequence minOccurs="0">
+					<element name="params">
+						<annotation>
+							<documentation>
+								Params element defines any link specific params to be passed on to the target. 
+							</documentation>
+						</annotation>
+						<complexType mixed="true">
+							<sequence>
+								<element name="param" minOccurs="0" maxOccurs="unbounded">
+									<annotation>
+										<documentation>
+											Each param allows to define name/value pair(s) on the link element.
+										</documentation>
+									</annotation>
+									<complexType>
+										<attribute name="name" type="string"/>
+										<attribute name="value" type="string"/>
+									</complexType>
+								</element>
+							</sequence>
+						</complexType>
+					</element>
+				</sequence>
+				<attributeGroup ref="maml:embedLinkAttributeGroup"/>
+			</extension>
+		</complexContent>
+	</complexType>
+	
+	
+	<complexType name="navigationLinkType" >
+		<annotation>
+			<documentation>
+				The navigationLink element is the  navigational link in MAML, intended to produce a jump-type link in the help pane.
+				Glossary links are navigation links.
+			</documentation>
+		</annotation>
+		<complexContent>
+			<extension base="maml:linkType">
+				<sequence minOccurs="0" maxOccurs="1">
+					<element ref="maml:embedLink"/>
+				</sequence>
+				<attribute name="targetVerification" type="boolean" default="false"/>
+			</extension>
+		</complexContent>
+	</complexType>
+
+
+	<element name="navigationLink" type="maml:navigationLinkType"/>
+	
+	<element name="embedLink" type="maml:embedLinkType"/>
+	
+	
+</schema>

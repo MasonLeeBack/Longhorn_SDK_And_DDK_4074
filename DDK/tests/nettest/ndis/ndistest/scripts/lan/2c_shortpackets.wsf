@@ -1,0 +1,478 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3
+</MEDIA>
+<WHQL>
+802_3
+</WHQL>
+<CARDMACH>
+2C,1M
+</CARDMACH>
+<RUNORDER>
+1510
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+    <job id="2c_ShortPackets" prompt="no">
+        <reference object="NDInfo.Info.1" version="1.0"/>
+        <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+        <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+        <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+        <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+        <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+        <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+        <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+        
+        <!-- Begin Wireless Specific Includes -->
+        <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+        <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+        <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+        <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+        <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+        <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+        <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+        <!-- End Wireless Specific Includes -->
+        
+        <script language="VBScript" src="..\inc\Constants.vbs"/>
+        <script language="VBScript" src="..\inc\ndisstatus.vbs"/> 
+        <script language="VBScript" src="..\inc\clog.vbs"/>
+        <script language="VBScript" src="..\inc\Events.vbs"/>
+        <script language="VBScript" src="..\newinc\CCard.vbs"/>
+        <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+        <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+        <script language="VBScript" src="..\newinc\COpen.vbs"/>
+        <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+        <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+        <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+        <script language="VBScript" src="..\newinc\Setup.vbs"/>
+        <script id="2c_ShortPackets" language="VBScript">
+'==========================================================================
+' Script Name:    2c_ShortPackets
+'==========================================================================
+Option Explicit
+
+Const TOTAL_RAWSEND_COUNT = 50
+
+Dim oTestObj
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0), GetSupportAdapterIndex (oNDInfo.AdapterList, 0))
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Dim m_lTestAdapterIndex, m_lSuppAdapterIndex
+   Dim oTestCard
+   Dim oSuppCard
+
+   Dim oTestOpenRaw, oSuppOpenRaw         ' Open instances of cards for raw send/recv
+   Dim oTestOpenStress, oSuppOpenStress   ' Open instances of cards for stress send/recv
+
+   Dim nTotalPacketSizes, RawPacketSize
+   Dim RawPacketList
+
+   Dim ReceiveOption
+   Dim nTestId
+   Dim nReceiveDelay                 ' set depending on the media
+
+
+   Private Sub Class_Initialize
+      m_lTestAdapterIndex = 1
+      m_lSuppAdapterIndex = 2
+
+      ReDim RawPacketSize(10)
+      ReDim RawPacketList(10)
+
+      RawPacketSize(0) = 30
+      RawPacketSize(1) = 36
+      RawPacketSize(2) = 45
+      RawPacketSize(3) = 48
+      RawPacketSize(4) = 55
+      RawPacketSize(5) = 59
+      RawPacketSize(6) = 69   ' To check that if normal padding is still normal
+      RawPacketSize(7) = 32
+
+      nTotalPacketSizes = 8
+
+      ' Break on receiving a short packet with non-zero padding
+      'ReceiveOption = RECEIVE_BREAK_BAD_PADDING
+      ' Do not break on receiving short packet with non-zero padding (would still fail test)
+      ReceiveOption = RECEIVE_DEFAULT
+
+      nReceiveDelay = 150               ' Initial, will be actually queried for
+
+   End Sub
+
+   Private Sub Class_Terminate
+      Set oTestOpenRaw = Nothing
+      Set oSuppOpenRaw = Nothing
+
+      Set oTestOpenStress = Nothing
+      Set oSuppOpenStress = Nothing
+
+      Set oSuppCard = Nothing
+      Set oTestCard = Nothing
+   End Sub
+
+   '============================================================================================='
+   '/**
+   '*/
+   Function SetupTest
+      Dim pAdapterList
+      Dim nPhysicalMedium
+      Dim MiniportInfo, NdisVersion
+
+      '
+      ' Get Adapter collection from UI Object
+      '
+      Set pAdapterList = oNDInfo.AdapterList
+
+      SetupTest = FALSE
+
+      '
+      ' When we run this test, we do not want NDIS to pad short packets
+      '
+      oLog.Variation ("Checking if NDIS is padding short packets")
+      MiniportInfo = oNDTSession(m_lTestAdapterIndex & "OID_GEN_MINIPORT_INFO")
+      If (IsEmpty (MiniportInfo)) Then
+         call oLog.Write ("Miniport Info not found in the session")
+         call oLog.Write ("Assuming NDIS is not padding short packets and running test")
+      Else
+         If ((MiniportInfo AND NDIS_MINIPORT_SHORT_PACKETS_ARE_PADDED) <> 0) Then
+            NdisVersion = WinFileVersion("\system32\drivers\ndis.sys")
+            If ((NdisVersion <> "") And (NdisVersion < "6.0")) Then
+               Call oLog.Failed ("NDIS is padding short packets for the miniport", 88888)
+               oLog.Write("Clear the registry setting asking NDIS to pad short packets, reboot")
+               oLog.Write("and run the test again")
+               ' We do not bail out
+            End If         
+          End If
+      End If
+
+      '
+      ' CreateAdapter does not take a GUID, but takes an object that contains
+      ' the adapters GUID, along with a set of other information fields
+      '
+      oLog.Variation ("Setting up Test Adapter")
+
+      Set oTestCard = new CLanCard
+      If (oTestCard Is Nothing) Then
+        Exit Function
+      End If
+      
+      Set oTestOpenRaw = oTestCard.vbSetupBasicTest (pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpenRaw is Nothing) Then
+         Exit Function
+      End If      
+
+      ' Check the physical medium is valid
+      nPhysicalMedium = oTestCard.vbGetPhysicalMedium()
+      If (nPhysicalMedium <> 0) Then
+         oLog.Write("This test is not supported for this physical medium")
+         Exit Function
+      End If
+
+      ' We will be using the COM open directly for raw send
+      nReceiveDelay = oTestOpenRaw.vbGetReceiveDelay()
+
+      ' Create a second open for stress test
+      Set oTestOpenStress = oTestCard.vbOpenAdapter()
+      If(oTestOpenStress is Nothing) Then
+         Exit Function
+      End If
+
+      oLog.Variation ("Setting up Support Adapter")
+      ' Use the found support card
+      Set oSuppCard = new CLanCard
+      If (oSuppCard Is Nothing) Then
+        Exit Function
+      End If
+
+      Set oSuppOpenRaw = oSuppCard.vbSetupBasicTest (pAdapterList (m_lSuppAdapterIndex))
+      If (oSuppOpenRaw Is Nothing) Then
+        Exit Function
+      End If
+
+      ' Create a second open for stress test
+      Set oSuppOpenStress = oSuppCard.vbOpenAdapter()
+      If(oSuppOpenStress is Nothing) Then
+         Exit Function
+      End If
+
+      Set pAdapterList = Nothing
+      SetupTest = TRUE
+   End Function
+
+   '============================================================================================='
+   '/**
+   '*/
+   Function CheckOkToRun
+      CheckOkToRun = FALSE
+
+      ' Check that IP headers options is not turned on
+      Dim bUseIPHeaders
+      bUseIPHeaders = oNDTSession("UseIPPackets")
+      If (not(IsEmpty (bUseIPHeaders))) Then
+        If (bUseIPHeaders = 1) Then
+            oLog.Write("This test is not supported with IP Packets. Please disable Force IP Packet Headers option from menu and try again.")
+            Exit Function
+        End If
+      End If
+
+      CheckOkToRun = TRUE
+   End Function
+
+
+   '============================================================================================='
+   '/**
+   ' Main driving function that setup and executes the various test cases
+   '*/
+   Function RunTest(lTestAdapterIndex, lSuppAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      m_lSuppAdapterIndex = lSuppAdapterIndex
+
+      If (Not CheckOkToRun) Then
+         Exit Function
+      End If
+
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+
+      CreateRawPacketArray()
+
+      RunRawSendTestCase()
+
+      RunStressSendTestCase()
+
+   End Function
+
+
+   Function RunRawSendTestCase()
+      Dim bResult
+      Dim nCount, nIndex
+      Dim nReceived, nResent
+      Dim nMaxLookahead
+
+      oLog.Variation ("Setup raw send instances")
+
+      oTestOpenRaw.vbSetReceiveOption(RECEIVE_DEFAULT)
+      oSuppOpenRaw.vbSetReceiveOption(ReceiveOption)
+
+      Call oSuppOpenRaw.vbSetPacketFilter(DIRECTED)
+      Call oTestOpenRaw.vbSetPacketFilter(DIRECTED)
+
+      ' Only accept short packets which have this connection ID
+      ' For raw send only: oSuppOpenRaw.SetLocalId(nTestId)
+      oTestOpenRaw.vbSetChannelId(nTestId)
+      oSuppOpenRaw.vbSetChannelId(nTestId)
+
+
+      If (oSuppOpenRaw.vbGetMaxLookahead(nMaxLookahead) <> 0) Then
+         ' Set the lookahead
+         oSuppOpenRaw.vbSetLookahead(nMaxLookahead)
+      End If
+
+      '
+      ' start receives, send packets, check send results, then check
+      ' receive results
+      '
+      oSuppOpenRaw.vbStartReceive()
+
+      oLog.Variation ("Sending small sized packets")
+
+      For nCount = 1 To TOTAL_RAWSEND_COUNT
+         ' Randomly get the index for the current packet size
+         nIndex = Int(nTotalPacketSizes*Rnd)
+
+         oLog.Write ("Packet Size: " & RawPacketSize(nIndex))
+         If (Not oTestOpenRaw.vbSendRaw (RawPacketList(nIndex))) Then
+            Call oLog.Failed ("Unable to send raw packet", 23411)
+         End If
+      Next
+
+      oSuppOpenRaw.vbStopReceive()
+
+      ' Get receive results (using direct COM to avoid errors)
+      bResult = oSuppOpenRaw.vbGetReceiveResults(nReceived, nResent)
+      If (Not bResult) Then
+         Call oLog.Warned ("Unable to obtain/validate receive results")
+         If (ReceiveOption <> RECEIVE_BREAK_BAD_PADDING) Then
+            oLog.Write("To break when a packet is received with incorrect (non-zero) padding, change")
+            oLog.Write("ReceiveOption variable in Class_Initialize to RECEIVE_BREAK_BAD_PADDING")
+         End If
+      Else
+         ' Just check if we received anything at all (ie the devices are actually connected)
+         If (nReceived = 0) Then
+            Call oLog.Failed("Check that test and support devices are connected", 23415)
+         End If
+      End If
+
+      oLog.Variation("Clear Events")
+      Call oTestOpenRaw.vbClearEvents()
+      Call oSuppOpenRaw.vbClearEvents()
+   End Function
+
+   Function RunStressSendTestCase()
+      Dim bResult
+      Dim nStressOptions, nStressPktSize, nStressIterations
+      Dim lTestId
+
+      oLog.Variation("Setup stress instances")
+
+      lTestId = oNDTSupp.Random(1, 32765)
+
+      oTestOpenStress.vbSetChannelId(lTestId)
+      oSuppOpenStress.vbSetChannelId(lTestId)
+
+      oTestOpenStress.vbSetReceiveOption(RECEIVE_DEFAULT)
+      oSuppOpenStress.vbSetReceiveOption(ReceiveOption)
+
+      Call oTestOpenStress.vbSetPacketFilter(DIRECTED)
+      Call oSuppOpenStress.vbSetPacketFilter(DIRECTED)
+
+      ' Setup the stress options
+      nStressPktSize = 70       ' so our packets would be max of this size
+      nStressOptions = STRESS_EXTRASMALL Or STRESS_RAND Or STRESS_NORESP Or STRESS_WINDOWING_OFF
+      nStressIterations = 1000
+
+      oLog.Variation("Starting stress test")
+
+      bResult = oTestOpenStress.vbStartStress(oSuppOpenStress, nStressPktSize, nStressOptions, nStressIterations, 0)
+      If (bResult) Then
+         '
+         ' start receives, send packets, check send results, then check
+         ' receive results
+         '
+         oLog.Variation("Waiting for stress")
+         bResult = oTestOpenStress.vbWaitStress()
+         If (bResult) Then
+            bResult = oTestOpenStress.vbGetStressResults()
+            If (Not bResult) Then
+               Call oLog.Warned("Unable to get/validate stress results from the test adapter.")
+               If (ReceiveOption <> RECEIVE_BREAK_BAD_PADDING) Then
+                  oLog.Write("To break when a packet is received with incorrect (non-zero) padding, change")
+                  oLog.Write("ReceiveOption variable in Class_Initialize to RECEIVE_BREAK_BAD_PADDING")
+               End If
+            End If
+         Else
+            Call oLog.Failed ("Unable to WaitStress on the test adapter." , 23413)
+         End If
+      Else
+         Call oLog.Failed ("Unable to start stress on the test adapter." , 23414)
+      End If
+
+      oLog.Variation("Clear Events")
+      Call oTestOpenStress.vbClearEvents()
+      Call oSuppOpenStress.vbClearEvents()
+   End Function
+
+   Function CreateRawPacketArray()
+      Dim RawPacket()
+      Dim nCount
+
+      Dim SuppAddr, TestAddr
+      Dim arrTestId(1)
+
+      SuppAddr = oSuppOpenRaw.vbGetCardAddress()
+      TestAddr = oTestOpenRaw.vbGetCardAddress()
+
+      ' Get a TestID to distinguish test instances
+      ' This needs to be put inside our raw packet
+      Call CreateTestID(nTestId, arrTestId)
+
+      ' Prepare the various raw packets that we would be sending
+      For nCount = 0 To nTotalPacketSizes-1
+         ' Allocate space for the raw packet (note the -1)
+         ReDim RawPacket(RawPacketSize(nCount)-1)
+
+         ' Fill the packet
+         Call CreateRawPacket(RawPacket, SuppAddr, TestAddr, RawPacketSize(nCount), arrTestId)
+         RawPacketList(nCount) = RawPacket
+      Next
+
+   End Function
+
+   Function CreateRawPacket (RawPacket, DestinationAddr, SourceAddr, nPacketSize, arrTestId)
+      Dim nCount, nCurrPos, nPadData
+
+      ' Copy the destination address
+      For nCount = 0 To 5
+         RawPacket(nCount) = CByte(DestinationAddr(nCount))
+      Next
+      ' Filled 6 bytes
+
+      ' Copy the source address
+      For nCount = 0 To 5
+         RawPacket(nCount + 6) = CByte(SourceAddr(nCount))
+      Next
+      ' Filled 12 bytes
+
+      ' Fill the total length of the packet in the next two bytes
+      RawPacket(12) = CByte(0)
+      RawPacket(13) = CByte(nPacketSize)
+
+      ' Fill the snap header
+      RawPacket(14) = &HAA&
+      RawPacket(15) = &HAA&
+      RawPacket(16) = &H03&
+      RawPacket(17) = &H00&
+      RawPacket(18) = &H00&
+      RawPacket(19) = &H00&
+      RawPacket(20) = &H81&
+      RawPacket(21) = &H37&
+
+      ' Fill the "SIDN" signature)
+      RawPacket(22) = &H53&
+      RawPacket(23) = &H49&
+      RawPacket(24) = &H44&
+      RawPacket(25) = &H4E&
+
+      ' Now the signature for the special receivable raw packet
+      RawPacket(26) = &H0D&
+
+      ' Totallength of the packet
+      RawPacket(27) = CByte(nPacketSize)
+
+      ' Fill in the test ID, so that we can distinguish packets from
+      ' different tests on same network
+      For nCount = 0 To 1
+         RawPacket(nCount + 28) = CByte(arrTestId(nCount))
+      Next
+
+      ' Total amount of data filled in as of now.
+      ' NOTE: If you change this size, you need to update the size in the kernel too
+      nCurrPos = 30
+      nPadData = CByte(nPacketSize)
+
+      ' Complete our pad (nPacketSize < 255)
+      For nCount = nCurrPos To nPacketSize - 1
+         RawPacket (nCurrPos) = nPadData
+         nCurrPos = nCurrPos + 1
+         nPadData = nPadData + 1
+      Next
+   End Function
+
+   ' Create a TestID (ushort and corresponding array)
+   Function CreateTestID(ByRef nTestId, arrTestId)
+      nTestId = oNDTSupp.Random(1, 32765)
+
+      arrTestId(0) = CByte(nTestID And &HFF&)
+      arrTestId(1) = CByte((nTestID \ &H100) And &HFF)
+   End Function
+
+End Class
+
+</script>
+</job>
+</package>
+
+
+
+<!--- CRC = 0x619cdefe --->

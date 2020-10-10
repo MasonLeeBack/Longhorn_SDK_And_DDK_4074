@@ -1,0 +1,81 @@
+'*************************************************************************
+'*                                                                       *
+'* File          : Server.wsf                                            *
+'* Author        : Kamil Ustuntas                                        *
+'* Created         2/28/2003   kamilu                                    *
+'* This script starts and stops the back channel services for the server *
+'*                                                                       *
+'*************************************************************************
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script id="TOEstopback" language="VBScript">
+
+
+option explicit
+
+dim Core, Sparta
+
+'
+' Start the script
+'
+StartScriptTest "TOEStopBack", ".", "starts and stops the back channel services for the server"
+
+sub Main 
+
+   Core.StartTest "starts and stops the back channel services for the server"
+
+   Core.StartVariation
+
+   dim WshShell
+
+   set WshShell = WScript.CreateObject("WScript.Shell")
+   if WshShell is Nothing then 
+      Core.FailSev1Variation "ERROR : Cannot create Shell object"
+      Exit sub
+   end if
+
+   Core.Log "Stopping the back channel server..."
+   WshShell.Run "net stop autosrv", 1, true
+   Core.Log "The back channel server has been stopped!"
+
+   Core.EndTest
+
+   Core.Sleep(2500)
+
+end sub
+
+sub StartScriptTest (szLogName, szLogDirectory, szDisplayTitle)
+    dim netmon, ulStatus, fStop
+    dim StartTime, EndTime, success
+
+    success = true
+    set core = CreateObject ("Testcore.base.1")
+    core.SetLogDirectory szLogDirectory
+    core.OpenLog szLogName, TLS_REFRESH
+
+    core.LogLevel = (Core.LogLevel) - TLS_COMMANDS
+    core.Log "***** Date and time of execution:  "  & Now
+
+    set sparta = CreateObject ("Spartacom.base.1")
+    sparta.InitLogging Core
+
+    core.OpenDisplay false
+    core.SetDisplayTitle szDisplayTitle
+
+    Main 
+
+    core.CloseDisplay
+    core.CloseLog
+
+end sub
+
+
+
+
+      </script>
+   </job>
+</package>

@@ -1,0 +1,150 @@
+'**************************** TCP_ZeroWindow_ProbeInterval.wsf ***********************
+'*                                                                                   *
+'* Author            :    Sandeep Prabhu                                             *
+'* Revision history  :                                                               *
+'*    09/20/2000     sandeep        Created                                          *
+'*    04/24/2003     karolys        added HCT-style comments for tst plan generation *
+'*                                                                                   *
+'* This script will test the TCP zero window probing screnarios                      *
+'*                                                                                   *
+'**************************** TCP_ZeroWindow_ProbeInterval.wsf ***********************
+
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\TCPLib.vbs"/>
+      <script language="VBScript" src="TCPZeroWindowLib.vbs"/>                  
+      <script id="TCP_ZeroWindow_ProbeInterval" language="VBScript">
+
+'/**
+' @area name="Offload Compliance Test Assertions"
+' @group name="TCP Zero Window Probing Assertions"
+' @group name="Zero Window Probing Interval Assertions" 
+' @define name="Offload" Offload Compliance Test Assertions
+' @define name="TCPZW" TCP Zero Window Probing Assertions
+' @define name="IntZW" Zero Window Probing Interval Assertions
+' @hierarchy Offload TCPZW IntZW
+' @key Reference="WLP# - x.x.x.x; RFC-793 Section 3.7, RFC-1122 Section 4.2.2.17"
+' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+' @key TestName="TCPv4 Zero Window Probing Timing Interval Tests"
+' @key TestLog="TCP_ZeroWindow_ProbeInterval.log"
+'*/
+
+option explicit
+    
+Dim Core, Sparta, Autosrv, MediaType, AutoArpObject, IFace, pControllerObj
+Const usMSS = 1460
+ 
+'
+' Start the script
+'           
+StartScript "TCP_ZeroWindow_ProbeInterval", g_szLogDirectory, "Tests for TCP zero window probing" 
+
+
+
+' ==================================================================================================
+' Main routine
+' ==================================================================================================
+Sub Main
+   Core.SetAssertionTracking "60600"
+   Dim ulStatus, ulWindowSize
+   
+   IFace.StartListening
+   Core.StartTest "Zero window probe interval test"
+
+   '/**
+   ' @test name="Verify that the stack does correct exponential backoff when sending zero window probes." 
+   ' Autosrv is requested to initiate a connection from the test machine to the script machine. 
+   ' The script accepts the connect request and advertises a zero receive window. 
+   ' The stack on the test machine should send zero window probes. 
+   ' The delay should increase exponentially till 6 retransmits and then stay the same.<br/>
+   ' The script waits until it receives 10 window probes with the correct timing. 
+   ' Then it opens up the receive window, consumes the data and finally resets the connection.<br/>
+   '*/
+
+   ZeroWindowProbeInterval 
+   Core.EndTest
+   Core.Sleep(2500)
+   IFace.StopListening
+   
+End Sub
+
+
+
+'
+' Routine to test the zero window probe intervals
+'
+Sub ZeroWindowProbeInterval
+   Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim ulLastAck, ulBytesRcvd, ulDataLength, pTCPPacket
+   
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 5000
+   usDestPort = 5001
+   
+   Core.StartVariation
+
+   
+   '
+   ' Esatablish a TCP connection and advertize a 0 window in SYN-ACK
+   '
+   ulStatus = Connect(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId, 0, usMSS)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "ZeroWindowProbeInterval: Connect - " & ulStatus
+      exit sub
+   end if
+   
+   '
+   ' Ask Autosrv to start sending data
+   '
+   ulStatus = pControllerObj.Send(ulSessionId, 1, 0, usMSS, ulTID)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "ZeroWindowProbeInterval: Send - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+   
+   '
+   ' Get to the point where the first window probe packet is received
+   '
+   ulStatus = GetToWindowProbeState(usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)
+   if (ulStatus <> 0) then
+      Core.FailSev1Variation "ZeroWindowProbeInterval: GetToWindowProbeState - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+
+   '
+   ' Do window probing for 10 times
+   '
+   ulStatus = DoZeroWindowProbe(10, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)
+   if (ulStatus <> 0) then
+      Core.FailSev1Variation "ZeroWindowProbeInterval: DoZeroWindowProbe - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+   
+   '
+   ' Complete the data exchange
+   '
+   ulStatus = DoDataExchange(usMSS, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)   
+   if (ulStatus <> 0) then
+      Core.BlockVariation "ZeroWindowProbeInterval: DoDataExchange - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+
+   ' Reset the connection
+   '
+   ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+End Sub
+
+
+      </script>
+   </job>
+</package>

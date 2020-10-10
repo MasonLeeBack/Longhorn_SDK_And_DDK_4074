@@ -1,0 +1,130 @@
+Test Assertion_A13472
+
+Assertion '13.4.7.2 WIA_IPS_CUR_INTENT' 
+[
+If the device is a scanner, when changing the current value of this property to a value of IMAGE_TYPE_COLOR, 
+IMAGE_TYPE_GRAYSCALE, or IMAGE_TYPE_TEXT (and that value is in the set of valid values), 
+the WIA_IPA_DATATYPE property must be set appropriately
+]
+
+Var p:Property, root:Item
+Var pDataType:Property
+Var dt, lVal, lData
+{
+    StartWia()
+    GetRoot(root)
+    GetDeviceType(dt)
+
+    If ( dt != StiDeviceTypeScanner )
+    Then Exit Passed
+
+    GetNextItem(root)
+
+    While ( root ) Do 
+    {
+        If ( !CheckItemType(root, WiaItemTypeImage) )
+        Then Goto label
+        
+        If ( !GetProperty(root, p, WIA_IPS_CUR_INTENT) )
+        Then 
+        {       
+            Writeln '\tThis mandatory property does not exist'
+            Exit Failed
+        }
+
+        If (!CheckPropertyAccessFromXML(p) )
+        Then
+        {
+            Writeln '\tIncorrect access'
+            Exit Failed
+        }
+            
+        If (!CheckPropertyTypeFromXML(p) )
+        Then
+        {
+            Writeln '\tIncorrect vartype'
+            Exit Failed
+        }
+
+        lVal = GetLongValue(p)
+        If ( lVal & WIA_INTENT_IMAGE_TYPE_COLOR )
+        Then
+        {
+            If ( !SetPropertyLong(root, WIA_IPS_CUR_INTENT, WIA_INTENT_IMAGE_TYPE_COLOR) )
+            Then 
+            {
+                Writeln '\tSetting property value failed'
+                Exit Failed
+            }
+
+            If ( !GetProperty(root, pDataType, WIA_IPA_DATATYPE) )
+            Then 
+            {
+                Writeln '\tThis mandatory property does not exist'
+                Exit Failed
+            }
+
+            lData = GetLongValue(pDataType)
+            If ( (lData != WIA_DATA_COLOR) 
+                And (lData != WIA_DATA_COLOR_THRESHOLD) 
+                And (lData != WIA_DATA_COLOR_DITHER) )
+            Then 
+            {
+                Write 'Incorrect WIA_IPA_DATATYPE value: '
+                Writeln lData
+                Exit Failed
+            }
+        }
+
+        Else If ( lVal & WIA_INTENT_IMAGE_TYPE_GRAYSCALE )
+        Then
+        {
+            If ( !SetPropertyLong(root, WIA_IPS_CUR_INTENT, WIA_INTENT_IMAGE_TYPE_GRAYSCALE) )
+            Then Exit Failed
+
+            If ( !GetProperty(root, pDataType, WIA_IPA_DATATYPE))
+            Then Exit Failed
+
+            lData = GetLongValue(pDataType)
+            If ( lData != WIA_DATA_GRAYSCALE ) 
+            Then 
+            {
+                Write 'Incorrect WIA_IPA_DATATYPE value'
+                Writeln lData
+                Exit Failed
+            }
+        }
+
+        Else If ( lVal & WIA_INTENT_IMAGE_TYPE_TEXT  )
+        Then
+        {
+            If ( !SetPropertyLong(root, WIA_IPS_CUR_INTENT, WIA_INTENT_IMAGE_TYPE_TEXT) )
+            Then 
+            {
+                Writeln '\tSetting property value failed'
+                Exit Failed
+            }
+
+            If ( !GetProperty(root, pDataType, WIA_IPA_DATATYPE) )
+            Then 
+            {
+                Writeln '\tThis mandatory property does not exist'
+                Exit Failed
+            }
+
+            lData = GetLongValue(pDataType)
+            If ( lData != WIA_DATA_THRESHOLD ) 
+            Then
+            {
+                Write 'Incorrect WIA_IPA_DATATYPE value: '
+                Writeln lData
+                Exit Failed
+            }
+        }
+
+:label:
+        GetNextItem(root)
+    }
+
+    StopWia()
+}

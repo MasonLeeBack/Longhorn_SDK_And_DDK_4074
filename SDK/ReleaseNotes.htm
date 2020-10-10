@@ -1,0 +1,328 @@
+<html xmlns:o>
+	<head>
+		<title>Microsoft® Windows® Code-Named "Longhorn" SDK</title>
+		<SCRIPT language="jscript">
+	var viewer;
+	var helpHost;
+	function Link(url)
+	{
+  		viewer = new ActiveXObject("DExplore.AppObj.7");
+   		helpHost = viewer.Help;
+   		helpHost.SetCollection("ms-help://MS.LHSDK.1033", "Longhorn SDK Documentation");
+   		helpHost.DisplayTopicFromURL(url);
+   		helpHost.SyncContents(url);
+	}
+		</SCRIPT>
+		<META http-equiv="C1ontent-Type" content="text/html; charset=Windows-1252">
+		<style>A:hover { COLOR: #ff0000 }
+	div.Section1
+	{page:Section1;}
+</style>
+	</head>
+	<body leftMargin="0" topMargin="0">
+		<!-- Start Toolbar-->
+		<div id="TBDownLevelDiv">
+			<table cellSpacing="0" cellPadding="0" width="100%" bgColor="#ffffff" border="0">
+				<tr>
+					<td vAlign="middle" noWrap align="right" bgColor="#000000" height="20"><font face="Verdana, Arial" color="#ffffff" size="1"><b>&nbsp;&nbsp;<a style="COLOR: #ffffff; TEXT-DECORATION: none" href="http://support.microsoft.com"
+									target="_top"><font color="#ffffff">Links to the Web:&nbsp;&nbsp;&nbsp;&nbsp; 
+										Support</font></a>&nbsp;&nbsp;<font color="#ffffff">|</font> &nbsp;&nbsp;<a style="COLOR: #ffffff; TEXT-DECORATION: none" href="http://search.microsoft.com/"
+									target="_top"><font color="#ffffff">Search</font></a>&nbsp;&nbsp;<font color="#ffffff">|</font>
+								&nbsp;&nbsp;<a style="COLOR: #ffffff; TEXT-DECORATION: none" href="http://www.microsoft.com/" target="_top"><font color="#ffffff">microsoft.com 
+										Guide</font></a>&nbsp;&nbsp; </b></font>
+					</td>
+				</tr>
+				<tr>
+					<!-- Start: Local menus -->
+					<td vAlign="middle" noWrap bgColor="#4a5c82" height="20">
+						<table style="BORDER-COLLAPSE: collapse" borderColor="#111111" cellSpacing="0" cellPadding="0"
+							bgColor="#000000" border="0">
+							<tr>
+								<td vAlign="bottom" noWrap bgColor="#000000"><font face="Verdana, Arial" color="#ffffff" size="1"><b>&nbsp;&nbsp;
+											<font color="#ffffff">Related Links:&nbsp;&nbsp;&nbsp;&nbsp; <a style="FONT-WEIGHT: bold; COLOR: #ffffff; TEXT-DECORATION: none" href="http://msdn.microsoft.com/"
+													target="_top">MSDN Online </a></font>&nbsp;&nbsp;</b> </font>
+								</td>
+								<td vAlign="bottom" bgColor="#000000"><font face="Verdana, Arial" color="#ffffff" size="1"><b>|</b>
+									</font>
+								</td>
+								<td vAlign="bottom" noWrap bgColor="#000000"><font face="Verdana, Arial" color="#ffffff" size="1"><b><a style="FONT-WEIGHT: bold; COLOR: #ffffff; TEXT-DECORATION: none" href="http://windowsbeta.microsoft.com/"
+												target="_top">&nbsp;&nbsp; <font color="#ffffff">"Longhorn" Beta Newsgroups</font></a><font color="#ffffff"><a style="FONT-WEIGHT: bold; COLOR: #ffffff; TEXT-DECORATION: none" href="http://msdn.microsoft.com/net/"
+													target="_top"> </a></font>&nbsp;&nbsp;</b> <font face="Verdana, Arial" color="#ffffff" size="1">
+											<b>|</b> </font><font color="#ffffff"></B><a style="FONT-WEIGHT: bold; COLOR: #ffffff; TEXT-DECORATION: none" href="http://msdn.microsoft.com/longhorn/"
+												target="_top"><font color="#ffffff"><b>"Longhorn" Developer Center</font></a></font>&nbsp;&nbsp;</B>
+									</font>
+								</td>
+								<td noWrap align="right" width="100%" bgColor="#000000"><IMG src="License/LHSDK-logo-310.jpg">
+								</td>
+								<td noWrap width="100%" bgColor="#000000"><br>
+									<br>
+								</td>
+							</tr>
+						</table>
+					</td>
+					<!-- End: Local menus --></tr>
+			</table>
+		</div>
+		<!-- End Toolbar-->
+		<!-- Start Content--><span style="FONT: x-small Verdana, Arial, Helvetica">
+<H2>Release Notes for the<BR>
+				Microsoft&reg; Windows&reg; Code-Named "Longhorn" SDK</H2>
+				<blockquote>
+					<P>Welcome to the Developer Preview Edition of the 
+					"Longhorn" Software Development Kit (SDK). The "Longhorn" SDK contains 
+					documentation, samples, command-line compilers, and tools designed to help you 
+					develop applications and libraries that target the 					Microsoft&reg; Windows&reg; (code-named "Longhorn") operating system.</P>
+					<P><STRONG>Please note that this release is for preview purposes only. The APIs, 
+						documentation, samples, and tools provided in this release are preliminary and 
+						subject to change.</STRONG> </P>
+					<P>Because this is a pre-release edition, many of the known issues are identified in this 
+					document. Please read the <A href="#Setup">installation instructions</A> and 
+					<A href="#Issues">known issues</A> before installing. See the "Longhorn" Developer Center and 
+					check the <a href="http://windowsbeta.microsoft.com/">"Longhorn" Beta Newsgroups</a>
+					for updates to known issues.
+				</P>
+					<p>
+					<!--webbot bot="PurpleText" PREVIEW="NOTE:  This document will be updated as new issues are discovered.  New entries will be identified by &quot;(New:  date added)&quot; at the end of the heading for the entry.  
+
+Your feedback is important to us. Please use the Feedback links at the bottom of each topic to provide constructive information that we can use to improve the content. Your participation and feedback through the &quot;Longhorn&quot; Beta Newsgroups is also appreciated.
+" -->For additional information about "Longhorn", see 
+					<a href="http://msdn.microsoft.com/longhorn">The MSDN online "Longhorn" Developer Center.</a> The "Longhorn" Developer 
+					Center is focused on keeping developers up-to-date on how they can take 
+					advantage of "Longhorn's" rich new client features in their applications. Visit 
+					the "Longhorn" Developer Center often to see new articles, read monthly 
+					columns, participate in the "Longhorn" newsgroups, download sample code, and 
+					read the Editor's Web Log.
+					<br><br></p>
+		</blockquote>
+		<hr>
+		<h3><A name="Setup"></A>Instructions for Installing "Longhorn" 
+				and the "Longhorn" SDK</h3>
+		<blockquote>
+			<span style="FONT: x-small Verdana, Arial, Helvetica">
+			<OL>
+				<li>From the "Longhorn" setup program, install&nbsp;the "Longhorn"&nbsp;operating 
+					system.&nbsp;
+					<li>From the "Longhorn" setup program, install the "Longhorn" SDK.
+					<LI>Follow the instructions in the "Longhorn" SDK Setup wizard, accepting the 
+					default options.
+					<LI>In some cases you may need to restart your computer to have&nbsp;your environment variables recognized.
+					</LI>
+			</OL></span><br>
+		</blockquote>
+		<hr>
+		<H3><A name="Issues"></A>Known Issues</H3>
+		<blockquote>
+			<P>This release has the following known issues. For additional information about 
+					"Longhorn", see <a href="http://msdn.microsoft.com/longhorn">The MSDN online 
+						"Longhorn" Developer Center</a>.<BR></P>
+			<h4><BR>"Longhorn" SDK Issues</h4>
+
+			<span style="font-style:normal; font-variant:normal; font-size:x-small; font-family:Verdana, Arial, Helvetica; font-weight:700">
+			<p>Tools: FxCop not included in this release of the "Longhorn" SDK</span></p>
+			<p>Visit the following location in order to download a version of FxCop that works with the operating system on this CD: <a href="http://www.gotdotnet.com/team/fxcop/FxCopInstall1.30_Whidbey.exe">http://www.gotdotnet.com/team/fxcop/FxCopInstall1.30_Whidbey.exe</a></p>
+			</p>
+
+
+			<span style="font-style:normal; font-variant:normal; font-size:x-small; font-family:Verdana, Arial, Helvetica; font-weight:700">
+			<p>Samples: The samples in the "Longhorn" SDK need to be built on the command line</span></p>
+			<p>This version of the "Longhorn" SDK is not fully compatible with previously released versions of Microsoft&reg; Visual Studio&reg; "Whidbey." As a result, the samples will not build using previous versions of Visual Studio. Some samples pages incorrectly provide instructions for building the samples in Visual Studio. Instead, use the command line tools provided in the "Longhorn" SDK to build the samples.</p>
+			</p>
+			<span style="font-style:normal; font-variant:normal; font-size:x-small; font-family:Verdana, Arial, Helvetica; font-weight:700">
+			<p>Sample:&nbsp;<b>&quot;WinFS&quot; sample requires data before it can run</b></span></p>
+			<p>For the sample code associated with the "Longhorn" storage subsystem (code-named &quot;WinFS&quot;) API topic 
+				&quot;How to Modify an Item and Update Changes in a Store&quot; to 
+				run properly, there must be at least one document saved in the 
+				store prior to running the sample code.&nbsp; To work around 
+				this issue, copy a document to the &quot;WinFS&quot; store before 
+				running the sample code or first run the sample code found in 
+				the &quot;How to Create an Item and Save It to a Store in 'WinFS'&quot; topic, 
+				which creates a Document item and saves it to the &quot;WinFS&quot; store.</p>
+			<p><span style="FONT: x-small Verdana, Arial, Helvetica"><b>Sample:&nbsp; &quot;WinFS&quot; sample with DeleteFolder method fails if 
+				embedding or holding relationships exist on the target folder<br>
+			</b><br>The DeleteFolder sample method defined in several examples and used 
+				in some &quot;WinFS&quot; topics deletes a specified folder. If you apply 
+				this method to delete a folder that is a target of an embedding 
+				or holding relationship, the method will fail.&nbsp; To work 
+				around this issue, delete embedding and holding relationships 
+				targeting the folder if you are attempting to delete using this 
+				method.</span></p>
+			<p><b>Samples: &quot;WinFS&quot; API samples do not support localization 
+				in this release</b></p>
+			<p>The &quot;WinFS&quot; samples are not localized and might fail when 
+				using certain localized characters. Localization is not fully 
+				supported in this release.</p></span>
+				<p><span style="FONT: x-small Verdana, Arial, Helvetica"><b>
+				<font size="2">Building C++ projects that include &quot;XAML&quot; 
+				files</font></b></span></p>
+			<p><span style="FONT: x-small Verdana, Arial, Helvetica">To compile &quot;Longhorn&quot; C++ projects that include &quot;XAML&quot; 
+		files, you must first run %windir%\microsoft.net\windows\v6.0.4030\RegisterCppCodeProvider.js, 
+		which is installed by the &quot;Longhorn&quot; SDK.</span></p>
+			<p><span style="FONT: x-small Verdana, Arial, Helvetica"><b>Building managed C++ samples from the command line</b>
+			</span></p>
+			<p><span style="FONT: x-small Verdana, Arial, Helvetica">To build a managed C++ sample, open the &quot;Longhorn&quot; 
+		SDK&nbsp;Build Environment Command Prompt window and go to the source 
+		directory of the sample (for example: cd &quot;C:\Program Files\Microsoft 
+		Longhorn SDK\Samples\MySample&quot;). At the command prompt, type <i>VCBUILD /useenv</i> 
+		and press <b>Enter</b>.</span></p>
+			<span style="font-style:normal; font-variant:normal; font-size:x-small; font-family:Verdana, Arial, Helvetica; font-weight:700">
+			<p><span style="FONT: x-small Verdana, Arial, Helvetica"><b>Sample:&nbsp; &quot;</b></span>Longhorn&quot; 
+			Graphics Model ImageData</p></span>
+			<p class="MsoNormal">
+			<span style="font-size: x-small; font-family: Verdana, Arial, Helvetica; font-style: normal; font-variant: normal; font-weight: normal">
+			The sample Using ImageData is unavailable for both C# and &quot;XAML&quot;.</span></p>
+			<span style="font-style:normal; font-variant:normal; font-size:x-small; font-family:Verdana, Arial, Helvetica; font-weight:700">
+			<p class="MsoNormal">
+			<span style="font-size:10.0pt;font-family:Arial">&nbsp;</span><span style="font-style:normal; font-variant:normal; font-size:x-small; font-family:Verdana, Arial, Helvetica; font-weight:700"><span style="FONT: x-small Verdana, Arial, Helvetica"><b>Sample:&nbsp;&quot;Create 
+			a Storage Under Another Storage in a Container&quot;</b></span></span></p>
+			</span>
+			<span style="font-size: x-small; font-family: Verdana, Arial, Helvetica; font-style: normal; font-variant: normal; font-weight: normal">
+			The sample &quot;Create a Storage Under Another Storage in a Container&quot; 
+			is unavailable for VB.NET.</span><span style="font-style:normal; font-variant:normal; font-size:x-small; font-family:Verdana, Arial, Helvetica; font-weight:700"><p>Chinese characters display improperly in two topics: 
+				&quot;'Avalon' Composite Fonts Overview&quot; and &quot;Create and Use a 
+				Composite Font.&quot;<br></span>
+			<span style="FONT: x-small Verdana, Arial, Helvetica"><br>Question marks appear in the place of Chinese characters within 
+				code snippets in two topics: &quot;'Avalon' Composite Fonts Overview&quot; 
+				and &quot;Create and Use a Composite Font.&quot;&nbsp; To work around this 
+				issue, if you have East Asian Language Support installed on your 
+				computer, you will see the correct characters if you download 
+				and view the sample, &quot;Create a Composite Font.&quot; <br>
+			<br>To download the sample:</span></p>
+			<ol>
+				<li><span style="FONT: x-small Verdana, Arial, Helvetica">In 
+					the &quot;Longhorn&quot; SDK, click the <b>Samples</b> tab. 
+				</span></li>
+				<li><span style="FONT: x-small Verdana, Arial, Helvetica">On 
+					the Samples page, find the &quot;Longhorn&quot; Graphics Model 
+					section. </span></li>
+				<li><span style="FONT: x-small Verdana, Arial, Helvetica">Within that section, click &quot;Create a Composite Font.&quot; 
+				</span></li>
+				<li><span style="FONT: x-small Verdana, Arial, Helvetica">Follow the instructions to download and run the sample.<br>&nbsp;</li>
+			</ol>
+			<h4>Presentation Subsystem (Code-Named &quot;Avalon&quot;) Issues</h4>
+			<p><b>Issues with using a DrawingBrush as a Resource</b></p></span>
+			<p>
+			<span style="font-family: Verdana, Arial, Helvetica; font-size: x-small">In this release</span><span style="FONT: x-small Verdana, Arial, Helvetica">, 
+				a DrawingBrush cannot be used as a resource without performing a 
+				workaround. An InvalidOperationException is thrown when 
+				attempting to use the resource for the first time in a rendering 
+				operation. The following is an example of markup that causes an 
+				InvalidOperationException to be thrown:</span></p>
+			<blockquote>
+				<p style="margin-top: 0; margin-bottom: 0">
+				<span style="font-style:normal; font-variant:normal; font-weight:normal; font-size:x-small; font-family:Courier New">&lt;DockPanel.Resources&gt;</span></p>
+				<blockquote>
+					<p style="margin-top: 0; margin-bottom: 0">
+					<span style="font-style:normal; font-variant:normal; font-weight:normal; font-size:x-small; font-family:Courier New">&lt;DrawingBrush</span></p>
+					<p style="margin-top: 0; margin-bottom: 0">&nbsp;</p>
+					<p style="margin-top: 0; margin-bottom: 0">
+					<span style="font-style:normal; font-variant:normal; font-weight:normal; font-size:x-small; font-family:Courier New">&nbsp; 
+						def:Name = &quot;BRUSH_MASK_BLACK_GRIDMARGINS&quot;</span></p>
+					<p style="margin-top: 0; margin-bottom: 0">&nbsp;</p>
+					<p style="margin-top: 0; margin-bottom: 0">
+					<span style="font-style:normal; font-variant:normal; font-weight:normal; font-size:x-small; font-family:Courier New">&nbsp; 
+						ViewPort = &quot;0,0,2,4&quot;</span></p>
+					<p style="margin-top: 0; margin-bottom: 0">
+					<span style="font-style:normal; font-variant:normal; font-weight:normal; font-size:x-small; font-family:Courier New">&nbsp; 
+						ViewPortUnits = &quot;Absolute&quot;</span></p>
+					<p style="margin-top: 0; margin-bottom: 0">
+					<span style="font-style:normal; font-variant:normal; font-weight:normal; font-size:x-small; font-family:Courier New">&nbsp; 
+						TileMode=&quot;Tile&quot;</span></p>
+					<p style="margin-top: 0; margin-bottom: 0">
+					<span style="font-style:normal; font-variant:normal; font-weight:normal; font-size:x-small; font-family:Courier New">&nbsp; 
+						ViewBox=&quot;0,0,1,1&quot;&gt;</span></p>
+					<p style="margin-top: 0; margin-bottom: 0">
+					<span style="font-style:normal; font-variant:normal; font-weight:normal; font-size:x-small; font-family:Courier New">&nbsp; 
+						&lt;DrawingBrush.Drawing&gt;</span></p>
+					<p style="margin-top: 0; margin-bottom: 0">
+					<span style="font-style:normal; font-variant:normal; font-weight:normal; font-size:x-small; font-family:Courier New">&nbsp;&nbsp;&nbsp; 
+						&lt;Rectangle<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; RectangleTop =&quot;0&quot;<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; RectangleLeft =&quot;0&quot;<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; RectangleWidth =&quot;1&quot;<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; RectangleHeight=&quot;.5&quot;<br>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp; Fill = &quot;#000&quot;/&gt;</span></p>
+					<p style="margin-top: 0; margin-bottom: 0">
+					<span style="font-style:normal; font-variant:normal; font-weight:normal; font-size:x-small; font-family:Courier New">&nbsp; 
+						&lt;/DrawingBrush.Drawing&gt;</span></p>
+					<p style="margin-top: 0; margin-bottom: 0">
+					<span style="font-style:normal; font-variant:normal; font-weight:normal; font-size:x-small; font-family:Courier New">&lt;/DrawingBrush&gt;</span></p>
+				</blockquote>
+				<p style="margin-top: 0; margin-bottom: 0">
+				<span style="font-style:normal; font-variant:normal; font-weight:normal; font-size:x-small; font-family:Courier New">&lt;/DockPanel.Resources&gt;</span></p>
+				<p style="margin-top: 0; margin-bottom: 0">&nbsp;</p>
+				<p style="margin-top: 0; margin-bottom: 0">
+				<span style="font-style: normal; font-variant: normal; font-weight: normal; font-size: x-small; font-family: Courier New">....<br>&nbsp;</span></p>
+				<p style="margin-top: 0; margin-bottom: 0">
+				<span style="font-style:normal; font-variant:normal; font-weight:normal; font-size:x-small; font-family:Courier New">&lt;Button Background=&quot;{BRUSH_MASK_BLACK_GRIDMARGINS}&quot;&gt;Button&lt;/Button&gt;</span></p>
+			</blockquote>
+			<p><span style="FONT: x-small Verdana, Arial, Helvetica">The 
+				workaround ensures that the first access to the resource occurs 
+				before the resource is used in a rendering operation.&nbsp; For 
+				example, the previous example will work if you add the following 
+				code to your application's constructor or StartingUp event.</span></p>
+			<blockquote>
+				<p>
+				<span style="font-style:normal; font-variant:normal; font-weight:normal; font-size:x-small">
+				<font face="Courier New">Brush b = (Brush) 
+					myDockPanel.Resources[&quot;BRUSH_MASK_BLACK_GRIDMARGINS&quot;];</font></p>
+			</blockquote></span>
+			<p><span style="FONT: x-small Verdana, Arial, Helvetica"><b>Setting Opacity property has no effect on 
+				ImageBrush and DrawingBrush<br></b><br>In this release, setting the Opacity of ImageBrush and 
+				DrawingBrush has no effect. The Opacity property does have an 
+				effect on SolidColorBrush, LinearGradientBrush, and 
+				RadialGradientBrush. There is no workaround at this time.<br>&nbsp;</span></p>
+			<span style="FONT: x-small Verdana, Arial, Helvetica">
+			<h4>&quot;Longhorn&quot; Help Issues</h4></span>
+			<P><b></b><span style="FONT: x-small Verdana, Arial, Helvetica"><b>System.Help.Canvas API calls are 
+				ignored <br></b><br>In this release, API calls to System.Help.Canvas are ignored. An 
+				instance of the Canvas object can be created, but API calls do 
+				not function. No errors or exceptions are returned. There is no 
+				workaround.</span></P>
+			<P><span style="FONT: x-small Verdana, Arial, Helvetica"><b>Microsoft Assistance Markup Language (&quot;MAML&quot;) 
+				schema files <br></b><br>The &quot;MAML&quot; schema consists of a set of .xsd files that are used to 
+				create and validate &quot;Longhorn&quot; Help content. Maml.xsd 
+			is the root-level file that should be referenced for validation. The 
+			files can be found installed with the &quot;Longhorn&quot; SDK at: 
+						C:\Program Files\Microsoft Longhorn SDK\misc\MAML_Schema\.</span></P>
+			<P><span style="FONT: x-small Verdana, Arial, Helvetica"><b>&quot;Longhorn&quot; Help Build Schema Files</b></span></P>
+			<P><span style="FONT: x-small Verdana, Arial, Helvetica">The &quot;Longhorn&quot; Help build schema files are used 
+				to create the various Help project files. The files can be found 
+				installed with the &quot;Longhorn&quot; SDK at: 
+					C:\Program Files\Microsoft Longhorn SDK\misc\Help_Build_Schemas\.</span></P>
+			<P><span style="FONT: x-small Verdana, Arial, Helvetica"><b>&quot;Longhorn&quot; Help Compiler</b></span></P>
+			<P><span style="FONT: x-small Verdana, Arial, Helvetica">The &quot;Longhorn&quot; Help compiler is used to create 
+				a .HELP file from a set of loose Help project files. Two files 
+				are required to make the compiler work: HelpCompiler.exe, and 
+				WindowsBase.dll. Copy these files to a local directory and 
+				follow the instructions in the documentation to use the 
+				compiler. The compiler files can be found installed with the &quot;Longhorn&quot; SDK at: 
+					C:\Program Files\Microsoft Longhorn SDK\bin\HelpCompiler.exe, 
+					and C:\Program Files\Microsoft Longhorn SDK\bin\WindowsBase.dll.<br>&nbsp;</span></P>
+			<span style="FONT: x-small Verdana, Arial, Helvetica">
+			<h4>&quot;WinFS&quot; Issues</h4></span>
+			<P><span style="FONT: x-small Verdana, Arial, Helvetica"><b>&quot;WinFS&quot; API FindOne and FindOnly methods deprecated</b><b>
+			<br></b><br>The &quot;WinFS&quot; API FindOne and FindOnly methods are deprecated. 
+				Instead, use the FindAll method and limit the results 
+				with the OPath filter.</span><br>&nbsp;</P>
+		</blockquote>
+		<HR></span>
+				<span style="FONT: x-small Verdana, Arial, Helvetica">
+		<H3>"Longhorn" Product Support</H3>
+		<blockquote>
+			<P>The pre-release &quot;Longhorn&quot; SDKs provided for WinHec attendees are provided "as-is" and are not 
+					supported by Microsoft.&nbsp; If you have questions or need assistance, see
+			<span style="FONT: x-small Verdana, Arial, Helvetica">
+			<a href="http://msdn.microsoft.com/longhorn">The MSDN online 
+						"Longhorn" Developer Center</a></span>
+				and the 
+				<A href="http://windowsbeta.microsoft.com/">"Longhorn" 
+						Beta Newsgroups</A> for additional information and updates to the known 
+					issues.
+				</P>
+			<p></p></STYLE></span>
+			<P>
+			<TABLE width="100%">
+			</TABLE>
+		</blockquote>
+		<HR><span style="FONT: 8pt Verdana, Arial, Helvetica">Copyright © 2002-2004 Microsoft Corporation. All rights 
+  reserved.</span> <br>
+		<P></P>
+		</FONT></FONT>
+		<BLOCKQUOTE></BLOCKQUOTE>
+	</body>
+</html>

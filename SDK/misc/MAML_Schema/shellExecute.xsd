@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<schema xmlns="http://www.w3.org/2001/XMLSchema" 
+		xmlns:maml="http://schemas.microsoft.com/maml/2003/5" 
+		xmlns:doc="http://schemas.microsoft.com/maml/internal"
+		targetNamespace="http://schemas.microsoft.com/maml/2003/5" 
+		elementFormDefault="qualified"
+        attributeFormDefault="unqualified"
+        >
+ 
+	<!-- Schema documentation -->
+	<annotation>
+		<documentation>
+			This schema defines a way to specify a command line that will be executed as a shell execute.
+			This schema is part of the base layer.
+		</documentation>
+	</annotation>
+
+	<!-- include and import declarations -->
+	<include schemaLocation="structure.xsd"/>	
+	
+		<complexType name="shellExecuteType">
+			<sequence>
+				<element ref="maml:title" minOccurs="0"/>
+				
+				<element name="description" minOccurs="0" type="maml:textBlockType"/>
+				
+				<element name="command">
+					<complexType>
+						<simpleContent>
+							<extension base="string">
+								<attributeGroup ref="maml:contentIdentificationSharingAndConditionGroup"/>
+								<attribute name="commandTemplateType">
+									<simpleType>
+										<restriction base="token">
+											<enumeration value="Action"/>
+											<enumeration value="UI"/>
+											<enumeration value="Web"/>
+										</restriction>
+									</simpleType>
+								</attribute>
+							</extension>
+						</simpleContent>
+					</complexType>
+				</element>
+			</sequence>
+			<attribute name="contentType" type="token"/>
+		</complexType>
+
+	<element name="shellExecute" type="maml:shellExecuteType"/>
+ 
+</schema>
+

@@ -1,0 +1,576 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_5
+</MEDIA>
+<WHQL>
+802_5
+</WHQL>
+<CARDMACH>
+1C,1M
+</CARDMACH>
+<RUNORDER>
+1290
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[This script tests the ability of token ring drivers to set or clear
+the single group address on the card.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="1c_SetGroup" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      
+      <!-- Begin Wireless Specific Includes -->
+      <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	   <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	   <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	   <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	   <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+      <!-- End Wireless Specific Includes -->
+      
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/> 
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script language="VBScript" src="..\inc\ConstLAN.vbs"/>
+      <script id="1c_SetGroup" language="VBScript">
+'==========================================================================
+' Script Name:    1c_SetGroup
+'==========================================================================
+
+Option Explicit 
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0)) 
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard
+   Private oOpenOne, oOpenTwo
+   Private m_lTestAdapterIndex
+   
+   Private Sub Class_Initialize
+      
+   End Sub
+   
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+      Set oOpenOne  = Nothing
+      Set oOpenTwo  = Nothing
+   End Sub
+   
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      SetupTest = FALSE
+      
+      Set pAdapterList = oNDInfo.AdapterList
+      
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oOpenOne = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oOpenOne is Nothing) Then
+         Exit Function
+      End If
+      
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+ 
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")           
+         If(vbAssociateWep(oOpenOne, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If	
+                    
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+      
+      Set oOpenTwo = oTestCard.vbOpenAdapter
+      If (oOpenTwo is Nothing) Then
+         Exit Function
+      End If
+      
+      Set pAdapterList = Nothing
+      
+      If (oTestCard.NdisMedium <> NDISMEDIUM802_5) Then
+         Call oLog.Failed ("Media type not valid for this script" , 20981)
+         Exit Function
+      End If
+      
+      SetupTest = TRUE
+   End Function
+   
+   Public Function RunTest (lTestAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+      
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+      
+      ExecuteTestCore
+      
+      oLog.Variation("Clear Events")
+      
+      Call oOpenOne.vbClearEvents()
+      Call oOpenTwo.vbClearEvents()
+   End Function
+   
+   Private Function ExecuteTestCore
+      Dim bResult, nCount
+      
+      Dim NewGroupAddr1
+      NewGroupAddr1 = GrpAddr(&H81&, &H02&, &H03&, &H04&)
+      
+      Dim NewGroupAddr2
+      NewGroupAddr2 = GrpAddr(&H81&, &H02&, &H03&, &H14&)
+      
+      Dim CurGroupAddr1
+      CurGroupAddr1 = GrpAddr(&H00&, &H00&, &H00&, &H00&)
+      
+      Dim CurGroupAddr2
+      CurGroupAddr2 = GrpAddr(&H00&, &H00&, &H00&, &H00&)
+      
+      Dim addrLen
+      
+      oLog.Variation("Checking current group address")
+      addrLen = 4
+      bResult = oOpenOne.vbFastNdisRequest(OID_802_5_CURRENT_GROUP, CurGroupAddr1, addrLen)
+      If (Not bResult) Then
+         Call oLog.Failed ("Unable to query group address on 1st open" , 21414)
+      End If
+      
+      addrLen = 4
+      bResult = oOpenTwo.vbFastNdisRequest(OID_802_5_CURRENT_GROUP, CurGroupAddr2, addrLen)
+      If (Not bResult) Then
+         Call oLog.Failed ("Unable to query group address on 2nd open" , 21415)
+      End If
+      
+      If ((Not GroupAddrCmp(CurGroupAddr1, NullGroupAddr)) Or _
+               (Not GroupAddrCmp(CurGroupAddr2, NullGroupAddr)) ) Then
+         Call oLog.Failed ("Incorrect initial group address. Should have been null." , 21416)
+      End If
+      
+      '------------------------------------
+      ' single-open tests
+      ' variation:   set/clear the same group address multiple times
+      '---------------------------------------------------------
+      oLog.Variation("Set/clear a address multiple times")
+      
+      For nCount = 0 to 24
+         oLog.Variation("Setting group address")
+         Call oOpenOne.vbSetGroupAddr(NewGroupAddr1)
+         
+         addrLen = 4
+         bResult = oOpenOne.vbFastNdisRequest(OID_802_5_CURRENT_GROUP, CurGroupAddr1, addrLen)
+         If (Not bResult) Then
+            Call oLog.Failed ("Unable to query current group address" , 21418)
+         ElseIf (Not GroupAddrCmp(CurGroupAddr1, NewGroupAddr1)) Then
+            Call oLog.Failed ("Incorrect group address returned" , 21419)
+         End If
+         
+         oLog.Variation("Clearing the group address")
+         Call oOpenOne.vbSetGroupAddr(NullGroupAddr)
+         
+         addrLen = 4
+         bResult = oOpenOne.vbFastNdisRequest(OID_802_5_CURRENT_GROUP, CurGroupAddr1, addrLen)
+         If (Not bResult) Then
+            Call oLog.Failed ("Unable to query current group address" , 21421)
+         ElseIf (Not GroupAddrCmp(CurGroupAddr1, NullGroupAddr)) Then
+            Call oLog.Failed ("Incorrect group address returned" , 21422)
+         End If
+         
+      Next
+      
+      '----------------------------------------------------
+      ' variation:   set/clear different group addresses
+      '----------------------------------------------------
+      oLog.Variation("Set/clear a series of addresses")
+      
+      For nCount = 0 To 31
+         oLog.Variation("Setting the group address")
+         NewGroupAddr1 = GrpAddr(&H81&, &H02&, &H03&, nCount)
+         Call oOpenOne.vbSetGroupAddr(NewGroupAddr1)
+         
+         addrLen = 4
+         bResult = oOpenOne.vbFastNdisRequest(OID_802_5_CURRENT_GROUP, CurGroupAddr1, addrLen)
+         If (Not bResult) Then
+            Call oLog.Failed ("Unable to query current group address" , 21424)
+         ElseIf (Not GroupAddrCmp(CurGroupAddr1, NewGroupAddr1)) Then
+            Call oLog.Failed ("Incorrect group address returned" , 21425)
+         End If
+         
+         oLog.Variation("Clearing the group address")
+         Call oOpenOne.vbSetGroupAddr(NullGroupAddr)
+         
+         addrLen = 4
+         bResult = oOpenOne.vbFastNdisRequest(OID_802_5_CURRENT_GROUP, CurGroupAddr1, addrLen)
+         If (Not bResult) Then
+            Call oLog.Failed ("Unable to query current group address" , 21427)
+         ElseIf (Not GroupAddrCmp(CurGroupAddr1, NullGroupAddr)) Then
+            Call oLog.Failed ("Incorrect group address returned" , 21428)
+         End If
+         
+      Next
+      
+      '---------------------------------------------------------
+      ' multiple-open tests
+      ' variation:   set/clear the same group address multiple times
+      '---------------------------------------------------------
+      NewGroupAddr1 = GrpAddr(&H81&, &H02&, &H03&, &H04&)
+      
+      oLog.Variation("Repeatedly set/clear the same group address")
+      
+      For nCount = 0 To 31
+         
+         oLog.Variation("Setting the group address")
+         If ((nCount And &H01&) = &H01&) Then
+            Call oOpenOne.vbSetGroupAddr(NewGroupAddr1)
+            Call oOpenTwo.vbSetGroupAddr(NewGroupAddr1)
+         Else
+            Call oOpenTwo.vbSetGroupAddr(NewGroupAddr1)
+            Call oOpenOne.vbSetGroupAddr(NewGroupAddr1)
+         End If
+         
+         oLog.Variation("Checking if set correctly")
+         addrLen = 4
+         bResult = oOpenOne.vbFastNdisRequest(OID_802_5_CURRENT_GROUP, CurGroupAddr1, addrLen)
+         If (Not bResult) Then
+            Call oLog.Failed ("Unable to query group address on 1st open" , 21431)
+         End If
+         
+         addrLen = 4
+         bResult = oOpenTwo.vbFastNdisRequest(OID_802_5_CURRENT_GROUP, CurGroupAddr2, addrLen)
+         If (Not bResult) Then
+            Call oLog.Failed ("Unable to query group address on 2nd open" , 21432)
+         End If
+         
+         If (Not GroupAddrCmp(CurGroupAddr1, NewGroupAddr1)) Then
+            Call oLog.Failed ("Incorrect group address from 1st open" , 21433)
+         End If
+         
+         If (Not GroupAddrCmp(CurGroupAddr2, NewGroupAddr1)) Then
+            Call oLog.Failed ("Incorrect group address from 2nd open" , 21434)
+         End If
+         
+         oLog.Variation("Clearing the group address")
+         If ((nCount And &H02&) = &H02&) Then
+            Call oOpenOne.vbSetGroupAddr(NullGroupAddr)
+            Call oOpenTwo.vbSetGroupAddr(NullGroupAddr)
+         Else
+            Call oOpenTwo.vbSetGroupAddr(NullGroupAddr)
+            Call oOpenOne.vbSetGroupAddr(NullGroupAddr)
+         End If
+         
+         oLog.Variation("Checking if cleared correctly")
+         addrLen = 4
+         bResult = oOpenOne.vbFastNdisRequest(OID_802_5_CURRENT_GROUP, CurGroupAddr1, addrLen)
+         If (Not bResult) Then
+            Call oLog.Failed ("Unable to query group address on 1st open" , 21437)
+         End If
+         
+         addrLen = 4
+         bResult = oOpenTwo.vbFastNdisRequest(OID_802_5_CURRENT_GROUP, CurGroupAddr2, addrLen)
+         If (Not bResult) Then
+            Call oLog.Failed ("Unable to query group address on 2nd open" , 21438)
+         End If
+         
+         If (Not GroupAddrCmp(CurGroupAddr1, NullGroupAddr)) Then
+            Call oLog.Failed ("Incorrect group address from 1st open" , 21439)
+         End If
+         
+         If (Not GroupAddrCmp(CurGroupAddr2, NullGroupAddr)) Then
+            Call oLog.Failed ("Incorrect group address from 2nd open" , 21440)
+         End If
+         
+      Next      
+      
+      '----------------------------------------------------
+      ' variation:   try to set different group addresses.
+      '              first should succeed, second should fail..
+      '----------------------------------------------------
+      Dim bResult1, bResult2
+      Dim nLogMask
+      
+      oLog.Variation("Set different group addresses on each open instances")
+      
+      For nCount = 0 To 31
+         
+         oLog.Variation("Setting different group addresses")
+         nLogMask = oLog.Mask
+         oLog.Mask = DO_NOTHING
+         If ((nCount And &H01&) = &H01&) Then
+            bResult1 = oOpenOne.vbSetGroupAddr(NewGroupAddr1)
+            bResult2 = oOpenTwo.vbSetGroupAddr(NewGroupAddr2)
+         Else
+            bResult1 = oOpenTwo.vbSetGroupAddr(NewGroupAddr2)
+            bResult2 = oOpenOne.vbSetGroupAddr(NewGroupAddr1)
+         End If
+         oLog.Mask = nLogMask
+         
+         If (Not bResult1) Then
+            Call oLog.Failed ("Unable to set first group address" , 21441)
+         End If
+         
+         If (bResult2) Then
+            Call oLog.Failed ("Should not be able to set a second group address" , 21442)
+         End If
+         
+         oLog.Variation("Checking if one attempt succeeded")
+         addrLen = 4
+         bResult = oOpenOne.vbFastNdisRequest(OID_802_5_CURRENT_GROUP, CurGroupAddr1, addrLen)
+         If (Not bResult) Then
+            Call oLog.Failed ("Unable to query group address on 1st open" , 21443)
+         End If
+         
+         addrLen = 4
+         bResult = oOpenTwo.vbFastNdisRequest(OID_802_5_CURRENT_GROUP, CurGroupAddr2, addrLen)
+         If (Not bResult) Then
+            Call oLog.Failed ("Unable to query group address on 2nd open" , 21444)
+         End If
+         
+         '
+         ' check group address on first open instance we tried to set
+         ' it should have succeeded
+         '
+         If ((nCount And &H01&) = &H01&) Then
+            If (Not GroupAddrCmp(CurGroupAddr1, NewGroupAddr1)) Then
+               Call oLog.Failed ("Incorrect group address from 1st open" , 21445)
+            End If
+         Else
+            If (Not GroupAddrCmp(CurGroupAddr2, NewGroupAddr2)) Then
+               Call oLog.Failed ("Incorrect group address from 2nd open" , 21446)
+            End If
+         End If
+         
+         '
+         ' check group address on second open instance we tried to set
+         ' it should have failed.  The value returned should be either the same
+         ' as for the successfully set open instance, or the NULL address
+         '
+         If ((nCount And &H01&) = &H01&) Then
+            If ((Not GroupAddrCmp(CurGroupAddr2, NewGroupAddr1)) And _
+                     (Not GroupAddrCmp(CurGroupAddr2, NullGroupAddr)) ) Then
+               Call oLog.Failed ("Incorrect group address from 2nd open" , 21447)
+            End If
+         Else
+            If ((Not GroupAddrCmp(CurGroupAddr1, NewGroupAddr2)) And _
+                     (Not GroupAddrCmp(CurGroupAddr1, NullGroupAddr)) ) Then
+               Call oLog.Failed ("Incorrect group address from 1st open" , 21448)
+            End If
+         End If
+         
+         '
+         ' try to clear the group addresses value
+         '
+         oLog.Variation("Clearing the addresses")
+         nLogMask = oLog.Mask
+         oLog.Mask = DO_NOTHING
+         If ((nCount And &H02&) = &H02&) Then
+            bResult1 = oOpenOne.vbSetGroupAddr(NullGroupAddr)
+            bResult2 = oOpenTwo.vbSetGroupAddr(NullGroupAddr)
+            If ((nCount And &H01&) = &H01&) Then
+               If (Not bResult1) Then
+                  Call oLog.Failed ("Unable to clear group address for 1st open" , 21449)
+               End If
+            Else
+               If (bResult1) Then
+                  Call oLog.Failed ("Should not have been able to clear group address for 1st open" , 21450)
+               End If         
+            End If
+            
+            If (Not bResult2) Then
+               Call oLog.Failed ("Unable to clear group address for 2nd open" , 21451)
+            End If
+         Else
+            bResult2 = oOpenTwo.vbSetGroupAddr(NullGroupAddr)
+            bResult1 = oOpenOne.vbSetGroupAddr(NullGroupAddr)
+            If ((nCount And &H01&) = 0) Then
+               If (Not bResult2) Then
+                  Call oLog.Failed ("Unable to clear group address for 2nd open" , 21452)
+               End If
+            Else
+               If (bResult2) Then
+                  Call oLog.Failed ("Should not have been able to clear group address for 2nd open" , 21453)
+               End If         
+            End If
+            
+            If (Not bResult1) Then
+               Call oLog.Failed ("Unable to clear group address for 1st open" , 21454)
+            End If
+            
+         End If
+         oLog.Mask = nLogMask
+         
+         oLog.Variation("Checking if cleared correctly")
+         addrLen = 4
+         bResult = oOpenOne.vbFastNdisRequest(OID_802_5_CURRENT_GROUP, CurGroupAddr1, addrLen)
+         If (Not bResult) Then
+            Call oLog.Failed ("Unable to query group address on 1st open" , 21455)
+         End If
+         
+         addrLen = 4
+         bResult = oOpenTwo.vbFastNdisRequest(OID_802_5_CURRENT_GROUP, CurGroupAddr2, addrLen)
+         If (Not bResult) Then
+            Call oLog.Failed ("Unable to query group address on 2nd open" , 21456)
+         End If
+         
+         If (Not GroupAddrCmp(CurGroupAddr1, NullGroupAddr)) Then
+            Call oLog.Failed ("Incorrect group address from 1st open" , 21457)
+         End If
+         
+         If (Not GroupAddrCmp(CurGroupAddr2, NullGroupAddr)) Then
+            Call oLog.Failed ("Incorrect group address from 2nd open" , 21458)
+         End If
+         
+      Next
+      
+      '---------------------------------------------
+      ' variation:  set both to same group address,
+      '             then try to change...
+      '---------------------------------------------
+      oLog.Variation("Set same group address on both instance, then try to change one")
+      
+      For nCount = 0 To 31
+         
+         oLog.Variation("Setting same group address")
+         NewGroupAddr1 = GrpAddr(&H81&, &H02&, &H03&, nCount)
+         NewGroupAddr2 = GrpAddr(&H81&, &H02&, &H03&, (nCount + &H40&))
+         
+         Call oOpenOne.vbSetGroupAddr(NewGroupAddr1)
+         Call oOpenTwo.vbSetGroupAddr(NewGroupAddr1)
+         
+         addrLen = 4
+         bResult = oOpenOne.vbFastNdisRequest(OID_802_5_CURRENT_GROUP, CurGroupAddr1, addrLen)
+         If (Not bResult) Then
+            Call oLog.Failed ("Unable to query group address on 1st open" , 21461)
+         End If
+         
+         addrLen = 4
+         bResult = oOpenTwo.vbFastNdisRequest(OID_802_5_CURRENT_GROUP, CurGroupAddr2, addrLen)
+         If (Not bResult) Then
+            Call oLog.Failed ("Unable to query group address on 2nd open" , 21462)
+         End If
+         
+         If (Not GroupAddrCmp(CurGroupAddr1, NewGroupAddr1)) Then
+            Call oLog.Failed ("Incorrect group address from 1st open" , 21463)
+         End If
+         
+         If (Not GroupAddrCmp(CurGroupAddr2, NewGroupAddr1)) Then
+            Call oLog.Failed ("Incorrect group address from 2nd open" , 21464)
+         End If
+         
+         nLogMask = oLog.Mask
+         oLog.Mask = DO_NOTHING
+         
+         oLog.Variation("Attempting to change the group address")
+         bResult1 = oOpenOne.vbSetGroupAddr(NewGroupAddr2)
+         bResult2 = oOpenTwo.vbSetGroupAddr(NewGroupAddr2)
+         
+         If (bResult1 Or bResult2) Then
+            Call oLog.Failed ("May not change in-use group address" , 21465)
+         End If
+         
+         oLog.Variation("Clearing one of the group addresses")
+         If ((nCount And &H01&) = &H01&) Then
+            bResult = oOpenOne.vbSetGroupAddr(NullGroupAddr)
+         Else
+            bResult = oOpenTwo.vbSetGroupAddr(NullGroupAddr)
+         End If
+         
+         If (Not bResult) Then
+            Call oLog.Failed ("Unable to clear group address" , 21466)
+         End If
+         
+         oLog.Variation("Reattempting to change one address")
+         If ((nCount And &H02&) = &H02&) Then
+            bResult = oOpenOne.vbSetGroupAddr(NewGroupAddr2)
+         Else
+            bResult = oOpenTwo.vbSetGroupAddr(NewGroupAddr2)
+         End If
+         
+         If ( ((nCount And &H03&) = &H02&) Or ((nCount And &H03&) = &H01&) ) Then
+            If (Not bResult) Then
+               Call oLog.Failed ("Failed to set group address" , 21467)
+            End If
+         Else
+            If (bResult) Then
+               Call oLog.Failed ("May not change an in-use group address" , 21468)
+            End If
+         End If
+         
+         oLog.Mask = nLogMask
+         
+         oLog.Variation("Clearing the group addresses")
+         If ((nCount And &H01&) = &H01&) Then
+            Call oOpenTwo.vbSetGroupAddr(NullGroupAddr)
+            Call oOpenOne.vbSetGroupAddr(NullGroupAddr)
+         Else
+            Call oOpenOne.vbSetGroupAddr(NullGroupAddr)
+            Call oOpenTwo.vbSetGroupAddr(NullGroupAddr)
+         End If
+         
+         oLog.Variation("Checking if cleared correctly")
+         addrLen = 4
+         bResult = oOpenOne.vbFastNdisRequest(OID_802_5_CURRENT_GROUP, CurGroupAddr1, addrLen)
+         If (Not bResult) Then
+            Call oLog.Failed ("Unable to query group address on 1st open" , 21471)
+         End If
+         
+         addrLen = 4
+         bResult = oOpenTwo.vbFastNdisRequest(OID_802_5_CURRENT_GROUP, CurGroupAddr2, addrLen)
+         If (Not bResult) Then
+            Call oLog.Failed ("Unable to query group address on 2nd open" , 21472)
+         End If
+         
+         If (Not GroupAddrCmp(CurGroupAddr1, NullGroupAddr)) Then
+            Call oLog.Failed ("Incorrect group address from 1st open" , 21473)
+         End If
+         
+         If (Not GroupAddrCmp(CurGroupAddr2, NullGroupAddr)) Then
+            Call oLog.Failed ("Incorrect group address from 2nd open" , 21474)
+         End If
+         
+      Next      
+      
+   End Function
+   
+End Class
+</script>
+</job>
+</package>
+
+
+<!--- CRC = 0xdeea28f4 --->

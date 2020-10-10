@@ -1,0 +1,426 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3
+</MEDIA>
+<CARDMACH>
+1C,1M
+</CARDMACH>
+<RUNORDER>
+3010
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[
+This is a Ndis 6.0 based miniport drivers test. It tries to keep the send path continuously
+busy. It starts by creating as many threads as processors on the test machine and from
+each of these threads sends (preallocated) packets to the nic. The rate of sends from each
+thread is controlled by the send complete rate of the miniport. It also measures the performance
+that the driver is able to achieve on the send path. The test goes through various
+combinations of send parameters (number of net buffers, number of net buffers per net buffer
+list, net buffer lists size, etc), each running for 30 seconds.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="1c_Mini6PerfSend" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore6" progid="NDTCore6.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oLargeMath" progid="NDTSupp.LargeMath.1" events="true"/>
+      <object id="oCoreFactory" progid="NDTCore6.Factory.1" events="true"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/>
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\inc\Constants6.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard6.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen6.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanEndPoint6.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\inc\ConstLAN.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script id="1c_Mini6PerfSend" language="VBScript">
+'==========================================================================
+' Script Name:    1c_Mini6PerfSend
+'==========================================================================
+Option Explicit
+
+Dim oTestObj
+
+' We are going to be using ndis 6 protocol
+g_UseNdis6Protocol = TRUE
+
+' We would also be using the trick to point oNDTCore to oNDTCore6, so that anyone who
+' uses oNDTCore would automatically get oNDTCore6. Only problem is we might be masking
+' some errors, so this would not be done just yet
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0))
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard, ArrTestOpen(32), ArrTestEndPoint(32)
+   Private m_lTestAdapterIndex
+
+   Dim nNumOpens
+   Dim nTotalNumCallsToSend, nSendDuration, bSyncSend
+   Dim nInitialBurstSize
+   Dim bWriteToTextFile, bWriteAdvancedToTextFile
+   Dim nNBLPerSendStart, nNBLPerSendEnd, nNBLPerSendStep
+   Dim nNBPerNBLStart, nNBPerNBLEnd, nNBPerNBLStep
+   Dim nNBSizeStart, nNBSizeEnd, nNBSizeStep
+   Dim nMdlSizeStart, nMdlSizeEnd, nMdlSizeStep
+
+   Private Sub Class_Initialize
+
+   End Sub
+
+   Private Sub Class_Terminate
+      Dim nCount
+      Set oTestCard = Nothing
+
+      For nCount = 0 To 32 - 1
+         Set ArrTestOpen(nCount) = Nothing
+         Set ArrTestEndPoint(nCount) = Nothing
+      Next
+   End Sub
+
+   Public Sub SetTestConfiguration
+      '----------------------------------------
+      ' All configurable options
+      '----------------------------------------
+
+      ' We could set this up to be one less than the number of processors,
+      ' but since we are sending at IRQL_PASSIVE, we would be on the lower end
+      ' of the chain
+      nNumOpens = oNDTSupp.NumProcessors Mod 32
+      'End If
+
+      ' The number of times we want to call the NdisSend routines (if we want this
+      ' to be a number based test)
+      nTotalNumCallsToSend = 0
+      ' How long (if 0, then based on number) do we want to run the timed test?
+      nSendDuration = 30000
+      ' Want to start sending from the threads synchronously?
+      bSyncSend = TRUE
+
+      ' Before starting tests, flood the pipeline with these many NBL's (these are
+      ' the number of NBLs we try to maintain in the pipeline, and are included in
+      ' the total number of NBLs to send)
+      nInitialBurstSize = 50
+
+      ' Write to text file? This would be used to export the results into a text file
+      ' so that we can import those directly into excel. Note that we always overwrite
+      ' the file (which is present in the scripts directory and not the logs directory)
+      bWriteToTextFile = FALSE
+      ' Write just summary, or write detailed values?
+      bWriteAdvancedToTextFile = FALSE
+
+      ' The number of NBLs to send per send
+      nNBLPerSendStart = 1
+      nNBLPerSendEnd = 5
+      nNBLPerSendStep = 2
+
+      ' Each NBL should contain these many Net buffers
+      nNBPerNBLStart = 1
+      nNBPerNBLEnd = 16
+      nNBPerNBLStep = 5
+
+      ' What should be the size of each net buffer
+      nNBSizeStart = 100
+      nNBSizeEnd = 1500
+      nNBSizeStep = 700
+
+      ' What's the max size of each MDL (helps break a NB data into multiple MDLs)
+      nMdlSizeStart = 500
+      nMdlSizeEnd = 1500
+      nMdlSizeStep = 500
+      '----------------------------------------
+   End Sub
+
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      Dim nCount
+      SetupTest = TRUE
+
+      oNDTCore6.DebugLevel = NORMAL_LOGGING_LEVEL
+
+      SetTestConfiguration
+
+      Set pAdapterList = oNDInfo.AdapterList
+
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard6
+      If (oTestCard is Nothing) Then
+         SetupTest = FALSE
+         Exit Function
+      End If
+
+      If (Not oTestCard.vbCreateAdapter(pAdapterList (m_lTestAdapterIndex))) Then
+         SetupTest = FALSE
+         Exit Function
+      End If
+
+      ' We create as many send threads as the number of processors
+      For nCount = 1 To nNumOpens
+
+         ' Create the opens
+         Set ArrTestOpen(nCount) = oTestCard.vbOpenAdapter()
+         If (ArrTestOpen(nCount) is Nothing) Then
+            SetupTest = FALSE
+            Exit For
+         End If
+
+         ' Create the endpoints
+         Set ArrTestEndPoint(nCount) = ArrTestOpen(nCount).vbCreateEndPoint(CLENDPOINT)
+         If (ArrTestEndPoint(nCount) is Nothing) Then
+            SetupTest = FALSE
+            Exit For
+         End If
+
+         ' Prepare the endpoints for sending
+         If (ArrTestEndPoint(nCount).vbOpenCommunicationChannel(PERFORMANCE_COMM_MGR, _
+                  IP_PERF_CONSTRUCTOR, NDIS_MEDIUM_802_3_MEDIA_MODULE) <> 0) Then
+            SetupTest = FALSE
+            Exit For
+         End If
+      Next
+
+      Set pAdapterList = Nothing
+   End Function
+
+   Public Function RunTest (lTestAdapterIndex)
+      m_lTestAdapterIndex = lTestAdapterIndex
+
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+
+      ExecuteTestCore
+   End Function
+
+   Private Sub ExecuteTestCore
+      Dim oFileSys, oStatsStream
+      Dim oCommMgrConfig, oNBConfig, oMediaConfig
+      Dim oSendCommMgrStats
+      Dim Status, nCount
+      Dim nNumNetBufferListsPerSend, nNumNetBuffersPerNBL, nNetBufferSize, nMaxMdlSize
+      Dim strCpuUtilization
+      Dim MaxSendTime, CurrentSendTime, MaxCpuUtilization
+      Dim TotalNBLsSent, NWThroughput
+
+      ' Create the perf comm mgr config
+      Set oCommMgrConfig = oCoreFactory.CommMgrSendConfig(PERFORMANCE_COMM_MGR)
+      ' NumNetBufferListsPerSend would be filled later
+      oCommMgrConfig.NumSends = nTotalNumCallsToSend
+      '  The processor affinity mask depends on the open and would be filled in later
+      oCommMgrConfig.SendDuration = nSendDuration
+      oCommMgrConfig.InitialBurstSize = nInitialBurstSize
+      If (bSyncSend) Then
+         ' Using synchronous start mode for the tests
+         oCommMgrConfig.SynchronousStart = TRUE
+      End If
+
+      ' Create the IP perf netbuffer constructor config
+      Set oNBConfig = oCoreFactory.ConstructorSendConfig(IP_PERF_CONSTRUCTOR)
+
+      ' We use random IP addresses and ports, since we do not quite care
+      oNBConfig.NumNBLToPreallocate = nInitialBurstSize
+      oNBConfig.TransportProtocol = TCP
+      oNBConfig.TransportOptionsSize = 0
+      oNBConfig.SequenceNumber = 0
+      oNBConfig.TasksToOffload = 0
+      oNBConfig.DestinationPort = &H1234&
+      oNBConfig.DestinationAddress = IPAddr(111, 10, 10, 1)
+      oNBConfig.SourcePort = &H1234&
+      oNBConfig.SourceAddress = IPAddr(111, 10, 10, 2)
+
+      ' Using the NdisMedium802_3 media module
+      Set oMediaConfig = oCoreFactory.MediaModuleSendConfig(NDIS_MEDIUM_802_3_MEDIA_MODULE)
+
+      ' Set the destination MAC addresses to be some random number
+      oMediaConfig.DestinationAddress = RandomAddr
+      ' We are using IP packets
+      oMediaConfig.EtherType = ETHERTYPE_IPv4
+
+      ' Create the object in which we would obtain the send statistics
+      Set oSendCommMgrStats = oCoreFactory.CommMgrSendStatistics(PERFORMANCE_COMM_MGR)
+
+      If (bWriteToTextFile) Then
+         Set oFileSys = CreateObject("Scripting.FileSystemObject")
+         ' We are overwriting the previous file
+         Set oStatsStream = oFileSys.CreateTextFile ("1c_Mini6PerfSend.txt", True)
+      End If
+
+      ' Loop through the various send parameter configurations
+      For nNumNetBufferListsPerSend = nNBLPerSendStart To nNBLPerSendEnd Step nNBLPerSendStep
+         For nNumNetBuffersPerNBL = nNBPerNBLStart To nNBPerNBLEnd Step nNBPerNBLStep
+            For nNetBufferSize = nNBSizeStart To nNBSizeEnd Step nNBSizeStep
+               For nMaxMdlSize = nMdlSizeStart To nMdlSizeEnd Step nMdlSizeStep
+                  oCommMgrConfig.NumNetBufferListsPerSend = nNumNetBufferListsPerSend
+                  oNBConfig.NumNetBuffersPerNetBufferList = nNumNetBuffersPerNBL
+                  oNBConfig.NetBufferSize = nNetBufferSize
+                  oNBConfig.MaxMdlSize = nMaxMdlSize
+
+                  oLog.Variation ("Performance Sends: " & nNumNetBufferListsPerSend & " " & nNumNetBuffersPerNBL & " " & nNetBufferSize & " " & nMaxMdlSize)
+
+                  ' Start sending on each open
+                  For nCount = 1 To nNumOpens
+                     ' Obtain the affinity mask to be used
+                     oCommMgrConfig.ProcessorAffinityMask = 0  ' 0x01
+
+                     Status = ArrTestEndPoint(nCount).vbSendNetBufferLists(oCommMgrConfig, oNBConfig, oMediaConfig)
+
+                     If (Status <> 0) Then
+                        Call oLog.Failed ("Unable to start sending on open " & nCount, 88888)
+                     End If
+                  Next
+
+                  If (bSyncSend) Then
+                     ' Signal one and all would be signalled
+                     Status = ArrTestEndPoint(1).vbStartAllSends()
+                  End If
+
+                  ' Now, wait for the sending to complete on each open
+                  For nCount = 1 To nNumOpens
+                     Status = ArrTestEndPoint(nCount).vbWaitForSendsToComplete(0)
+                     If (Status <> 0) then
+                        Call oLog.Failed ("Unable to wait for send complete on open " & nCount, 88888)
+                     End If
+                  Next
+
+                  oLog.Variation ("Send results")
+                  ' Write the control parameters into the file
+                  If (bWriteToTextFile) Then
+                     oStatsStream.Write(nNumNetBufferListsPerSend & vbTab & "  ")
+                     oStatsStream.Write(nNumNetBuffersPerNBL & vbTab & "  ")
+                     oStatsStream.Write(nNetBufferSize & vbTab & "  ")
+                     oStatsStream.Write(nMaxMdlSize & vbTab & "  ")
+                  End If
+
+                  ' We would be collecting max send time and total packets sent
+                  ' Using strings since thats what large math functions expect
+                  MaxSendTime = 0
+                  TotalNBLsSent = 0
+                  MaxCpuUtilization = 0
+
+                  ' Obtain send statistics from each open
+                  For nCount = 1 To nNumOpens
+                     Status = ArrTestEndPoint(nCount).vbGetSendResults(oSendCommMgrStats, Nothing)
+                     If (Status <> 0) then
+                        Call oLog.Failed ("Unable to obtain send results from open " & nCount, 88888)
+                     End If
+
+                     oLog.Write ("Total Counts : " & oSendCommMgrStats.TotalCounts)
+                     oLog.Write ("Counter Precision: " & oSendCommMgrStats.CounterPrecision)
+
+                     If (oLargeMath.LargeCompare(oSendCommMgrStats.TotalNetBufferListsSendCompleted, oSendCommMgrStats.TotalNetBufferListSendsSuccessful) <> 0) Then
+                        Call oLog.Failed ("Sends failed on open " & nCount, 88888)
+                     End If
+
+                     ' We end up logging CPU utilization for each open, this might
+                     ' not be the right way to do this, since the utilization in each
+                     ' open would mismatch
+                     strCpuUtilization = oSendCommMgrStats.CpuUtilization
+                     oLog.Write ("Cpu Utilization: " & strCpuUtilization)
+
+                     CurrentSendTime = oLargeMath.DivideLargeIntegers(oSendCommMgrStats.TotalCounts, oSendCommMgrStats.CounterPrecision)
+
+                     If (bWriteAdvancedToTextFile) Then
+                        ' Desire to write stuff to log file
+                        oStatsStream.Write(oSendCommMgrStats.TotalNetBufferListsSent & vbTab & "  ")
+                        oStatsStream.Write(CurrentSendTime & vbTab & "  ")
+                        oStatsStream.Write(oSendCommMgrStats.TotalCounts & vbTab & "  ")
+                        oStatsStream.Write(oSendCommMgrStats.StartCount & vbTab & "  ")
+                        oStatsStream.Write(oSendCommMgrStats.CounterPrecision & vbTab & "  ")
+                        oStatsStream.Write(oSendCommMgrStats.TotalNetBufferListSendsSuccessful & vbTab & "  ")
+                        oStatsStream.Write(strCpuUtilization & vbTab & "  ")
+                     End If
+
+                     ' Now work on the all sent cumulative times, etc
+                     ' Total number of NBLs sent?
+                     TotalNBLsSent = oLargeMath.LargeAdd(TotalNBLsSent, oSendCommMgrStats.TotalNetBufferListsSent)
+
+                     ' We use the largest send time
+                     If (CurrentSendTime > MaxSendTime) Then
+                        MaxSendTime = CurrentSendTime
+                     End If
+
+                     ' The cpu utilization numbers should not differ much between
+                     ' various opens, we use the max
+                     If (strCpuUtilization > MaxCpuUtilization) Then
+                        MaxCpuUtilization = strCpuUtilization
+                     End If
+                  Next
+                  ' For network throughput, first get the number of NBs sent
+                  NWThroughput = oLargeMath.MultiplyLargeIntegers (TotalNBLsSent, nNumNetBuffersPerNBL)
+
+                  ' Now the number of bytes sent
+                  NWThroughput = oLargeMath.MultiplyLargeIntegers (NWThroughput, nNetBufferSize)
+
+                  ' Convert that to bits
+                  NWThroughput = oLargeMath.MultiplyLargeIntegers (NWThroughput, 8)
+
+                  ' Finally, compute the bps
+                  NWThroughput = oLargeMath.DivideIntegerFloat (NWThroughput, MaxSendTime)
+
+                  ' Write summary
+                  oLog.Write (vblf & "Variation Summary " & vblf)
+                  oLog.Write ("Total NBLs Sent : " & TotalNBLsSent)
+                  oLog.Write ("Time Taken (seconds) : " & MaxSendTime)
+                  oLog.Write ("NW Throughput (bps): " & NWThroughput)
+                  oLog.Write ("Overall CPU utilization: " & MaxCpuUtilization)
+
+                  If (bWriteToTextFile) Then
+                     oStatsStream.Write(TotalNBLsSent & vbTab & "  ")
+                     oStatsStream.Write(MaxSendTime & vbTab & "  ")
+                     oStatsStream.Write(NWThroughput & vbTab & "  ")
+                     oStatsStream.Write(MaxCpuUtilization & vbTab & "  ")
+                     oStatsStream.WriteLine(" ")
+                  End If
+
+                  ' Did we have the complete Net buffer in a single MDL. No point in varying
+                  ' the max size of the MDL anymore
+                  If (nMaxMdlSize > nNetBufferSize) Then
+                     Exit For
+                  End If
+               Next
+            Next
+         Next
+      Next
+
+      ' Close the logging file
+      If (bWriteToTextFile) Then
+         oStatsStream.Close()
+
+         Set oStatsStream = Nothing
+         Set oFileSys = Nothing
+      End If
+
+   End Sub
+
+End Class
+</script>
+</job>
+</package>
+
+<!--- CRC = 0xefc02984 --->

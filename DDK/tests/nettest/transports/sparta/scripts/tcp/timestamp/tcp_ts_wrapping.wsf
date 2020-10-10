@@ -1,0 +1,257 @@
+'************************************* TCP_TS_Wrapping.wsf ***********************
+'*                                                                                   *
+'* Author            :    Sandeep Prabhu                                             *
+'* Revision history  :                                                               *
+'*    09/20/2000     sandeep        Created                                          *
+'*                                                                                   *
+'* This script will test the invalid TCP Window Scale option scenarios               *
+'*                                                                                   *
+'************************************* TCP_TS_Wrapping.wsf ***********************
+
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\TCPLib.vbs"/>               
+      <script language="VBScript" src="TCPTSLib.vbs"/>   
+      <script id="TCP_TS_Wrapping" language="VBScript">
+
+
+option explicit
+    
+Dim Core, Sparta, Autosrv, MediaType, AutoArpObject, IFace, pControllerObj
+Const usMSS = 1460
+ 
+'
+' Start the script
+'           
+StartScript "TCP_TS_Wrapping", g_szLogDirectory, "Tests for invalid TCP Window Scale option scenarios" 
+
+
+
+' ==================================================================================================
+' Main routine
+' ==================================================================================================
+Sub Main
+   Dim ulStatus, ulWindowSize
+   Core.SetAssertionTracking "30900"
+   '/**
+   ' @area name="Offload Compliance Test Assertions"
+   ' @group name="TCP Miscellaneous Test Assertions"
+   ' @group name="TCP Timestamp Wrapping Assertions" 
+   ' @define name="Offload" Offload Compliance Test Assertions
+   ' @define name="TCPMisc" TCP Miscellaneous Test Assertions
+   ' @define name="TSW" TCP Timestamp Wrapping Assertions
+   ' @hierarchy Offload TCPMisc TSW
+   ' @key Reference="WLP# - x.x.x.x; RFC-1323 Section 4"
+   ' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+   ' @key TestName="TCP Timestamp Wrapping Test"
+   ' @key TestLog="TCP_TS_Wrapping.log"
+   '*/
+     
+
+   '/**
+   ' @test name="The stack must do Timestamp wrapping."
+   ' Verify when negotiate a connection with timestamp-ing enabled. Send following packet(Last TS value + 0x7fffffff). After sending packet,     ' receive the ACK and ensure the TS option is correct and that the data was received.
+   ' Verify when negotiate a connection with timestamp-ing enabled. Send following packet(Last TS 0x7fffffff). After sending packet, receive     ' the ACK and ensure the TS option is correct and that the data was received.
+   ' Verify when negotiate a connection with timestamp-ing enabled. Send following packet(0). After sending packet, receive the ACK and          ' ensure the TS option is correct and that the data was received.
+   ' Verify when negotiate a connection with timestamp-ing enabled. Send following packet(0x80000000). After sending packet, receive the ACK     ' and ensure the TS option is correct and that the data was received.	
+   '*/
+   '
+   ' Tests for TS wrapping
+   '  
+   IFace.StartListening
+   Core.StartTest "TS wrapping tests" 
+   TSWrapping
+   Core.EndTest
+   Core.Sleep(2500)
+   IFace.StopListening   
+   
+      
+End Sub
+
+
+'
+' Routine to verify TS wrapping
+'
+Sub TSWrapping
+   Dim ulCounter, ulLastAckNumber
+   Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim pTCPPacket, ulBytesRcvd, ulTSValue, ulTSEcho, pACKPacket, ulStartSeqNumber
+   
+   usSrcPort = 5000
+   usDestPort = 5000
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   ulTSValue = CLng(1000)
+   ulTSEcho = Clng(100)
+
+
+  
+   '
+   ' Establish a connection with the TS option enabled
+   '
+   Core.StartVariation
+   ulStatus = 10048
+   while (ulStatus = 10048) 
+      usDestPort=usDestPort+1
+      ulStatus = ActiveConnectWithTS(ulTSValue, ulTSEcho, usSrcPort, usDestPort, ulSessionId, ulSeqNumber, ulAckNumber)
+   Wend 
+   if (ulStatus <> 0) then
+      Core.FailSev1Variation "BasicFunctionality: ActiveConnectWithTS - " & ulStatus
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+      
+   '
+   ' Send a data packet with a TS value of last TS value + 0x7fffffff
+   '   
+   ulTSValue = &H800003E7
+   Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 100)
+   pTCPPacket.TCPHeader.TCPOption(0).AddTS ulTSValue, ulTSEcho
+   IFace.Send(pTCPPacket)
+       
+   '
+   ' Receive the ACK
+   '
+   ulStartSeqNumber = ulSeqNumber
+   set pACKPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 300)
+   if (pACKPacket is Nothing) then
+      Core.FailSev1Variation "BasicFunctionality: Didn't receive an ACK"
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if 
+      
+   '
+   ' Validate the TS option in the ACK
+   ' 
+   ulStatus = ValidateTSOption(pACKPacket, TRUE, ulTSEcho, ulTSValue)
+   If (ulStatus <> 0) then
+      Core.FailSev1Variation "BasicFunctionality: ValidateTSOption failed for the ACK"
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub   
+   elseif (ulStartSeqNumber <> (ulSeqNumber - 100)) then
+      Core.FailSev1Variation "BasicFunctionality: Incorrect ACK " & ulSeqNumber
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+   
+   '
+   ' Send a data packet with a TS value of 0xffffffff
+   '   
+   core.StartVariation
+   ulTSValue = &HFFFFFFFF 
+   Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 100)
+   pTCPPacket.TCPHeader.TCPOption(0).AddTS ulTSValue, ulTSEcho
+   IFace.Send(pTCPPacket)
+       
+   '
+   ' Receive the ACK
+   '
+   ulStartSeqNumber = ulSeqNumber
+   set pACKPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 300)
+   if (pACKPacket is Nothing) then
+      Core.FailSev1Variation "BasicFunctionality: Didn't receive an ACK"
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if 
+      
+   '
+   ' Validate the TS option in the ACK
+   ' 
+   ulStatus = ValidateTSOption(pACKPacket, TRUE, ulTSEcho, ulTSValue)
+   If (ulStatus <> 0) then
+      Core.FailSev1Variation "BasicFunctionality: ValidateTSOption failed for the ACK"
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub   
+   elseif (ulStartSeqNumber <> (ulSeqNumber - 100)) then
+      Core.FailSev1Variation "BasicFunctionality: Incorrect ACK " & ulSeqNumber
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+
+
+   '
+   ' Send a data packet with a TS value of 0
+   '   
+   core.StartVariation
+   ulTSValue = 0 
+   Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 100)
+   pTCPPacket.TCPHeader.TCPOption(0).AddTS ulTSValue, ulTSEcho
+   IFace.Send(pTCPPacket)
+       
+   '
+   ' Receive the ACK
+   '
+   ulStartSeqNumber = ulSeqNumber
+   set pACKPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 300)
+   if (pACKPacket is Nothing) then
+      Core.FailSev1Variation "BasicFunctionality: Didn't receive an ACK"
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if 
+      
+   '
+   ' Validate the TS option in the ACK
+   ' 
+   ulStatus = ValidateTSOption(pACKPacket, TRUE, ulTSEcho, ulTSValue)
+   If (ulStatus <> 0) then
+      Core.FailSev1Variation "BasicFunctionality: ValidateTSOption failed for the ACK"
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub   
+   elseif (ulStartSeqNumber <> (ulSeqNumber - 100)) then
+      Core.FailSev1Variation "BasicFunctionality: Incorrect ACK " & ulSeqNumber
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if
+
+
+   '
+   ' Send a data packet with a TS value of last TS value + 0x80000000
+   '   
+   Core.StartVariation
+   ulTSValue = ulTSValue + &H80000000 
+   Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, TCP_ACK, 100)
+   pTCPPacket.TCPHeader.TCPOption(0).AddTS ulTSValue, ulTSEcho
+   IFace.Send(pTCPPacket)
+       
+   '
+   ' Receive the ACK
+   '
+   ulStartSeqNumber = ulSeqNumber
+   set pACKPacket = RecvTCPPacket(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 300)
+   if (pACKPacket is Nothing) then
+      Core.FailSev1Variation "BasicFunctionality: Didn't receive an ACK"
+      ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      exit sub
+   end if 
+      
+   '
+   ' Validate the TS option in the ACK
+   ' 
+   ulStatus = ValidateTSOption(pACKPacket, TRUE, ulTSEcho, ulTSValue)
+   If (ulStatus <> 0) then
+      '
+      ' This behavior is still not clear
+      '
+      Core.WarnVariation "BasicFunctionality: ValidateTSOption failed for the ACK"
+      'ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      'exit sub
+   elseif (ulStartSeqNumber <> (ulSeqNumber - 100)) then
+      Core.FailSev1Variation "BasicFunctionality: Incorrect ACK " & ulSeqNumber
+      'ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+      'exit sub
+   end if
+
+   ResetConnection usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, ulSessionId
+    
+End Sub 
+                                        
+
+
+      </script>
+   </job>
+</package>

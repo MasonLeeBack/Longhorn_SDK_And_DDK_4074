@@ -1,0 +1,76 @@
+<package>
+<SCRIPTDEF>
+<DESCRIPTION>
+<![CDATA[This is the support script that would be used along with 
+2c_HoldPackets. Its only job is to unload the test adapter. The loading
+of the adapter would be done by the main script
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="HoldPackets_Supp" prompt="no">
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oPNPPower" progid="NDTSupp.Setup.1" events="true"/>
+      <script language="VBScript" src="..\inc\clog.vbs"/>   
+      <script language="VBScript" src="..\inc\Events.vbs"/>      
+      <script id="HoldPackets_Supp" language="VBScript">        
+'==========================================================================
+' Script Name: HoldPackets_Supp
+'==========================================================================
+Option Explicit
+
+Dim lTestAdapterIndex
+Dim oArgs
+
+' The initialization required to get the log all set up
+Set oLog = new CLog
+'
+' Storing global log pointer for backward
+' compatability with older scripts
+Set oNDTLog = oLog.LogPtr
+
+oLog.Mask = LOG_FAILURE Or LOG_WARNING
+oSuppCore.LogPtr = oLog.LogPtr 
+
+' Get the test adapter index
+lTestAdapterIndex = 1
+Set oArgs = Wscript.Arguments
+If (oArgs.Count <> 1) Then
+   MsgBox "Support script called incorrectly", vbCritical, "HoldPackets Support Script"
+Else
+   lTestAdapterIndex = CLng(oArgs(0))
+   Call HaltDriver (lTestAdapterIndex)
+End If
+Set oArgs = Nothing
+
+' Do not set the loggingcomplete property
+Set oLog = Nothing
+
+Function HaltDriver (lTestAdapterIndex)
+   
+   Dim nResult
+   Dim TestCardGUID
+   
+   HaltDriver = TRUE
+   
+   TestCardGUID = oNDInfo.AdapterList(lTestAdapterIndex).GUID
+   
+   oLog.Variation("Support script halting driver")
+   nResult = oPNPPower.StopDriver(TestCardGUID)
+   If (nResult <> 0) Then
+      Call oLog.Failed ("Support: Unable to halt driver." , 88888)
+      HaltDriver = FALSE
+   Else
+      oLog.Write ("Support: Successful in halting driver")
+   End If
+   
+End Function
+
+
+</script>
+</job>
+</package>
+
+
+
+<!--- CRC = 0x682c2167 --->

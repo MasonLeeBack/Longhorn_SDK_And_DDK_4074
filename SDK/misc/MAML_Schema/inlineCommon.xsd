@@ -1,0 +1,259 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<schema xmlns="http://www.w3.org/2001/XMLSchema" 
+		xmlns:maml="http://schemas.microsoft.com/maml/2003/5" 
+		xmlns:doc="http://schemas.microsoft.com/maml/internal"
+		targetNamespace="http://schemas.microsoft.com/maml/2003/5" 
+		elementFormDefault="qualified"
+        attributeFormDefault="unqualified"
+        >
+
+	<!-- Schema documentation -->
+	<annotation>
+		<documentation>
+			This schema defines common inline elements.
+		</documentation>
+	</annotation>
+		
+	<!-- include and import declarations -->
+	<include schemaLocation="base.xsd"/>
+
+	<!-- element declarations -->
+	
+	<!-- language markup -->
+	<element name="acronym" type="maml:textType">
+		<annotation>
+			<documentation>
+				The acronym element describes an acronym.
+			</documentation>
+		</annotation>
+	</element>
+	
+	<element name="abbreviation" type="maml:textType">
+		<annotation>
+			<documentation>
+				The abbreviation element describes an abbreviation.
+			</documentation>
+		</annotation>
+	</element>
+
+	<element name="quoteInline" type="maml:textType">
+		<annotation>
+			<documentation>
+				The quoteInline element describes an inline quotation.
+			</documentation>
+		</annotation>
+	</element>
+	
+	<element name="date" type="date">
+		<annotation>
+			<documentation>
+				The date element describes a date.
+			</documentation>
+		</annotation>
+	</element>
+
+	<element name="foreignPhrase" type="maml:textType">
+		<annotation>
+			<documentation>
+				The foreignPhrase element describes a phrase that is of a language
+				that is different than the primary language of the document.
+			</documentation>
+		</annotation>
+	</element>
+
+	<element name="phrase" type="maml:inlineType">
+		<annotation>
+			<documentation>
+				The phrase element is a wrapper element for a run of text. 
+				It is soley a container and does not specify any semantics
+				on its own.
+			</documentation>
+		</annotation>
+	</element>
+	
+	<element name="conditionalInline" type="maml:inlineType">
+		<annotation>
+			<documentation>
+				The conditionalInline element is a wrapper element for a run of text. 
+				This element will be used for inline conditions. In particular, 
+				it will be used to specify that a run of text is conditional, 
+				using the smart links state monitor.
+			</documentation>
+		</annotation>
+	</element>
+
+	<complexType name="subscriptType" mixed="false">
+		<simpleContent>
+			<extension base="token"/>
+	    </simpleContent>
+	</complexType>
+	
+	<complexType name="superscriptType" mixed="false">
+		<simpleContent>
+			<extension base="token"/>
+	    </simpleContent>
+	</complexType>
+	
+	<element name="subscript" type="maml:subscriptType">
+	    <annotation>
+	        <documentation>
+	        This element marks a subscript in a mathematical expression.
+	        </documentation>
+	        <appinfo><doc:localizable>true</doc:localizable></appinfo>
+	    </annotation>
+	</element>
+	
+	<element name="superscript" type="maml:superscriptType">
+	    <annotation>
+	        <documentation>
+	        This element marks a superscript in a mathematical expression.
+	        </documentation>
+	        <appinfo><doc:localizable>true</doc:localizable></appinfo>
+	    </annotation>
+	</element>
+
+	<element name="notLocalizable" type="maml:inlineType">
+		<annotation>
+			<documentation>
+				The notLocalizable element is a wrapper element for a run of text. 
+				It specifies that that run of text should not be localized. 
+				This would be the case with a proper name, for example.
+			</documentation>
+		</annotation>
+	</element>
+
+	<!-- legal and political markup -->	
+	<element name="copyrightInline">
+		<annotation>
+			<documentation>
+				The copyright element describes the copyright information about a document.
+			</documentation>
+		</annotation>
+		<complexType>
+			<sequence>
+				<element name="trademark" type="token">
+					<annotation>
+						<documentation>
+							The trademark element describes some manner of 
+							corporate trademark.
+						</documentation>
+					</annotation>
+				</element> 
+				<element name="year" minOccurs="0" maxOccurs="unbounded" type="integer">
+					<annotation>
+						<documentation>
+							The year element describes the year associated with a 
+							particular copyright.
+						</documentation>
+					</annotation>
+				</element>
+				<element name="holder" minOccurs="0" maxOccurs="unbounded" type="token">
+					<annotation>
+						<documentation>
+							The holder element describes the company who holds a
+							particular copyright.
+						</documentation>
+					</annotation>
+				</element>
+			</sequence>
+			<attribute name="class">
+				<annotation>
+					<documentation>
+						The class attribute describes the type of trademark used.
+					</documentation>
+				</annotation>
+				<simpleType>
+					<restriction base="token">
+						<enumeration value="copyright"/>
+						<enumeration value="trade"/>
+						<enumeration value="registered"/>
+						<enumeration value="service"/>
+					</restriction>
+				</simpleType>
+			</attribute>
+			<attributeGroup ref="maml:contentIdentificationSharingAndConditionGroup"/>
+		</complexType>
+	</element>
+	
+	<element name="corporation" type="maml:textType">
+		<annotation>
+			<documentation>
+				The corporation element describes a corporation.
+			</documentation>
+		</annotation>
+	</element>
+	
+	<element name="country" type="maml:textType">
+		<annotation>
+			<documentation>
+				The country element describes a country.
+			</documentation>
+		</annotation>
+	</element>
+	
+	<!-- other markup -->		
+	<element name="alertInline">
+		<annotation>
+			<documentation>
+				The alertInline element describes an inline alert structure
+				that largely mimicks the block alert structure.
+			</documentation>
+		</annotation>
+		<complexType mixed="true">
+			<complexContent>
+				<extension base="maml:inlineType">
+					<attribute name="class" use="required" type="maml:alertTypesType">
+						<annotation>
+							<documentation>
+								The class attribute describes the type of an alert.
+							</documentation>
+						</annotation>
+					</attribute>
+				</extension>
+			</complexContent>
+		</complexType>
+	</element>
+	
+	<!-- other markup -->
+	<element name="footnote" type="normalizedString">
+		<annotation>
+			<documentation>The footnote element describes footnote text, allows for template-based variations in formatting.</documentation>
+		</annotation>
+	</element>
+	<element name="lineBreak" type="maml:emptyType">
+		<annotation>
+			<documentation>Used for a linefeed-carriage return without breaking the paragraph, such as the BR tag in XHTML.</documentation>
+		</annotation>
+	</element>
+
+	<!-- group declarations -->
+	<group name="inlineCommonGroup">
+		<annotation>
+			<documentation>
+				This type describes the set of inline elements that are likely to be
+				needed for block elements' content models.
+			</documentation>
+		</annotation>
+		<choice>
+			<element ref="maml:acronym"/>
+			<element ref="maml:abbreviation"/>
+			<element ref="maml:quoteInline"/>
+			<element ref="maml:date"/>
+			<element ref="maml:foreignPhrase"/>
+			<element ref="maml:phrase"/>
+			<element ref="maml:conditionalInline"/>
+			<element ref="maml:copyrightInline"/>
+			<element ref="maml:corporation"/>
+			<element ref="maml:country"/>
+			<element ref="maml:alertInline"/>
+			<element ref="maml:lineBreak"/>
+			<element ref="maml:footnote"/>
+			<element ref="maml:notLocalizable"/>
+			<element ref="maml:subscript"/>
+			<element ref="maml:superscript"/>
+			<element ref="maml:embedLink"/>
+			<element ref="maml:navigationLink"/>
+		</choice>
+	</group>
+	
+</schema>

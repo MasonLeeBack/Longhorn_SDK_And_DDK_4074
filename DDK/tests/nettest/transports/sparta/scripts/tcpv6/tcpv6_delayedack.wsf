@@ -1,0 +1,420 @@
+'
+' File          : TCPv6_DelayedAck.wsf
+' Author        : Sandeep Prabhu [5/8/01]
+'
+' A script to test delayed ACK behavior
+'
+
+
+<package>
+   <job id="Job 1">
+      <reference id="Sparta" object="Spartacom.base.1" version="1.0"/>
+      <reference id="Core" object="Testcore.base.1" version="1.0"/>
+      <reference id="AutoSrv" object="AutoSrvCom.base.1" version="1.0"/>
+      <script language="VBScript" src="..\common\InitAddress.vbs"/>
+      <script language="VBScript" src="..\common\IPv6Common.Lib"/>
+      <script language="VBScript" src="..\common\TCPv6Helper.Lib"/>
+      <script id="TCPv6_DelayedAck" language="VBScript">
+
+
+option explicit
+    
+Dim Core, Sparta, Autosrv, MediaType, AutoArpObject, IFace, pControllerObj, ExceptionStatus
+
+ 
+'
+' Start the script
+'           
+StartScript "TCPv6_DelayedAck", g_szLogDirectory, "Tests for TCP delayed ACK behavior" 
+
+
+
+' ==================================================================================================
+' Main routine
+' ==================================================================================================
+Sub Main
+
+   Core.SetAssertionTracking "40400"
+   '/**
+   ' @area name="Offload Compliance Test Assertions"
+   ' @group name="TCP Delayed ACK Test Assertions"
+   ' @group name="Delayed ACK Test Assertions for TCP/IP v6" 
+   ' @define name="Offload" Offload Compliance Test Assertions
+   ' @define name="TCPv6" TCP Delayed ACK Test Assertions
+   ' @define name="DACK" Delayed ACK Test Assertions for TCP/IP v6
+   ' @hierarchy Offload TCPv6 DACK
+   ' @key Reference="WLP# - x.x.x.x; RFC-813, RFC-1122 Section 4.2.3.2"
+   ' @key TestDesc="TD-x.xx Offload Compliance Test Description"
+   ' @key TestName="TCPV6 Delayed ACK Tests"
+   ' @key TestLog="TCPv6_DelayedAck.log"
+   '*/
+
+
+   '/**
+   ' @test name="Delayed Ack ferquency ignored if ack timeout has expired"
+   ' Verify Delayed ACK frequency should be ignored if the ACK timer expires. 
+   ' Send a single packet and ensure that the stack will send an ACK after the ack timeout period.
+   '*/
+   Core.StartTest "Delayed Ack ferquency ignored if ack timeout has expired"
+   AckTimeoutOverridesDelayedAck
+   Core.EndTest
+   Core.Sleep 2500
+
+
+   '/**
+   ' @test name="Delayed Ack ferquency ignored while sending window update"
+   ' Verify Delayed ACK frequency is ignored for a window update message. 
+   ' Send some packets and after a while post a receive. Check that the window update ACK is sent immediately.
+   '*/
+   Core.StartTest "Delayed Ack ferquency ignored while sending window update"
+   WindowUpdateOverridesDelayedAck
+   Core.EndTest
+   Core.Sleep 2500
+   
+
+   '/**
+   ' @test name="Delayed Ack ferquency ignored if rexmit required"
+   ' Verify Delayed ACK frequency should be ignored if retransmit required. 
+   ' Send a packet and then another out of sequence packet. Check that an ACK is immediately sent.
+   '*/
+   Core.StartTest "Delayed Ack ferquency ignored if rexmit required"
+   RexmitOverridesDelayedAck
+   Core.EndTest
+   Core.Sleep 2500   
+
+
+   '/**
+   ' @test name="Basic delayed ACK functionality test"
+   ' Verify Functionality test : Check that the stack sends out ACKs based on the TcpAckFrequency setting.
+   '*/
+   Core.StartTest "Default settings for delayed ack frequesncy - " & DEFAULT_TcpAckFrequency
+   DelayedAckFunctionalityTest DEFAULT_TcpAckFrequency
+   Core.EndTest
+   Core.Sleep 2500
+   
+End Sub
+
+
+
+'
+' A routine to test the basic delayed ACK functionality
+'
+Sub DelayedAckFunctionalityTest(ulDelayedAckFrequency)
+   Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim ulBytesRcvd, pPacket, AutoNDObject, pIFace, ulNumCycles, ulDataLength
+   Dim ulStartSeqNumber, ulExpected, ulLastAck, ulCounter
+
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 15000
+   usDestPort = 15001
+   ulNumCycles = 30
+   ulDataLength = 100
+
+   Core.StartVariation
+
+   Set AutoNDObject = Sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, g_szLocalSpoofIp6Address, FALSE)    
+   Set pIFace = CreateInterface(TRUE, g_szRemoteMacAddress, g_szRemoteIp6Address, g_szLocalSpoofIp6Address)
+   pIFace.StartListening
+   
+   '
+   ' Esatablish a TCP connection
+   '
+   ulStatus = ActiveConnect(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "DelayedAckFunctionalityTest: ActiveConnect - " & ulStatus
+      exit sub
+   end if
+   
+   '
+   ' do loop used to get around using goto
+   '        
+   do
+      '
+      ' Ask Autosrv to post a receive
+      '
+      ulStatus = pControllerObj.Receive(ulSessionId, 100, 0, 65535, ulTID)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "DelayedAckFunctionalityTest: Receive - " & ulStatus
+         exit do
+      end if
+   
+      '
+      ' Start sending the data packets
+      ' 
+      Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, (TCP_ACK or TCP_PUSH), 0)
+      pPacket.UserData ulDataLength, "This is a test"
+      ulStartSeqNumber = ulSeqNumber
+      For ulCounter = 1 to (ulNumCycles*ulDelayedAckFrequency)
+         pPacket.TCPHeader.SeqNumber = ulSeqNumber
+         ulSeqNumber = ulSeqNumber + ulDataLength
+         pIFace.Send(pPacket)    
+      Next
+      
+      '
+      ' Receive all the ACKs and ensure they obey the delayed ACK frequency
+      '
+      ulLastAck =  ulStartSeqNumber + ulDelayedAckFrequency * ulDataLength * ulNumCycles
+      ulExpected = ulStartSeqNumber + ulDelayedAckFrequency * ulDataLength
+      do
+         Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 200, pIFace) 
+         if (pPacket is Nothing) then
+            Core.FailSev1Variation "DelayedAckFunctionalityTest: Didn't receive expected # ACKs " & ulCounter & " <> " & ulNumCycles
+            exit do
+         end if
+       
+         if (ulSeqNumber < ulExpected) then      
+            Core.FailSev1Variation "DelayedAckFunctionalityTest: ACK " & ulCounter & " incorrect - " & Hex(ulSeqNumber) & " < " & Hex(ulExpected)
+            exit do
+         end if
+      
+         ulExpected = ulSeqNumber + ulDelayedAckFrequency * ulDataLength
+         if (ulExpected > ulLastAck) then
+            ulExpected = ulLastAck
+         end if
+      loop while (ulSeqNumber <> ulLastAck)
+   loop while (FALSE)
+         
+   '
+   ' Reset the connection
+   '
+   ulStatus = ResetConnectionEx(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.log "ERROR: DelayedAckFunctionalityTest: ResetConnectionEx - " & ulStatus
+   end if
+End Sub
+
+
+'
+' Routine to test that if a window update is required, delayed ACK frequency is ignored
+' 
+Sub WindowUpdateOverridesDelayedAck
+   Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim ulBytesRcvd, pPacket, AutoNDObject, pIFace, ulNumCycles, ulDataLength
+   Dim ulStartSeqNumber, ulExpected, ulCounter, pTCPPacket
+
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 15000
+   usDestPort = 15001
+   ulDataLength = 1000
+
+   Core.StartVariation
+
+   Set AutoNDObject = Sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, g_szLocalSpoofIp6Address, FALSE)    
+   Set pIFace = CreateInterface(TRUE, g_szRemoteMacAddress, g_szRemoteIp6Address, g_szLocalSpoofIp6Address)
+   pIFace.StartListening
+   
+   '
+   ' Esatablish a TCP connection
+   '
+   ulStatus = ActiveConnect(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "WindowUpdateOverridesDelayedAck: ActiveConnect - " & ulStatus
+      exit sub
+   end if
+   
+   
+   '
+   ' do loop used to get around using goto
+   '        
+   do   
+      '
+      ' Disable recv window buffering
+      '
+      ulStatus = pControllerObj.SetSocketOption(ulSessionId, SOL_SOCKET, SO_RCVBUF, 0)   
+      if (ulStatus <> 0) then
+         Core.BlockVariation "WindowUpdateOverridesDelayedAck: SetSocketOption - " & ulStatus
+         exit do
+      end if
+      
+      '
+      ' Send a regular packet
+      ' 
+      Set pTCPPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, (TCP_ACK or TCP_PUSH), 0)
+      pTCPPacket.UserData ulDataLength, "This is a test"
+      For ulCounter = 1 to (5*DEFAULT_TcpAckFrequency)
+         pTCPPacket.TCPHeader.SeqNumber = ulSeqNumber
+         pIFace.Send(pTCPPacket)
+         ulSeqNumber = ulSeqNumber + ulDataLength
+         
+         if ((ulCounter Mod DEFAULT_TcpAckFrequency) = 0) then
+            '
+            ' Receive the ACK
+            '         
+            Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 200, pIFace) 
+            if (pPacket is Nothing) then
+               Core.FailSev1Variation "WindowUpdateOverridesDelayedAck: Didn't receive an ACK"
+               exit do
+            end if  
+         end if
+      Next
+         
+      '
+      ' Ask Autosrv to post a receive
+      '
+      ulStatus = pControllerObj.Receive(ulSessionId, 1, 0, 65535, ulTID)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "WindowUpdateOverridesDelayedAck: Receive - " & ulStatus
+         exit do
+      end if
+         
+      '
+      ' Check that an ACK is received immediately
+      '
+      Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 1000, pIFace) 
+      if (pPacket is Nothing) then
+         Core.FailSev1Variation "WindowUpdateOverridesDelayedAck: Didn't receive window update"
+         exit do
+      end if  
+   loop while (FALSE)
+   
+   '
+   ' Reset the connection
+   '
+   ulStatus = ResetConnectionEx(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.log "ERROR: WindowUpdateOverridesDelayedAck: ResetConnectionEx - " & ulStatus
+   end if
+End Sub
+
+'
+' Routine to test that if a rexmit is required, delayed ACK frequency is ignored
+' 
+Sub RexmitOverridesDelayedAck
+   Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim ulBytesRcvd, pPacket, AutoNDObject, pIFace, ulDataLength
+
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 15000
+   usDestPort = 15001
+   ulDataLength = 1000
+
+   Core.StartVariation
+
+   Set AutoNDObject = Sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, g_szLocalSpoofIp6Address, FALSE)    
+   Set pIFace = CreateInterface(TRUE, g_szRemoteMacAddress, g_szRemoteIp6Address, g_szLocalSpoofIp6Address)
+   pIFace.StartListening
+   
+   '
+   ' Esatablish a TCP connection
+   '
+   ulStatus = ActiveConnect(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "RexmitOverridesDelayedAck: ActiveConnect - " & ulStatus
+      exit sub
+   end if
+   
+   '
+   ' do loop used to get around using goto
+   '
+   do
+      '
+      ' Ask Autosrv to post a receive
+      '
+      ulStatus = pControllerObj.Receive(ulSessionId, 100, 0, 65535, ulTID)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "RexmitOverridesDelayedAck: Receive - " & ulStatus
+         exit do
+      end if
+      
+      '
+      ' Send an out of sequence packet
+      '   
+      Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, (TCP_ACK or TCP_PUSH), 0)
+      pPacket.UserData ulDataLength, "This is a test"
+      pPacket.TCPHeader.SeqNumber = ulSeqNumber + 10
+      pIFace.Send(pPacket)
+      
+      '
+      ' Check that an ACK is received immediately
+      '
+      Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, 100, pIFace) 
+      if (pPacket is Nothing) then
+         Core.FailSev1Variation "RexmitOverridesDelayedAck: Didn't receive an ACK"
+         exit do
+      end if 
+   loop while (FALSE)  
+
+   '
+   ' Reset the connection
+   '
+   ulStatus = ResetConnectionEx(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.log "ERROR: RexmitOverridesDelayedAck: ResetConnectionEx - " & ulStatus
+   end if
+End Sub
+
+'
+' Routine to test that if teh ACK timer expires, delayed ACK frequency is ignored
+' 
+Sub AckTimeoutOverridesDelayedAck
+   Dim ulStatus, ulSeqNumber, ulAckNumber, ulSessionId, ulTID, usSrcPort, usDestPort
+   Dim ulBytesRcvd, pPacket, AutoNDObject, pIFace, ulDataLength
+
+   ulSeqNumber = Clng(1000)
+   ulAckNumber = Clng(1)
+   usSrcPort = 15000
+   usDestPort = 15001
+   ulDataLength = 1000
+
+   Core.StartVariation
+
+   Set AutoNDObject = Sparta.AutoNeighbor(g_szLocalMacAddress, g_szLocalMacAddress, g_szLocalSpoofIp6Address, FALSE)    
+   Set pIFace = CreateInterface(TRUE, g_szRemoteMacAddress, g_szRemoteIp6Address, g_szLocalSpoofIp6Address)
+   pIFace.StartListening
+   
+   '
+   ' Esatablish a TCP connection
+   '
+   ulStatus = ActiveConnect(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId, pIFace)
+   if (ulStatus <> 0) then
+      Core.BlockVariation "AckTimeoutOverridesDelayedAck: ActiveConnect - " & ulStatus
+      exit sub
+   end if
+   
+   '
+   ' do loop used to get around using goto
+   '
+   do
+      '
+      ' Ask Autosrv to post a receive
+      '
+      ulStatus = pControllerObj.Receive(ulSessionId, 100, 0, 65535, ulTID)
+      if (ulStatus <> 0) then
+         Core.BlockVariation "AckTimeoutOverridesDelayedAck: Receive - " & ulStatus
+         exit do
+      end if
+
+      '
+      ' Send a regular packet
+      ' 
+      Set pPacket = MakeTCPPacket(usSrcPort, usDestPort, ulSeqNumber, ulAckNumber, (TCP_ACK or TCP_PUSH), 0)
+      pPacket.UserData ulDataLength, "This is a test"
+      pIFace.Send(pPacket)
+      
+      '
+      ' Check that an ACK is received after DEFAULT_TcpDelAckTicks msecs
+      '
+      Set pPacket = RecvTCPPacketEx(ulSeqNumber, ulAckNumber, ulBytesRcvd, TCP_ACK, DEFAULT_TcpDelAckTicks*100+100, pIFace) 
+      if (pPacket is Nothing) then
+         Core.FailSev1Variation "AckTimeoutOverridesDelayedAck: Didn't receive an ACK"
+         exit sub
+      end if   
+   loop while (FALSE)  
+
+   '
+   ' Reset the connection
+   '
+   ulStatus = ResetConnectionEx(usSrcPort, usDestPort, g_szLocalSpoofIp6Address, ulSeqNumber, ulAckNumber, ulSessionId)
+   if (ulStatus <> 0) then
+      Core.log "ERROR: AckTimeoutOverridesDelayedAck: ResetConnectionEx - " & ulStatus
+   end if
+End Sub
+
+
+
+      </script>
+   </job>
+</package>

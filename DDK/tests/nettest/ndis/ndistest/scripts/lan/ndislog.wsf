@@ -1,0 +1,96 @@
+<package>
+	<job id="ndislog" prompt="no">
+	<runtime>
+	        <description>Script to Log from command line</description>
+	        <named
+			name="msg"
+		 	helpstring= "message to log"
+			type = "string"
+			required="true"
+		/>
+		<named
+		        name="type"
+		        helpstring= "type of log"
+		        type = "string"
+		        required="true"
+		/>
+		<example>Example: ndislog.wsf /msg:"Hello World" /type:Variation</example>
+	</runtime>
+																			  
+		<reference object="NDInfo.Info.1" version="1.0"/>
+		<reference object="NDTCore.base.1" version="1.0"/>
+		<object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+		<object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+        	<object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+		<script language="VBScript" src="..\inc\clog.vbs"/>
+		<script language="VBScript" src="..\inc\ccard.vbs"/>
+		<script language="VBScript" src="..\inc\copen.vbs"/>
+		<script language="VBScript" src="..\inc\general.vbs"/>
+		<script id="ndislog" language="VBScript">
+'==========================================================================
+' Script Name:    ndislog
+'
+' Description:    The script logs to NDIS Tester from the command line.
+'       
+' Revision History:
+' 
+'==========================================================================
+'--------------------------------------------------------------------------
+'--------------------------------------------------------------------------
+Option Explicit 
+
+Call Main ()
+
+Function Main
+Dim klog
+Dim msg
+Dim mtype
+Set klog = new CLog
+msg = WScript.Arguments.Named("msg")
+mtype = WScript.Arguments.Named("type")
+
+
+if(mtype = "Fail") then 
+	klog.Failed msg,88888
+end if 
+
+if(mtype = "Pass") then 
+	klog.Write(msg)
+end if 
+
+if(mtype = "Write") then 
+	klog.Write(msg)
+end if 
+
+if(mtype = "Variation") then 
+	klog.Variation(msg)
+end if 
+
+if(mtype = "Warn") then
+	klog.Warned(msg)
+end if
+
+
+if(mtype = "Session") then
+	if (msg = "False") then
+		oNDTSession("IPSecOffloadConfig") = False
+	end if
+	if (msg = "True") then
+		oNDTSession("IPSecOffloadConfig") = True
+	end if
+
+end if
+
+
+
+
+'==========================================================================
+'++++++++++++++++++++++++++++  END TEST  ++++++++++++++++++++++++++++++++++
+'==========================================================================
+End Function	'Main ()
+
+		</script>
+	</job>
+</package>
+
+<!--- CRC = 0x65ed3ad9 --->

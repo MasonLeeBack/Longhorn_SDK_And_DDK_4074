@@ -1,0 +1,252 @@
+<package>
+<SCRIPTDEF>
+<MEDIA>
+802_3, 802_5, FDDI
+</MEDIA>
+<CARDMACH>
+1C,1M
+</CARDMACH>
+<RUNORDER>
+1150
+</RUNORDER>
+<DESCRIPTION>
+<![CDATA[This script runs the performance command with a flag set that
+causes the ndistest.sys driver to cancel packets (NdisCancelSendPackets)
+when enough have been queued up.
+When the performance command has 100 packets queued up to send it will
+set the cancel id in the packet next send packet and quickly try to cancel it.
+This test runs open loop, which means that it cannot tell for sure if
+the packet should be canceled or not.
+This test does not fail in the log. All error messages are sent to the
+debugger.
+]]>
+</DESCRIPTION>
+</SCRIPTDEF>
+   <job id="1c_CancelSend" prompt="no">
+      <reference object="NDInfo.Info.1" version="1.0"/>
+      <reference id="NDTSupp" object="NDTSupp.SuppCore.1" version="1.0"/>
+      <object id="oNDTSupp" progid="NDTSupp.Support.1" events="true"/>
+      <object id="oNDInfo" progid="NDInfo.Info.1" events="true"/>
+      <object id="oSuppCore" progid="NDTSupp.SuppCore.1" events="true"/>
+      <object id="oNDTCore" progid="NDTCore.base.1" events="true"/>
+      <object id="oNDTSession" progid="NDTSession.Session.1" events="true"/>
+      <object id="oStructRep" progid="StructRep.Repository.1" events="true"/>
+      
+      <!-- Begin Wireless Specific Includes -->
+      <script language="VBScript" src="..\newinc\constwlan.vbs"/>
+	   <script language="VBScript" src="..\newinc\wlanlib.vbs"/>
+	   <script language="VBScript" src="..\wlan\reconfig.vbs"/>
+	   <script language="VBScript" src="..\newinc\c1xsupplicant.vbs"/>
+	   <script language="VBScript" src="..\newinc\CWlanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CWLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CSnmp.vbs"/>
+      <!-- End Wireless Specific Includes -->
+            
+      <script language="VBScript" src="..\inc\clog.vbs"/>
+      <script language="VBScript" src="..\inc\Constants.vbs"/>
+      <script language="VBScript" src="..\inc\ndisstatus.vbs"/> 
+      <script language="VBScript" src="..\inc\Events.vbs"/>
+      <script language="VBScript" src="..\newinc\CCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLCard.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanCard.vbs"/>
+      <script language="VBScript" src="..\newinc\COpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CCLOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\CLanOpen.vbs"/>
+      <script language="VBScript" src="..\newinc\Utilities.vbs"/>
+      <script language="VBScript" src="..\newinc\Setup.vbs"/>
+      <script id="1c_CancelSend" language="VBScript">
+'==========================================================================
+' Script Name: 1c_CancelSend
+'==========================================================================
+Option Explicit 
+
+Dim oTestObj
+
+Call Initialize ()
+
+Set oTestObj = New TestObj
+Call oTestObj.RunTest(GetTestAdapterIndex (oNDInfo.AdapterList, 0)) 
+Set oTestObj = Nothing
+
+Call Terminate ()
+
+Class TestObj
+   Private oTestCard, oTestOpen
+   Private m_lTestAdapterIndex
+   
+   Private Sub Class_Initialize
+      
+   End Sub
+   
+   Private Sub Class_Terminate
+      Set oTestCard = Nothing
+      Set oTestOpen = Nothing
+   End Sub
+   
+   '================================================================================================='
+   '/**
+   'This function does the test setup for execution
+   '
+   '@return    TRUE if setup was successful, false otherwise
+   '*/
+   Public Function SetupTest
+      Dim pAdapterList
+      Dim MiniportInfo
+      
+      SetupTest = FALSE
+      If (UseIPHeaders) Then
+         Exit Function
+      End If
+      
+      '
+      ' Check to see if the NIC supports Cancel Send
+      '
+      oLog.Variation ("Checking for Cancel Send Support")
+      MiniportInfo = oNDTSession(m_lTestAdapterIndex & "OID_GEN_MINIPORT_INFO")
+      If (IsEmpty (MiniportInfo)) Then
+         oLog.Write ("Error! Miniport Info not found in the session")
+         oLog.Write ("Not testing this device")
+         Exit Function
+      Else
+         If ((MiniportInfo AND NDIS_MINIPORT_SUPPORTS_CANCEL_SEND_PACKETS) = 0) Then
+            If ((MiniportInfo And NDIS_MINIPORT_DESERIALIZE) <> 0) Then
+               oLog.Write("Cannot run this test! Device does not support Cancel Send Packets!!")
+               Exit Function          
+            End If
+         End If
+      End If      
+      
+      Set pAdapterList = oNDInfo.AdapterList
+      
+      oLog.Variation ("Setting up Test Adapter")
+      Set oTestCard = New CLanCard
+      If (oTestCard is Nothing) Then
+         Exit Function
+      End If
+      
+      Set oTestOpen = oTestCard.vbSetupBasicTest(pAdapterList (m_lTestAdapterIndex))
+      If (oTestOpen is Nothing) Then
+         Exit Function
+      End If
+      
+      '-------------------- Begin 802.11 Association Routine --------------------'
+      If(oNDTSession.Variable(m_lTestAdapterIndex & "DriverPhysicalMediumConst") = NDISPHYSICALMEDIUMWIRELESSLAN) Then 
+               
+         oLog.Variation ("Associating test device with " & NDTESTAP1 & " ...")           
+         If(vbAssociateWep(oTestOpen, NDTESTAP1) <> NDIS_STATUS_SUCCESS) Then
+            oLog.Failed "Failed to associate test device with " & NDTESTAP1, 88888
+            Exit Function
+         End If	
+                                    
+      End If
+      '-------------------- End 802.11 Association Routine --------------------'
+      
+      Set pAdapterList = Nothing     
+      SetupTest = TRUE
+   End Function
+   
+   Public Function RunTest (lTestAdapterIndex)
+      Dim DriverNDISVersion
+   
+      m_lTestAdapterIndex = lTestAdapterIndex
+
+      ' Currently we cannot cancelsends in NDIS 6.0 miniports
+      DriverNDISVersion = oNDTSession (lTestAdapterIndex & "OID_GEN_DRIVER_VERSION")
+      If (Not IsEmpty (DriverNDISVersion)) Then
+         If (DriverNDISVersion = &H600&) Then
+            ' This is NDIS 6.0 miniport, NDISTest protocol cannot cancel sends
+            oLog.Write("Cannot run this test on NDIS 6.0 miniports")
+            Exit Function
+         End If
+      Else
+         oLog.Warned("Unable to determine driver NDIS version. Test will cause false failure for NDIS 6.0 miniports")
+      End If
+      
+      If (Not SetupTest) Then
+         Exit Function
+      End If
+      
+      ExecuteTestCore
+   End Function
+   
+   Private Sub ExecuteTestCore
+   Dim nTestId : nTestId = 0
+      Dim bResult, nResultSize
+      Dim lDriverNdisVersion, lPktsPerBurst
+      
+      nResultSize = CLng(4)
+      bResult = oTestOpen.vbFastNdisRequest(OID_GEN_DRIVER_VERSION, lDriverNdisVersion, nResultSize)
+      If (Not bResult) Then
+         Call oLog.Failed ("Unable to query OID_GEN_DRIVER_VERSION on the test adapter." , 21741)
+         Exit Sub
+      End If
+      
+      If (lDriverNdisVersion < &H501&) Then ' CancelPacket tests are for NDIS 5.1+ drivers only
+         oLog.Write("CancelPacket tests are not supported for driver versions < NDIS 5.1" )
+         Exit Sub
+      End If
+      
+      nResultSize = CLng(4)
+      lPktsPerBurst = 0
+      bResult = oTestOpen.vbFastNdisRequest(OID_GEN_MAXIMUM_SEND_PACKETS, lPktsPerBurst, nResultSize)
+      If (Not bResult) Then
+         Call oLog.Failed ("Unable to query OID_GEN_MAXIMUM_SEND_PACKETS on the test adapter." , 21740)
+         Exit Sub
+      End If
+      
+      If (lPktsPerBurst = 0) Then
+         lPktsPerBurst = 8
+      End If
+      
+      nTestId = oNDTSupp.Random(1, 32765)
+      
+      oLog.Variation("Setup Instances")      
+      oTestOpen.vbSetLocalId(nTestId)
+      oTestOpen.vbSetRemoteId(nTestId)
+      
+      oTestOpen.vbSetReceiveOption(RECEIVE_DEFAULT)
+      
+      If (Not oTestOpen.vbSetPacketFilter(0)) Then
+         Exit Sub
+      End If
+      
+      Dim nMaxPacketSize, BroadcastAddr
+      nMaxPacketSize = oTestOpen.vbGetMaxPacketSize()
+      BroadcastAddr = oTestCard.vbGetBroadcastAddress()
+      
+      '
+      ' first, do send-only test.  Send broadcast packets to oblivion
+      '
+      oLog.Variation("Broadcast 10000 Packets: will cancel packets" & vblf)
+      
+      
+      bResult = oTestOpen.vbStartPerformance(NULL, BroadcastAddr, PERFORM_SEND, nMaxPacketSize, lPktsPerBurst, 10000, 0, 0, 20)
+      If (Not bResult) Then
+         Call oLog.Failed ("Unable to start performance test." , 21744)
+         Exit Sub
+      End If
+      
+      bResult = oTestOpen.vbWaitPerformance()
+      If (Not bResult) Then
+         Call oLog.Failed ("Unable to wait for performance test to complete." , 21745)
+         Exit Sub
+      End If
+      
+      Dim lDuration, nBytesSent, nBytesReceived
+      bResult = oTestOpen.vbGetPerformanceResults(lDuration, nBytesSent, nBytesReceived)
+      If (Not bResult) Then
+         Call oLog.Failed ("Unable to get performance test results." , 21746)
+         Exit Sub
+      End If
+      
+   End Sub
+   
+End Class
+
+</script>
+</job>
+</package>
+
+
+
+<!--- CRC = 0x1f2302ba --->
